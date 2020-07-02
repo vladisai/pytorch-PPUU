@@ -59,4 +59,6 @@ class MergingMap(Simulator):
             self.nb_lanes * self.LANE_W + 5 * self.LANE_W,
         )
         if self.display:  # if display is required
-            self.screen = pygame.display.set_mode(self.screen_size)  # set screen size
+            self.screen = pygame.display.set_mode(
+                self.screen_size
+            )  # set screen size

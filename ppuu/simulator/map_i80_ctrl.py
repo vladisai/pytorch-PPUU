@@ -8,7 +8,14 @@ class ControlledI80Car(I80Car):
     get_lane_set = PatchedCar.get_lane_set
 
     def __init__(
-        self, df, y_offset, look_ahead, screen_w, font=None, kernel=0, dt=1 / 10
+        self,
+        df,
+        y_offset,
+        look_ahead,
+        screen_w,
+        font=None,
+        kernel=0,
+        dt=1 / 10,
     ):
         super().__init__(df, y_offset, look_ahead, screen_w, font, kernel, dt)
         self.is_controlled = False
@@ -20,7 +27,10 @@ class ControlledI80Car(I80Car):
     @property
     def current_lane(self):
         # If following the I-80 trajectories
-        if not self.is_controlled or len(self._states_image) < self.buffer_size:
+        if (
+            not self.is_controlled
+            or len(self._states_image) < self.buffer_size
+        ):
             return super().current_lane
 
         # Otherwise fetch x location
@@ -55,7 +65,9 @@ class ControlledI80Car(I80Car):
 
     @property
     def is_autonomous(self):
-        return self.is_controlled and len(self._states_image) > self.buffer_size
+        return (
+            self.is_controlled and len(self._states_image) > self.buffer_size
+        )
 
 
 class ControlledI80(I80):

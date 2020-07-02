@@ -88,6 +88,37 @@ class Dataset(torch.utils.data.Dataset):
         return self.get_one_example()
 
     def get_one_example(self):
+        """
+        Returns one training example, which includes input staes, and images,
+        actions, and target images and states, as well as car_id and car_size.
+                 n_cond                      n_pred
+        <---------------------><---------------------------------->
+        .                     ..                                  .
+        +---------------------+.                                  .  ^          ^
+        |i|i|i|i|i|i|i|i|i|i|i|.  3 × 117 × 24                    .  |          |
+        +---------------------+.                                  .  | inputs   |
+        +---------------------+.                                  .  |          |
+        |s|s|s|s|s|s|s|s|s|s|s|.  4                               .  |          |
+        +---------------------+.                                  .  v          |
+        .                   +-----------------------------------+ .  ^          |
+        .                2  |a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a| .  | actions  |
+        .                   +-----------------------------------+ .  v          |
+        .                     +-----------------------------------+  ^          | tensors
+        .       3 × 117 × 24  |i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|  |          |
+        .                     +-----------------------------------+  |          |
+        .                     +-----------------------------------+  |          |
+        .                  4  |s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|  | targets  |
+        .                     +-----------------------------------+  |          |
+        .                     +-----------------------------------+  |          |
+        .                  2  |c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|  |          |
+        .                     +-----------------------------------+  v          v
+        +---------------------------------------------------------+             ^
+        |                           car_id                        |             | string
+        +---------------------------------------------------------+             v
+        +---------------------------------------------------------+             ^
+        |                          car_size                       |  2          | tensor
+        +---------------------------------------------------------+             v
+        """
         T = self.n_cond + self.n_pred
         while True:
             s = self.sample_episode()
@@ -95,7 +126,8 @@ class Dataset(torch.utils.data.Dataset):
             # min is important since sometimes numbers do not align causing
             # issues in stack operation below
             episode_length = min(
-                self.data_store.images[s].size(0), self.data_store.states[s].size(0),
+                self.data_store.images[s].size(0),
+                self.data_store.states[s].size(0),
             )
             if episode_length >= T:
                 t = self.random.randint(0, episode_length - T)
@@ -129,33 +161,6 @@ class Dataset(torch.utils.data.Dataset):
         actions = actions[t0:t1].float().contiguous()
         ego_cars = ego_cars.float().contiguous()
         car_sizes = car_sizes.float()
-        #          n_cond                      n_pred
-        # <---------------------><---------------------------------->
-        # .                     ..                                  .
-        # +---------------------+.                                  .  ^          ^
-        # |i|i|i|i|i|i|i|i|i|i|i|.  3 × 117 × 24                    .  |          |
-        # +---------------------+.                                  .  | inputs   |
-        # +---------------------+.                                  .  |          |
-        # |s|s|s|s|s|s|s|s|s|s|s|.  4                               .  |          |
-        # +---------------------+.                                  .  v          |
-        # .                   +-----------------------------------+ .  ^          |
-        # .                2  |a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a| .  | actions  |
-        # .                   +-----------------------------------+ .  v          |
-        # .                     +-----------------------------------+  ^          | tensors
-        # .       3 × 117 × 24  |i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|  |          |
-        # .                     +-----------------------------------+  |          |
-        # .                     +-----------------------------------+  |          |
-        # .                  4  |s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|  | targets  |
-        # .                     +-----------------------------------+  |          |
-        # .                     +-----------------------------------+  |          |
-        # .                  2  |c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|  |          |
-        # .                     +-----------------------------------+  v          v
-        # +---------------------------------------------------------+             ^
-        # |                           car_id                        |             | string
-        # +---------------------------------------------------------+             v
-        # +---------------------------------------------------------+             ^
-        # |                          car_size                       |  2          | tensor
-        # +---------------------------------------------------------+             v
 
         return dict(
             input_images=input_images,
@@ -179,20 +184,24 @@ class Dataset(torch.utils.data.Dataset):
             (1, 1, 4) if states.dim() == 3 else (1, 4)
         )  # dim = 3: state sequence, dim = 2: single state
         states -= (
-            self.data_store.s_mean.view(*shape).expand(states.size()).to(states.device)
+            self.data_store.s_mean.view(*shape)
+            .expand(states.size())
+            .to(states.device)
         )
-        states /= (1e-8 + self.data_store.s_std.view(*shape).expand(states.size())).to(
-            states.device
-        )
+        states /= (
+            1e-8 + self.data_store.s_std.view(*shape).expand(states.size())
+        ).to(states.device)
         return states
 
     def normalise_action(self, actions):
         actions -= (
-            self.data_store.a_mean.view(1, 2).expand(actions.size()).to(actions.device)
+            self.data_store.a_mean.view(1, 2)
+            .expand(actions.size())
+            .to(actions.device)
         )
-        actions /= (1e-8 + self.data_store.a_std.view(1, 2).expand(actions.size())).to(
-            actions.device
-        )
+        actions /= (
+            1e-8 + self.data_store.a_std.view(1, 2).expand(actions.size())
+        ).to(actions.device)
         return actions
 
 

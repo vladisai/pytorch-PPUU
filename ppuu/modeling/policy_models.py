@@ -24,7 +24,9 @@ class DeterministicPolicy(nn.Module):
         self.h_width = h_width
         self.n_hidden = n_hidden
         self.encoder = Encoder(
-            Encoder.Config(a_size=0, n_inputs=self.n_cond, n_channels=self.n_channels)
+            Encoder.Config(
+                a_size=0, n_inputs=self.n_cond, n_channels=self.n_channels
+            )
         )
         self.n_outputs = self.n_actions
         self.hsize = self.n_feature * self.h_height * self.h_width
@@ -52,8 +54,12 @@ class DeterministicPolicy(nn.Module):
     ):
         if normalize_inputs:
             state_images = state_images.clone().float().div_(255.0)
-            states -= self.stats["s_mean"].cuda().view(1, 4).expand(states.size())
-            states /= self.stats["s_std"].cuda().view(1, 4).expand(states.size())
+            states -= (
+                self.stats["s_mean"].cuda().view(1, 4).expand(states.size())
+            )
+            states /= (
+                self.stats["s_std"].cuda().view(1, 4).expand(states.size())
+            )
             if state_images.dim() == 4:  # if processing single vehicle
                 state_images = state_images.cuda().unsqueeze(0)
                 states = states.cuda().unsqueeze(0)

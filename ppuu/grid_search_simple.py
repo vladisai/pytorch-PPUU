@@ -4,16 +4,13 @@ import argparse
 import numpy as np
 
 import pytorch_lightning as pl
-
-from ppuu import slurm
+from torch.multiprocessing import set_start_method
 
 from ppuu.lightning_modules import MPURKMSplitModule as Module
 from ppuu.train_policy import CustomLogger
-from ppuu import configs
+
 
 EPOCHS = 21
-
-from torch.multiprocessing import set_start_method
 
 
 def generate_config():
@@ -68,7 +65,9 @@ def run_trial(output_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_dir", type=str, required=True, help="output dir")
+    parser.add_argument(
+        "--output_dir", type=str, required=True, help="output dir"
+    )
     args = parser.parse_args()
     set_start_method("spawn")
 

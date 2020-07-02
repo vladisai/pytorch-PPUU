@@ -12,9 +12,7 @@ import os
 from functools import lru_cache
 
 import torch
-import pandas
 import numpy as np
-import imageio
 from torchvision.transforms import ToPILImage
 
 
@@ -48,9 +46,9 @@ class DataReader:
         """Get simulator images for a given model evaluation on a
         given episode"""
         images = (
-            DataReader.get_episode_result(experiment, version, checkpoint, episode)[
-                "images"
-            ]
+            DataReader.get_episode_result(
+                experiment, version, checkpoint, episode
+            )["images"]
             .detach()
             .cpu()
         )
@@ -63,9 +61,9 @@ class DataReader:
     def get_gradients(experiment, version, checkpoint, episode):
         """Get gradients for a given model evaluation on a given episode"""
         gradients = (
-            DataReader.get_episode_result(experiment, version, checkpoint, episode)[
-                "gradients"
-            ]
+            DataReader.get_episode_result(
+                experiment, version, checkpoint, episode
+            )["gradients"]
             .detach()
             .cpu()
         )
@@ -77,7 +75,7 @@ class DataReader:
         return images
 
     @staticmethod
-    def get_last_gradient(experiment, seed, checkpoint, episode):
+    def get_last_gradient(experiment, version, checkpoint, episode):
         """Get the last gradient for the model and episode
 
         Returns:
@@ -86,9 +84,9 @@ class DataReader:
                             value in the  gradient image.
         """
         image = (
-            DataReader.get_episode_result(experiment, version, checkpoint, episode)[
-                "gradients"
-            ]
+            DataReader.get_episode_result(
+                experiment, version, checkpoint, episode
+            )["gradients"]
             .detach()
             .cpu()
         )
@@ -136,7 +134,9 @@ class DataReader:
     @staticmethod
     def get_version_checkpoints_path(experiment, version):
         return os.path.join(
-            DataReader.get_experiment_path(experiment), version, "evaluation_results",
+            DataReader.get_experiment_path(experiment),
+            version,
+            "evaluation_results",
         )
 
     @staticmethod
@@ -150,7 +150,8 @@ class DataReader:
     @staticmethod
     def get_episode_result_path(experiment, version, checkpoint, episode):
         return os.path.join(
-            DataReader.get_episodes_path(experiment, version, checkpoint), str(episode),
+            DataReader.get_episodes_path(experiment, version, checkpoint),
+            str(episode),
         )
 
     @staticmethod
@@ -170,7 +171,9 @@ class DataReader:
 
     @staticmethod
     def get_evaluation_result(experiment, version, checkpoint):
-        path = DataReader.get_evaluation_result_path(experiment, version, checkpoint)
+        path = DataReader.get_evaluation_result_path(
+            experiment, version, checkpoint
+        )
         with open(path, "r") as f:
             return json.load(f)
 
@@ -204,7 +207,9 @@ class DataReader:
         )
         return sorted(os.listdir(episodes_results_path))
 
-    def find_option_values(option, experiment=None, seed=None, checkpoint=None):
+    def find_option_values(
+        option, experiment=None, seed=None, checkpoint=None
+    ):
         """Returns possible values for selected option.
         Depending on option, returns:
             if option == 'seed' - returns all seeds for given experiment.
@@ -287,7 +292,9 @@ class DataReader:
         """
         results = {}
         for version in DataReader.find_experiment_versions(experiment):
-            success_rates = DataReader.get_version_success_rates(experiment, version)
+            success_rates = DataReader.get_version_success_rates(
+                experiment, version
+            )
             for checkpoint, success_rate in success_rates.items():
                 results.setdefault(checkpoint, []).append(success_rate)
 
@@ -323,7 +330,9 @@ class DataReader:
         Ith value in the result is 0 if the ith episode failed,
         and 1 otherwise.
         """
-        successes = DataReader.get_episodes_with_outcome(experiment, seed, step, 1)
+        successes = DataReader.get_episodes_with_outcome(
+            experiment, seed, step, 1
+        )
         successes = np.array(successes) - 1
         result = np.zeros(EPISODES)
         result[successes] = 1
@@ -340,7 +349,9 @@ class DataReader:
         seeds = DataReader.find_option_values("seed", experiment)
         result = np.zeros(EPISODES)
         for seed in seeds:
-            checkpoints = DataReader.find_option_values("checkpoint", experiment, seed)
+            checkpoints = DataReader.find_option_values(
+                "checkpoint", experiment, seed
+            )
             for checkpoint in checkpoints:
                 success = DataReader.get_episodes_with_outcome(
                     experiment, seed, checkpoint, 1
@@ -357,7 +368,9 @@ class DataReader:
     @staticmethod
     def get_episode_speeds(experiment, seed, checkpoint, episode):
         """ Returns an array of speeds for given model and given episode"""
-        return DataReader.get_model_speeds(experiment, seed, checkpoint)[episode - 1]
+        return DataReader.get_model_speeds(experiment, seed, checkpoint)[
+            episode - 1
+        ]
 
     @staticmethod
     def get_episode_costs(experiment, seed, checkpoint, episode):
@@ -390,9 +403,9 @@ class DataReader:
     @lru_cache(maxsize=10)
     def get_model_speeds(experiment, seed, checkpoint):
         """ Returns an array of speeds for given model for all episodes"""
-        states = DataReader.get_evaluation_result(experiment, seed, checkpoint)[
-            "state_sequence"
-        ]
+        states = DataReader.get_evaluation_result(
+            experiment, seed, checkpoint
+        )["state_sequence"]
         result = []
         for i in range(len(states)):
             episode_states = states[i]
@@ -405,9 +418,9 @@ class DataReader:
     @lru_cache(maxsize=10)
     def get_model_states(experiment, seed, checkpoint):
         """ Returns an array of states for given model for all episodes"""
-        states = DataReader.get_evaluation_result(experiment, seed, checkpoint)[
-            "state_sequence"
-        ]
+        states = DataReader.get_evaluation_result(
+            experiment, seed, checkpoint
+        )["state_sequence"]
         result = []
         for i in range(len(states)):
             episode_states = states[i]

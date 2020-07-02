@@ -60,7 +60,7 @@ def inject(cost_type=PolicyCost, fm_type=ForwardModel):
 class MPURModule(pl.LightningModule):
     @dataclass
     class ModelConfig(configs.ModelConfig):
-        forward_model_path: str = "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/models/offroad/model=fwd-cnn-vae-fp-layers=3-bsize=64-ncond=20-npred=20-lrt=0.0001-nfeature=256-dropout=0.1-nz=32-beta=1e-06-zdropout=0.5-gclip=5.0-warmstart=1-seed=1.step400000.model"
+        forward_model_path: str = "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/models/offroad/model=fwd-cnn-vae-fp-layers=3-bsize=64-ncond=20-npred=20-lrt=0.0001-nfeature=256-dropout=0.1-nz=32-beta=1e-06-zdropout=0.5-gclip=5.0-warmstart=1-seed=1.step400000.model"  # noqa: E501
 
         n_cond: int = 20
         n_pred: int = 30
@@ -113,7 +113,9 @@ class MPURModule(pl.LightningModule):
         predictions = self(batch)
         loss = self.policy_cost.calculate_cost(batch, predictions)
         logs = loss.copy()
-        logs["action_norm"] = predictions["pred_actions"].norm(2, 2).pow(2).mean()
+        logs["action_norm"] = (
+            predictions["pred_actions"].norm(2, 2).pow(2).mean()
+        )
         return {
             "loss": loss["policy_loss"],
             "log": logs,
@@ -137,12 +139,15 @@ class MPURModule(pl.LightningModule):
         return {
             "val_loss": avg_loss,
             "log": tensorboard_logs,
-            "progress_bar": {"success_rate": eval_results["stats"]["success_rate"]},
+            "progress_bar": {
+                "success_rate": eval_results["stats"]["success_rate"]
+            },
         }
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
-            self.policy_model.parameters(), self.config.training_config.learning_rate,
+            self.policy_model.parameters(),
+            self.config.training_config.learning_rate,
         )
         return optimizer
 

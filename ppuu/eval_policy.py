@@ -8,20 +8,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 import logging
 from dataclasses import dataclass
-import time
-
-from multiprocessing.pool import ThreadPool
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-import json
-import os
-from typing import Optional, Callable
-
-import pandas as pd
-import gym
-import torch
-import torch.nn
-import torch.nn.parallel
-from torch.multiprocessing import Pool, set_start_method
+from torch.multiprocessing import set_start_method
 
 from ppuu import configs
 from ppuu import dataloader
@@ -52,7 +39,8 @@ class EvalConfig(configs.ConfigBase):
         if self.num_processes == -1:
             self.num_processes = get_optimal_pool_size()
             logging.info(
-                f"Number of processes wasn't speicifed, going to use {self.num_processes}"
+                f"Number of processes wasn't speicifed, "
+                f"going to use {self.num_processes}"
             )
 
         if self.output_dir is None:
@@ -63,7 +51,8 @@ class EvalConfig(configs.ConfigBase):
             if self.checkpoint_path[0] == os.path.sep:
                 self.output_dir = os.path.sep + self.output_dir
             logging.info(
-                f"Output dir wasn't specified, going to save to {self.output_dir}"
+                f"Output dir wasn't specified, "
+                f"going to save to {self.output_dir}"
             )
         if self.dataset in configs.DATASET_PATHS_MAPPING:
             self.dataset = configs.DATASET_PATHS_MAPPING[self.dataset]
@@ -80,7 +69,10 @@ def main(config):
     )
 
     evaluator = PolicyEvaluator(
-        test_dataset, 4, build_gradients=config.save_gradients, enable_logging=True,
+        test_dataset,
+        4,
+        build_gradients=config.save_gradients,
+        enable_logging=True,
     )
     result = evaluator.evaluate(mpur_module, output_dir=config.output_dir)
     print(result["stats"])

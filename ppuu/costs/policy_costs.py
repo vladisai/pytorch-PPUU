@@ -86,7 +86,9 @@ class PolicyCost(PolicyCostBase):
         x_filter = torch.min(
             x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size())
         )
-        x_filter = (x_filter == max_x.unsqueeze(1).expand(x_filter.size())).float()
+        x_filter = (
+            x_filter == max_x.unsqueeze(1).expand(x_filter.size())
+        ).float()
 
         y_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_w))) * crop_w / 2
         y_filter = (
@@ -109,7 +111,8 @@ class PolicyCost(PolicyCostBase):
         proximity_mask = proximity_mask.view(bsize, npred, crop_h, crop_w)
         images = images.view(bsize, npred, nchannels, crop_h, crop_w)
         costs = torch.max(
-            (proximity_mask * images[:, :, 0].float()).view(bsize, npred, -1), 2,
+            (proximity_mask * images[:, :, 0].float()).view(bsize, npred, -1),
+            2,
         )[0]
         return costs.view(bsize, npred), proximity_mask
 
@@ -117,12 +120,18 @@ class PolicyCost(PolicyCostBase):
         bsize, npred, nchannels, crop_h, crop_w = images.size()
         images = images.view(bsize, npred, nchannels, crop_h, crop_w)
         costs = torch.max(
-            (proximity_mask * images[:, :, 2].float()).view(bsize, npred, -1), 2,
+            (proximity_mask * images[:, :, 2].float()).view(bsize, npred, -1),
+            2,
         )[0]
         return costs.view(bsize, npred)
 
     def compute_proximity_cost(
-        self, images, states, car_size=(6.4, 14.3), green_channel=1, unnormalize=False,
+        self,
+        images,
+        states,
+        car_size=(6.4, 14.3),
+        green_channel=1,
+        unnormalize=False,
     ):
         SCALE = 0.25
         safe_factor = 1.5
@@ -134,12 +143,16 @@ class PolicyCost(PolicyCostBase):
             states = (
                 states
                 * (
-                    1e-8 + self.data_stats["s_std"].view(1, 4).expand(states.size())
+                    1e-8
+                    + self.data_stats["s_std"].view(1, 4).expand(states.size())
                 ).cuda()
             )
             states = (
                 states
-                + self.data_stats["s_mean"].view(1, 4).expand(states.size()).cuda()
+                + self.data_stats["s_mean"]
+                .view(1, 4)
+                .expand(states.size())
+                .cuda()
             )
 
         speed = states[:, 2:].norm(2, 1) * SCALE  # pixel/s
@@ -197,9 +210,9 @@ class PolicyCost(PolicyCostBase):
         )
         x_filter = torch.max(x_filter, min_x.view(bsize * npred, 1))
 
-        x_filter = (x_filter - min_x.view(bsize * npred, 1)) / (max_x - min_x).view(
-            bsize * npred, 1
-        )
+        x_filter = (x_filter - min_x.view(bsize * npred, 1)) / (
+            max_x - min_x
+        ).view(bsize * npred, 1)
         y_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_w))) * crop_w / 2
         y_filter = (
             y_filter.view(1, crop_w)
@@ -249,29 +262,46 @@ class PolicyCost(PolicyCostBase):
             Z = Z.view(bsize, self.config.uncertainty_n_pred, -1)
         Z_rep = Z.unsqueeze(0)
         Z_rep = Z_rep.expand(
-            self.config.uncertainty_n_models, bsize, self.config.uncertainty_n_pred, -1,
+            self.config.uncertainty_n_models,
+            bsize,
+            self.config.uncertainty_n_pred,
+            -1,
         )
 
         input_images = input_images.unsqueeze(0)
         input_states = input_states.unsqueeze(0)
         actions = actions.unsqueeze(0)
         input_images = input_images.expand(
-            self.config.uncertainty_n_models, bsize, ncond, channels, height, width,
+            self.config.uncertainty_n_models,
+            bsize,
+            ncond,
+            channels,
+            height,
+            width,
         )
         input_states = input_states.expand(
             self.config.uncertainty_n_models, bsize, ncond, 4
         )
         actions = actions.expand(
-            self.config.uncertainty_n_models, bsize, self.config.uncertainty_n_pred, 2,
+            self.config.uncertainty_n_models,
+            bsize,
+            self.config.uncertainty_n_pred,
+            2,
         )
         input_images = input_images.contiguous().view(
-            bsize * self.config.uncertainty_n_models, ncond, channels, height, width,
+            bsize * self.config.uncertainty_n_models,
+            ncond,
+            channels,
+            height,
+            width,
         )
         input_states = input_states.contiguous().view(
             bsize * self.config.uncertainty_n_models, ncond, 4
         )
         actions = actions.contiguous().view(
-            bsize * self.config.uncertainty_n_models, self.config.uncertainty_n_pred, 2,
+            bsize * self.config.uncertainty_n_models,
+            self.config.uncertainty_n_pred,
+            2,
         )
         Z_rep = Z_rep.contiguous().view(
             self.config.uncertainty_n_models * bsize,
@@ -280,7 +310,8 @@ class PolicyCost(PolicyCostBase):
         )
 
         original_value = self.forward_model.training  # to switch back later
-        self.forward_model.train()  # turn on dropout, for uncertainty estimation
+        # turn on dropout, for uncertainty estimation
+        self.forward_model.train()
         predictions = self.forward_model.unfold(
             actions.clone(),
             dict(input_images=input_images, input_states=input_states,),
@@ -295,7 +326,9 @@ class PolicyCost(PolicyCostBase):
             .view(self.config.uncertainty_n_models * bsize, 2)
         )
         costs = self.compute_state_costs_for_uncertainty(
-            predictions["pred_images"], predictions["pred_states"], car_sizes_temp,
+            predictions["pred_images"],
+            predictions["pred_states"],
+            car_sizes_temp,
         )
 
         pred_costs = (
@@ -305,13 +338,22 @@ class PolicyCost(PolicyCostBase):
         )
 
         pred_images = predictions["pred_images"].view(
-            self.config.uncertainty_n_models, bsize, self.config.uncertainty_n_pred, -1,
+            self.config.uncertainty_n_models,
+            bsize,
+            self.config.uncertainty_n_pred,
+            -1,
         )
         pred_states = predictions["pred_states"].view(
-            self.config.uncertainty_n_models, bsize, self.config.uncertainty_n_pred, -1,
+            self.config.uncertainty_n_models,
+            bsize,
+            self.config.uncertainty_n_pred,
+            -1,
         )
         pred_costs = pred_costs.view(
-            self.config.uncertainty_n_models, bsize, self.config.uncertainty_n_pred, -1,
+            self.config.uncertainty_n_models,
+            bsize,
+            self.config.uncertainty_n_pred,
+            -1,
         )
         # use variance rather than standard deviation, since it is not
         # differentiable at 0 due to sqrt
@@ -328,7 +370,9 @@ class PolicyCost(PolicyCostBase):
         )
 
         pred_states = pred_states.view(
-            self.config.uncertainty_n_models * bsize, self.config.uncertainty_n_pred, 4,
+            self.config.uncertainty_n_models * bsize,
+            self.config.uncertainty_n_pred,
+            4,
         )
 
         if not estimation:
@@ -346,7 +390,9 @@ class PolicyCost(PolicyCostBase):
                 - self.config.u_hinge
             )
             total_u_loss = (
-                u_loss_costs.mean() + u_loss_states.mean() + u_loss_images.mean()
+                u_loss_costs.mean()
+                + u_loss_states.mean()
+                + u_loss_images.mean()
             )
         else:
             total_u_loss = None
@@ -379,15 +425,18 @@ class PolicyCost(PolicyCostBase):
         return result
 
     def estimate_uncertainty_stats(self, dataloader):
-        """Computes uncertainty estimates for the ground truth actions in the training
-        set. This will give us an idea of what normal ranges are using actions the
-        forward model was trained on.
+        """Computes uncertainty estimates for the ground truth actions in the
+        training set. This will give us an idea of what normal ranges are using
+        actions the forward model was trained on.
         """
         u_images, u_states, u_costs = [], [], []
         data_iter = iter(dataloader)
         for i in range(self.config.uncertainty_n_batches):
             print(
-                f"[estimating normal uncertainty ranges: {i / self.config.uncertainty_n_batches:2.1%}]",
+                (
+                    f"[estimating normal uncertainty ranges:"
+                    f" {i / self.config.uncertainty_n_batches:2.1%}]"
+                ),
                 end="\r",
             )
             try:
@@ -399,15 +448,21 @@ class PolicyCost(PolicyCostBase):
             for k in batch:
                 if torch.is_tensor(batch[k]):
                     batch[k] = batch[k].to(self.forward_model.device)
-            result = self.compute_uncertainty_batch(batch=batch, estimation=True,)
+            result = self.compute_uncertainty_batch(
+                batch=batch, estimation=True,
+            )
             u_images.append(result["pred_images_var"])
             u_states.append(result["pred_states_var"])
             u_costs.append(result["pred_costs_var"])
 
         print("[estimating normal uncertainty ranges: 100.0%]")
 
-        u_images = torch.stack(u_images).view(-1, self.config.uncertainty_n_pred)
-        u_states = torch.stack(u_states).view(-1, self.config.uncertainty_n_pred)
+        u_images = torch.stack(u_images).view(
+            -1, self.config.uncertainty_n_pred
+        )
+        u_states = torch.stack(u_states).view(
+            -1, self.config.uncertainty_n_pred
+        )
         u_costs = torch.stack(u_costs).view(-1, self.config.uncertainty_n_pred)
 
         self.u_images_mean = u_images.mean(0)
@@ -421,7 +476,9 @@ class PolicyCost(PolicyCostBase):
     def compute_state_costs(self, images, states, car_sizes):
         npred = images.size(1)
         gamma_mask = (
-            torch.tensor([0.99 ** t for t in range(npred + 1)]).cuda().unsqueeze(0)
+            torch.tensor([0.99 ** t for t in range(npred + 1)])
+            .cuda()
+            .unsqueeze(0)
         )
         proximity_cost = self.compute_proximity_cost(
             images, states.data, car_sizes, unnormalize=True,
@@ -451,7 +508,12 @@ class PolicyCost(PolicyCostBase):
         return self.compute_state_costs(images, states, car_sizes)
 
     def compute_combined_loss(
-        self, proximity_loss, uncertainty_loss, lane_loss, action_loss, offroad_loss,
+        self,
+        proximity_loss,
+        uncertainty_loss,
+        lane_loss,
+        action_loss,
+        offroad_loss,
     ):
         return (
             self.config.lambda_p * proximity_loss
@@ -464,14 +526,19 @@ class PolicyCost(PolicyCostBase):
     def calculate_cost(self, inputs, predictions):
         u_loss = self.calculate_uncertainty_cost(inputs, predictions)
         loss_a = (
-            (predictions["pred_actions"][:, 1:] - predictions["pred_actions"][:, :-1])
+            (
+                predictions["pred_actions"][:, 1:]
+                - predictions["pred_actions"][:, :-1]
+            )
             .norm(2, 2)
             .pow(2)
             .mean()
         )
 
         state_losses = self.compute_state_costs_for_training(
-            predictions["pred_images"], predictions["pred_states"], inputs["car_sizes"],
+            predictions["pred_images"],
+            predictions["pred_states"],
+            inputs["car_sizes"],
         )
         result = dict(
             proximity_loss=state_losses["proximity_loss"],
@@ -486,7 +553,9 @@ class PolicyCost(PolicyCostBase):
     def calculate_z_cost(self, inputs, predictions):
         u_loss = self.calculate_uncertainty_cost(inputs, predictions)
         proximity_loss = self.compute_state_costs_for_z(
-            predictions["pred_images"], predictions["pred_states"], inputs["car_sizes"],
+            predictions["pred_images"],
+            predictions["pred_states"],
+            inputs["car_sizes"],
         )["proximity_loss"]
         result = self.compute_combined_loss(
             proximity_loss=-1 * proximity_loss,
@@ -504,8 +573,12 @@ class PolicyCost(PolicyCostBase):
         car_sizes = batch["car_sizes"].clone()
 
         input_images = input_images.clone().float().div_(255.0)
-        input_states -= self.data_stats["s_mean"].view(1, 4).expand(input_states.size())
-        input_states /= self.data_stats["s_std"].view(1, 4).expand(input_states.size())
+        input_states -= (
+            self.data_stats["s_mean"].view(1, 4).expand(input_states.size())
+        )
+        input_states /= (
+            self.data_stats["s_std"].view(1, 4).expand(input_states.size())
+        )
         if input_images.dim() == 4:  # if processing single vehicle
             input_images = input_images.to(device).unsqueeze(0)
             input_states = input_states.to(device).unsqueeze(0)

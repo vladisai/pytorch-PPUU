@@ -2,16 +2,14 @@
 from os.path import isfile
 
 import torch
-from random import choice, randrange
 
-from simulator.custom_graphics import draw_dashed_line
 from simulator.traffic_gym import Simulator, Car, colours
 import pygame
 import pandas as pd
 import numpy as np
-import pdb, random
 import bisect
-import pdb, pickle, os, re
+import pickle
+import os
 
 # Conversion LANE_W from real world to pixels
 # A US highway lane width is 3.7 metres, here 50 pixels
@@ -31,7 +29,14 @@ class I80Car(Car):
     max_b = 0.01
 
     def __init__(
-        self, df, y_offset, look_ahead, screen_w, font=None, kernel=0, dt=1 / 10
+        self,
+        df,
+        y_offset,
+        look_ahead,
+        screen_w,
+        font=None,
+        kernel=0,
+        dt=1 / 10,
     ):
         k = kernel  # running window size
         self._length = df.at[df.index[0], "Vehicle Length"] * FOOT * SCALE
@@ -42,12 +47,16 @@ class I80Car(Car):
 
         # X and Y are swapped in the I-80 data set...
         x = (
-            df["Local Y"].rolling(window=k).mean().shift(1 - k).values * FOOT * SCALE
+            df["Local Y"].rolling(window=k).mean().shift(1 - k).values
+            * FOOT
+            * SCALE
             - self.X_OFFSET
             - self._length
         )
         y = (
-            df["Local X"].rolling(window=k).mean().shift(1 - k).values * FOOT * SCALE
+            df["Local X"].rolling(window=k).mean().shift(1 - k).values
+            * FOOT
+            * SCALE
             + y_offset
         )
         if dt > 1 / 10:
@@ -64,7 +73,8 @@ class I80Car(Car):
         self._df = df
         self._frame = 0
         self._dt = dt
-        # self._direction = np.array((1, 0), np.float)  # assumes horizontal if initially unknown
+        # self._direction = np.array((1, 0), np.float)
+        # assumes horizontal if initially unknown
         self._direction = self._get("init_direction", 0)
         self._speed = self._get("speed", 0)
         self._colour = colours["c"]
@@ -118,12 +128,15 @@ class I80Car(Car):
                 return np.array((1, 0), dtype=np.float)
             return direction_vector / norm
 
-    # This was trajectories replay (to be used as ground truth, without any policy and action generation)
+    # This was trajectories replay
+    # (to be used as ground truth, without any policy and action generation)
     # def step(self, action):
     #     position = self._position
     #     self._position = self._trajectory[self._frame]
     #     new_direction = self._position - position
-    #     self._direction = new_direction if np.linalg.norm(new_direction) > 0.1 else self._direction
+    #     self._direction = \
+    #        new_direction if np.linalg.norm(new_direction) > 0.1
+    #     else self._direction
     #     self._direction /= np.linalg.norm(self._direction)
     #     assert 0.99 < np.linalg.norm(self._direction) < 1.01
     #     assert self._direction[0] > 0
@@ -143,13 +156,15 @@ class I80Car(Car):
         # if abs(b) > self._speed:
         #     b = self._speed * np.sign(b)
 
-        # From an analysis of the action histograms -> limit a, b to sensible range
+        # From an analysis of the action histograms ->
+        # limit a, b to sensible range
         a, b = self.action_clipping(a, b)
 
         # # Colour code for identifying trajectory divergence
         # measurement = self._trajectory[self._frame]
         # current_position = self._position
-        # distance = min(np.linalg.norm(current_position - measurement) / (2 * LANE_W) * 255, 255)
+        # distance = min(np.linalg.norm(current_position - measurement)
+        # / (2 * LANE_W) * 255, 255)
         # self._colour = (distance, 255 - distance, 0)
 
         return np.array((a, b))
@@ -174,20 +189,35 @@ class I80Car(Car):
         #         behind, ahead = cars
         #         if behind:
         #             d = self - behind
-        #             if d[0] < -alpha and abs(d[1]) + alpha < (self._width + behind._width) / 2:
+        #             if (
+        #                 d[0] < -alpha
+        #                 and abs(d[1]) + alpha
+        #                 < (self._width + behind._width) / 2
+        #             ):
         #                 self.collisions_per_frame += 1
-        #                 # print(f'Collision {self.collisions_per_frame}/6, behind, vehicle {behind.id}')
+        #                 print(
+        #                     f"Collision {self.collisions_per_frame}/6,"
+        #                     f" behind, vehicle {behind.id}"
+        #                 )
         #         if ahead:
         #             d = ahead - self
-        #             if d[0] < -alpha and abs(d[1]) + alpha < (self._width + ahead._width) / 2:
+        #             if (
+        #                 d[0] < -alpha
+        #                 and abs(d[1]) + alpha
+        #                 < (self._width + ahead._width) / 2
+        #             ):
         #                 self.collisions_per_frame += 1
-        #                 # print(f'Collision {self.collisions_per_frame}/6, ahead, vehicle {ahead.id}')
+        #                 print(
+        #                     f"Collision {self.collisions_per_frame}/6,"
+        #                     f" ahead, vehicle {ahead.id}"
+        #                 )
 
         beta = 0.99
         if self._states_image and self._states_image[-1][2] > beta:
             self.collisions_per_frame += 1
             # print(f'Collision registered for vehicle {self}')
-            # print(f'Accident! Check vehicle {self}. Proximity of {self._states_image[-1][2]}.')
+            # print(f'Accident! Check vehicle {self}.'
+            # f'Proximity of {self._states_image[-1][2]}.')
 
 
 class I80(Simulator):
@@ -230,7 +260,9 @@ class I80(Simulator):
         #     self.photos[3].get_rect().move([932 + 340 + 360, 22 - 2]),
         # )
         if self.display:  # if display is required
-            self.screen = pygame.display.set_mode(self.screen_size)  # set screen size
+            self.screen = pygame.display.set_mode(
+                self.screen_size
+            )  # set screen size
         # self.delta_t = 1 / 10  # simulation timing interval
         self._time_slots = (
             "i80/trajectories-0400-0415",
@@ -338,7 +370,9 @@ class I80(Simulator):
         self.max_frame = -1
         pth = "traffic-data/state-action-cost/data_i80_v0/data_stats.pth"
         self.data_stats = (
-            torch.load(pth) if self.normalise_state or self.normalise_action else None
+            torch.load(pth)
+            if self.normalise_state or self.normalise_action
+            else None
         )
         self.cached_data_frames = dict()
         self.episode = 0
@@ -348,7 +382,7 @@ class I80(Simulator):
     def _get_data_frame(self, time_slot, x_max, x_offset):
         if time_slot in self.cached_data_frames:
             return self.cached_data_frames[time_slot]
-        file_name = f"/misc/vlgscratch4/LecunGroup/nvidia-collab/traffic-data/xy-trajectories/{time_slot}"
+        file_name = f"/misc/vlgscratch4/LecunGroup/nvidia-collab/traffic-data/xy-trajectories/{time_slot}"  # noqa: E501
         if isfile(file_name + ".pkl"):
             file_name += ".pkl"
             df = pd.read_pickle(file_name)
@@ -396,19 +430,18 @@ class I80(Simulator):
         frame = vehicle_data.at[vehicle_data.index[0], "Frame ID"]
         return frame
 
-    def reset(self, frame=None, time_slot=None, vehicle_id=None, train_only=False):
+    def reset(
+        self, frame=None, time_slot=None, vehicle_id=None, train_only=False
+    ):
 
-        # train_only = True  # uncomment this if doing RL, to set as default behaviour
+        # train_only = True
+        # uncomment this if doing RL, to set as default behaviour
         if train_only:
-            ################################################################################
+            ###########################################
             # Looping over training split ONLY
-            ################################################################################
+            ###########################################
             if self.train_indx is None:
-                train_indx_file = (
-                    "/home/atcold/Work/GitHub/pytorch-Traffic-Simulator/train_indx.pkl"
-                )
-                if not os.path.isfile(train_indx_file):
-                    import get_data_idx
+                train_indx_file = "/home/atcold/Work/GitHub/pytorch-Traffic-Simulator/train_indx.pkl"  # noqa: E501
                 print("Loading training indices")
                 with open(train_indx_file, "rb") as f:
                     self.train_indx = pickle.load(f)
@@ -421,7 +454,7 @@ class I80(Simulator):
                 self.indx_order[self.episode % len(self.indx_order)]
             ]
             self.episode += 1
-            ################################################################################
+            ############################################
 
         super().reset(control=(frame is None))
         # print(f'\n > Env on process {os.getpid()} is resetting')
@@ -430,7 +463,9 @@ class I80(Simulator):
             if time_slot is not None
             else self.random.choice(self._time_slots)
         )
-        self.df = self._get_data_frame(self._t_slot, self.screen_size[0], self.X_OFFSET)
+        self.df = self._get_data_frame(
+            self._t_slot, self.screen_size[0], self.X_OFFSET
+        )
         self.max_frame = max(self.df["Frame ID"])
         if vehicle_id:
             frame = self._get_first_frame(vehicle_id)
@@ -447,7 +482,9 @@ class I80(Simulator):
                     set(self.df[self.df["Frame ID"] > frame]["Vehicle ID"])
                     - vehicles_history
                 )
-                new_vehicles -= self._black_list[self._t_slot]  # clean up fuckers
+                new_vehicles -= self._black_list[
+                    self._t_slot
+                ]  # clean up fuckers
         if self.controlled_car:
             self.controlled_car["frame"] = frame
             self.controlled_car["v_id"] = vehicle_id
@@ -457,10 +494,11 @@ class I80(Simulator):
         # with open('off_track.pkl', 'rb') as f:
         #     self.off_track = pickle.load(f)
         # self.off_track = set()
-        # accident_file = '/Volumes/MyBox/home/atcold/Traffic/scripts/log/peach-pass-1/peach_ts1.out'
+        # accident_file = ''
         # self.accident_file = open(accident_file)
         # self.accident = self.get_next_accident()
-        # while self.accident['frame'] < frame: self.accident = self.get_next_accident()
+        # while self.accident['frame'] < frame:
+        # self.accident = self.get_next_accident()
 
     # def get_next_accident(self):
     #     file = self.accident_file
@@ -556,7 +594,9 @@ class I80(Simulator):
                 # print(f'vehicle {v.id} [off screen]')
                 if self.state_image and self.store:
                     file_name = os.path.join(
-                        self.data_dir, self.DUMP_NAME, os.path.basename(self._t_slot)
+                        self.data_dir,
+                        self.DUMP_NAME,
+                        os.path.basename(self._t_slot),
                     )
                     print(f"[dumping {v} in {file_name}]")
                     v.dump_state_image(file_name, "tensor")
@@ -569,7 +609,11 @@ class I80(Simulator):
                 ), f"{v} is in lane {v.current_lane} at frame {self.frame}"
                 bisect.insort(self.lane_occupancy[lane_idx], v)
 
-        if self.state_image or self.controlled_car and self.controlled_car["locked"]:
+        if (
+            self.state_image
+            or self.controlled_car
+            and self.controlled_car["locked"]
+        ):
             # How much to look far ahead
             look_ahead = MAX_SPEED * 1000 / 3600 * self.SCALE
             look_sideways = 2 * self.LANE_W
@@ -585,7 +629,9 @@ class I80(Simulator):
             lane_idx = v.current_lane
             left_vehicles = (
                 self._get_neighbours(lane_idx, -1, v)
-                if 0 < lane_idx < 6 or lane_idx == 6 and v.front[0] > 18 * LANE_W
+                if 0 < lane_idx < 6
+                or lane_idx == 6
+                and v.front[0] > 18 * LANE_W
                 else None
             )
             mid_vehicles = self._get_neighbours(lane_idx, 0, v)
@@ -615,12 +661,14 @@ class I80(Simulator):
             # # Create set of off track vehicles
             # if v._colour[0] > 128:  # one lane away
             #     if v.id not in self.off_track:
-            #         print(f'Adding {v} to off_track set and saving it to disk')
+            #         print(f'Adding {v} to off_track set
+            # and saving it to disk')
             #         self.off_track.add(v.id)
             #         with open('off_track.pkl', 'wb') as f:
             #             pickle.dump(self.off_track, f)
 
-            # # Point out accidents (as in tracking bugs) in original trajectories
+            # # Point out accidents (as in tracking bugs) in original
+            # trajectories
             # if self.frame == self.accident['frame']:
             #     if v.id in self.accident['cars']:
             #         v.collisions_per_frame = 1
@@ -671,7 +719,8 @@ class I80(Simulator):
 
             for lane in lanes:
                 draw_line(s, g, (0, lane["min"]), (sw, lane["min"]), 1)
-                # draw_dashed_line(s, colours['r'], (0, lane['mid']), (sw, lane['mid']))
+                # draw_dashed_line(s, colours['r'], (0, lane['mid']),
+                # (sw, lane['mid']))
 
             draw_line(s, w, (0, lanes[0]["min"]), (sw, lanes[0]["min"]), 3)
             bottom = lanes[-1]["max"]
@@ -683,8 +732,11 @@ class I80(Simulator):
                 (18 * LANE_W, bottom + 29 - slope * 18 * LANE_W),
                 3,
             )
-            draw_line(s, g, (18 * LANE_W, bottom + 13), (31 * LANE_W, bottom), 1)
-            # draw_line(s, g, (0, bottom + 42), (60 * LANE_W, bottom + 42 - slope * 60 * LANE_W), 1)
+            draw_line(
+                s, g, (18 * LANE_W, bottom + 13), (31 * LANE_W, bottom), 1
+            )
+            # draw_line(s, g, (0, bottom + 42),
+            # (60 * LANE_W, bottom + 42 - slope * 60 * LANE_W), 1)
             draw_line(
                 s,
                 w,
@@ -696,7 +748,9 @@ class I80(Simulator):
 
             look_ahead = MAX_SPEED * 1000 / 3600 * self.SCALE
             o = self.offset
-            draw_line(s, (255, 255, 0), (look_ahead, o), (look_ahead, 9.4 * LANE_W))
+            draw_line(
+                s, (255, 255, 0), (look_ahead, o), (look_ahead, 9.4 * LANE_W)
+            )
             draw_line(
                 s,
                 (255, 255, 0),
@@ -722,7 +776,13 @@ class I80(Simulator):
             m = offset
 
             for lane in lanes:
-                draw_line(s, w, (0, lane["min"] + m), (sw + 2 * m, lane["min"] + m), 1)
+                draw_line(
+                    s,
+                    w,
+                    (0, lane["min"] + m),
+                    (sw + 2 * m, lane["min"] + m),
+                    1,
+                )
 
             bottom = lanes[-1]["max"] + m
             draw_line(s, w, (0, bottom), (m + 18 * LANE_W, bottom), 1)
@@ -734,7 +794,11 @@ class I80(Simulator):
                 1,
             )
             draw_line(
-                s, w, (m + 18 * LANE_W, bottom + 13), (m + 31 * LANE_W, bottom), 1
+                s,
+                w,
+                (m + 18 * LANE_W, bottom + 13),
+                (m + 31 * LANE_W, bottom),
+                1,
             )
             draw_line(
                 s,
@@ -743,7 +807,9 @@ class I80(Simulator):
                 (m + 60 * LANE_W, bottom + 53 - slope * 60 * LANE_W),
                 1,
             )
-            draw_line(s, w, (m + 60 * LANE_W, bottom + 3), (2 * m + sw, bottom), 1)
+            draw_line(
+                s, w, (m + 60 * LANE_W, bottom + 3), (2 * m + sw, bottom), 1
+            )
 
             # offroad regions
             pygame.Surface.fill(
@@ -772,7 +838,9 @@ class I80(Simulator):
             pygame.Surface.fill(
                 s,
                 b,
-                pygame.Rect(m + 60 * LANE_W, bottom + 5, sw - 60 * LANE_W, 54 + 30 - 5),
+                pygame.Rect(
+                    m + 60 * LANE_W, bottom + 5, sw - 60 * LANE_W, 54 + 30 - 5
+                ),
             )
 
             self._lane_surfaces[mode] = surface.copy()

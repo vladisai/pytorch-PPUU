@@ -64,7 +64,9 @@ class Encoder(nn.Module):
         super().__init__()
         self.config = config
         self.config.n_inputs = (
-            self.config.n_cond if self.config.n_inputs is None else self.config.n_inputs
+            self.config.n_cond
+            if self.config.n_inputs is None
+            else self.config.n_inputs
         )
         self.f_encoder = Encoder.build_frame_encoder(
             self.config.n_channels * self.config.n_inputs,
@@ -99,9 +101,13 @@ class Encoder(nn.Module):
             )
         )
         if states is not None:
-            h = h + self.s_encoder(states.contiguous().view(bsize, -1)).view(h.size())
+            h = h + self.s_encoder(states.contiguous().view(bsize, -1)).view(
+                h.size()
+            )
         if actions is not None:
-            a = self.a_encoder(actions.contiguous().view(bsize, self.config.a_size))
+            a = self.a_encoder(
+                actions.contiguous().view(bsize, self.config.a_size)
+            )
             h = h + a.view(h.size())
         return h
 
@@ -166,11 +172,11 @@ class Decoder(nn.Module):
             opt.height
             opt.width
         """
-        super(decoder, self).__init__()
+        super(Decoder, self).__init__()
         self.layers = layers
         self.n_feature = n_feature
         self.dropout = dropout
-        self.h_height = h_heght
+        self.h_height = h_height
         self.h_width = h_width
         self.height = height
         self.width = width

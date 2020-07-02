@@ -31,17 +31,17 @@ from DimensionalityReduction import DimensionalityReduction
 
 class Picker(widgets.VBox):
     """Picker widget
-    This widget is in essence a set of drop-down menus.
-    They allow, in turns, to choose experiment, version, checkpoint, and episode.
+    This widget is in essence a set of drop-down menus.  They allow, in turns,
+    to choose experiment, version, checkpoint, and episode.
 
     The picker can be created for different levels of granularity:
         EXPERIMENT_LEVEL is only one dropdown that lets us choose the
-                         experiment.
-        MODEL_LEVEL includes dropdowns for experiment, version, and checkpoint and
-                    lets us choose the model
+            experiment.
+        MODEL_LEVEL includes dropdowns for experiment, version, and
+            checkpoint and lets us choose the model.
         EPISODE_LEVEL includes dropdowns for experiment, version, checkpoint,
-                      and episode, letting us choose evaluation of a model
-                      on a given episode.
+            and episode, letting us choose evaluation of a model on a
+            given episode.
     """
 
     EXPERIMENT_LEVEL = 0
@@ -98,7 +98,7 @@ class Picker(widgets.VBox):
             if change.name == "value" and change.new is not None:
                 self.ignore_updates = True
                 if level >= Picker.MODEL_LEVEL:
-                    self.version_dropdown.options = DataReader.find_experiment_versions(
+                    self.version_dropdown.options = DataReader.find_experiment_versions(  # noqa: E501
                         experiment=self.experiment_dropdown.value,
                     )
                     self.version_dropdown.value = None
@@ -114,7 +114,7 @@ class Picker(widgets.VBox):
                 return
             if change.name == "value" and change.new is not None:
                 self.ignore_updates = True
-                self.checkpoint_dropdown.options = DataReader.find_version_checkpoints(
+                self.checkpoint_dropdown.options = DataReader.find_version_checkpoints(  # noqa: E501
                     experiment=self.experiment_dropdown.value,
                     version=self.version_dropdown.value,
                 )
@@ -129,7 +129,7 @@ class Picker(widgets.VBox):
             if change.name == "value" and change.new is not None:
                 self.ignore_updates = True
                 if level >= Picker.EPISODE_LEVEL:
-                    self.episode_dropdown.options = DataReader.find_checkpoint_episodes(
+                    self.episode_dropdown.options = DataReader.find_checkpoint_episodes(  # noqa: E501
                         experiment=self.experiment_dropdown.value,
                         version=self.version_dropdown.value,
                         checkpoint=self.checkpoint_dropdown.value,
@@ -284,26 +284,44 @@ class EpisodeReview(widgets.VBox):
             disabled=False,
             interval=10,
         )
-        self.update_interval_slider = widgets.IntSlider(min=1, max=300, value=30,)
+        self.update_interval_slider = widgets.IntSlider(
+            min=1, max=300, value=30,
+        )
         self.update_interval_box = widgets.HBox(
-            [widgets.Label("Animation update interval:"), self.update_interval_slider,]
+            [
+                widgets.Label("Animation update interval:"),
+                self.update_interval_slider,
+            ]
         )
         self.episode_slider = widgets.IntSlider()
-        self.episode_hbox = widgets.HBox([self.episode_play, self.episode_slider])
-        self.episode_vbox = widgets.VBox([self.episode_hbox, self.update_interval_box])
-
-        widgets.jslink((self.episode_play, "value"), (self.episode_slider, "value"))
-        widgets.jslink((self.episode_play, "max"), (self.episode_slider, "max"))
-        widgets.jslink((self.episode_play, "min"), (self.episode_slider, "min"))
+        self.episode_hbox = widgets.HBox(
+            [self.episode_play, self.episode_slider]
+        )
+        self.episode_vbox = widgets.VBox(
+            [self.episode_hbox, self.update_interval_box]
+        )
 
         widgets.jslink(
-            (self.update_interval_slider, "value"), (self.episode_play, "interval"),
+            (self.episode_play, "value"), (self.episode_slider, "value")
+        )
+        widgets.jslink(
+            (self.episode_play, "max"), (self.episode_slider, "max")
+        )
+        widgets.jslink(
+            (self.episode_play, "min"), (self.episode_slider, "min")
+        )
+
+        widgets.jslink(
+            (self.update_interval_slider, "value"),
+            (self.episode_play, "interval"),
         )
 
         self.episode_gradient_image = widgets.Image(
             format="png", width=120, height=600,
         )
-        self.episode_image = widgets.Image(format="png", width=120, height=600,)
+        self.episode_image = widgets.Image(
+            format="png", width=120, height=600,
+        )
 
         x_sc = bq.LinearScale()
         # x_sc.max = size * 1.3
@@ -317,7 +335,10 @@ class EpisodeReview(widgets.VBox):
         ax_x.min = 0
         ax_x.max = 100
         ax_y = bq.Axis(
-            label="costs", scale=y_sc, orientation="vertical", grid_lines="solid",
+            label="costs",
+            scale=y_sc,
+            orientation="vertical",
+            grid_lines="solid",
         )
         ax_y2 = bq.Axis(
             label="speed",
@@ -382,13 +403,19 @@ class EpisodeReview(widgets.VBox):
         )
 
         self.images_hbox = widgets.HBox(
-            [self.episode_gradient_image, self.episode_image, self.costs_plot_box,],
+            [
+                self.episode_gradient_image,
+                self.episode_image,
+                self.costs_plot_box,
+            ],
             layout=widgets.Layout(width="100%"),
         )
 
         def episode_slider_callback(change):
             if change.name == "value" and change.new is not None:
-                gradient_shift = max(0, len(self.images) - len(self.gradient_images))
+                gradient_shift = max(
+                    0, len(self.images) - len(self.gradient_images)
+                )
                 if change.new >= gradient_shift:
                     self.episode_gradient_image.value = self.gradient_images[
                         change.new - gradient_shift
@@ -398,16 +425,22 @@ class EpisodeReview(widgets.VBox):
 
         self.episode_slider.observe(episode_slider_callback, type="change")
 
-        super(EpisodeReview, self).__init__([self.episode_vbox, self.images_hbox])
+        super(EpisodeReview, self).__init__(
+            [self.episode_vbox, self.images_hbox]
+        )
 
     def update_costs_plot(self, experiment, version, checkpoint, episode):
-        speeds = DataReader.get_episode_speeds(experiment, version, checkpoint, episode)
+        speeds = DataReader.get_episode_speeds(
+            experiment, version, checkpoint, episode
+        )
         self.costs_plot_figure.title = f"Costs and speed: episode {episode}"
         if speeds is not None:
             self.costs_plot_lines_speed.x = range(len(speeds))
             self.costs_plot_lines_speed.y = speeds
             self.costs_plot_lines_speed.labels = ["speed"]
-        costs = DataReader.get_episode_costs(experiment, version, checkpoint, episode)
+        costs = DataReader.get_episode_costs(
+            experiment, version, checkpoint, episode
+        )
         if costs is not None:
             x = costs.index
             self.x_sc.min = x[0]
@@ -444,7 +477,9 @@ class EpisodeReview(widgets.VBox):
         self.gradient_images = DataReader.get_gradients(
             experiment, version, checkpoint, episode
         )
-        self.images = DataReader.get_images(experiment, version, checkpoint, episode)
+        self.images = DataReader.get_images(
+            experiment, version, checkpoint, episode
+        )
 
         if len(self.gradient_images) > 0:
             self.episode_gradient_image.value = self.gradient_images[0]
@@ -497,7 +532,9 @@ class DimensionalityReductionPlot(widgets.VBox):
             # we only have failures
             self.episode = self.failures_indices[self.episode - 1]
             if self.callback is not None:
-                self.callback(self.experiment, self.version, self.step, self.episode)
+                self.callback(
+                    self.experiment, self.version, self.step, self.episode
+                )
             if self.widget is not None:
                 self.widget.update(
                     self.experiment, self.version, self.step, self.episode
@@ -509,50 +546,18 @@ class DimensionalityReductionPlot(widgets.VBox):
         )
 
         self.scatter_figure = Figure(
-            marks=[self.scatter], layout=widgets.Layout(height="600px", width="100%"),
+            marks=[self.scatter],
+            layout=widgets.Layout(height="600px", width="100%"),
         )
 
         traitlets.link(
-            (self.toggle_buttons, "value"), (self.scatter_figure, "interaction"),
+            (self.toggle_buttons, "value"),
+            (self.scatter_figure, "interaction"),
         )
 
         super(DimensionalityReductionPlot, self).__init__(
             [self.scatter_figure, self.toggle_buttons]
         )
-
-    def update2(self, experiment, version, step):
-        # used in developement, not currently used
-        self.experiment = experiment
-        self.version = version
-        self.step = step
-        features = DimensionalityReduction.get_model_failing_features(
-            experiment, version, step
-        )
-        self.failures_indices = DataReader.get_episodes_with_outcome(
-            experiment, version, step, 0
-        )
-
-        failure_features = features[np.array(failures[:-1]) - 1]
-
-        res = self.DimensionalityReduction.transform(features)
-        colors = ["gray"] * res.shape[0]
-        opacities = [0.3] * res.shape[0]
-
-        classes = self.DimensionalityReduction.cluster(failure_features)
-
-        category = bq.colorschemes.CATEGORY20[2:]
-        for i, f in enumerate(failures):
-            if f - 1 < len(colors):  # TODO: wtf?
-                if i < len(classes):
-                    colors[f - 1] = category[classes[i]]
-                else:
-                    colors[f - 1] = "red"
-                opacities[f - 1] = 0.8
-
-        self.scatter.x = res[:, 0]
-        self.scatter.y = res[:, 1]
-        self.scatter.colors = colors
-        self.scatter.opacity = opacities
 
     def update(self, experiment, version, step):
         """updates the scatter plot.
@@ -611,7 +616,9 @@ class PiePlot(widgets.VBox):
         super(PiePlot, self).__init__([self.pie_figure])
 
     def update(self, experiment, version, checkpoint):
-        success_rate = DataReader.get_success_rate(experiment, version, checkpoint)
+        success_rate = DataReader.get_success_rate(
+            experiment, version, checkpoint
+        )
         self.pie_plot.sizes = [success_rate, 1 - success_rate]
         self.pie_plot.labels = [
             str(round(success_rate, 2)),
@@ -645,14 +652,18 @@ class HeatMap(widgets.VBox):
                 episode = self.result_permutation[b["data"]["_cell_num"]] + 1
                 color = b["data"]["color"]
                 self.episode_grid_heat_map_label.value = (
-                    f"clicked on episode {episode} with {color}" "successful cases"
+                    f"clicked on episode {episode} with {color}"
+                    "successful cases"
                 )
 
         self.episode_grid_heat_map.on_click(heat_map_click_callback)
         self.episode_grid_heat_map.on_element_click(heat_map_click_callback)
 
         super(HeatMap, self).__init__(
-            [self.episode_grid_heat_map_figure, self.episode_grid_heat_map_label,]
+            [
+                self.episode_grid_heat_map_figure,
+                self.episode_grid_heat_map_label,
+            ]
         )
 
     def update(self, experiment):
@@ -706,7 +717,8 @@ class HeatMapComparison(widgets.VBox):
                 episode = self.result_permutation[b["data"]["_cell_num"]] + 1
                 color = b["data"]["color"]
                 self.episode_grid_heat_map_label.value = (
-                    f"clicked on episode {episode} with {color}" "successful cases"
+                    f"clicked on episode {episode} with {color}"
+                    "successful cases"
                 )
 
         self.episode_grid_heat_map.on_click(heat_map_click_callback)
@@ -749,14 +761,17 @@ class EpisodeVisualizer(widgets.VBox):
     def __init__(self, results, episode=0):
         self.images = results["images"][episode].numpy()
         if "state_sequences" in results:
-            # states contain sequences of 20, the last state being the present state.
+            # states contain sequences of 20, the last state being the present
+            # state.
             self.states = results["state_sequences"][episode].numpy()[:, -1, :]
         else:
             self.states = None
 
         if "action_sequences" in results:
-            # actions contain sequences of 30, the first being the action taken.
-            self.actions = results["action_sequences"][episode].numpy()[:, 0, :]
+            # actions contain sequences of 30, the first being the action taken
+            self.actions = results["action_sequences"][episode].numpy()[
+                :, 0, :
+            ]
         else:
             self.states = None
 
@@ -773,27 +788,47 @@ class EpisodeVisualizer(widgets.VBox):
             disabled=False,
             interval=10,
         )
-        self.update_interval_slider = widgets.IntSlider(min=1, max=300, value=30,)
+        self.update_interval_slider = widgets.IntSlider(
+            min=1, max=300, value=30,
+        )
         self.update_interval_box = widgets.HBox(
-            [widgets.Label("Animation update interval:"), self.update_interval_slider,]
+            [
+                widgets.Label("Animation update interval:"),
+                self.update_interval_slider,
+            ]
         )
         self.state_action_label = widgets.Label("State and action: None")
 
         self.episode_slider = widgets.IntSlider()
-        self.episode_hbox = widgets.HBox([self.episode_play, self.episode_slider])
-        self.episode_vbox = widgets.VBox(
-            [self.episode_hbox, self.update_interval_box, self.state_action_label,]
+        self.episode_hbox = widgets.HBox(
+            [self.episode_play, self.episode_slider]
         )
-
-        widgets.jslink((self.episode_play, "value"), (self.episode_slider, "value"))
-        widgets.jslink((self.episode_play, "max"), (self.episode_slider, "max"))
-        widgets.jslink((self.episode_play, "min"), (self.episode_slider, "min"))
+        self.episode_vbox = widgets.VBox(
+            [
+                self.episode_hbox,
+                self.update_interval_box,
+                self.state_action_label,
+            ]
+        )
 
         widgets.jslink(
-            (self.update_interval_slider, "value"), (self.episode_play, "interval"),
+            (self.episode_play, "value"), (self.episode_slider, "value")
+        )
+        widgets.jslink(
+            (self.episode_play, "max"), (self.episode_slider, "max")
+        )
+        widgets.jslink(
+            (self.episode_play, "min"), (self.episode_slider, "min")
         )
 
-        self.episode_image = widgets.Image(format="png", width=120, height=600,)
+        widgets.jslink(
+            (self.update_interval_slider, "value"),
+            (self.episode_play, "interval"),
+        )
+
+        self.episode_image = widgets.Image(
+            format="png", width=120, height=600,
+        )
 
         def episode_slider_callback(change):
             if change.name == "value" and change.new is not None:
@@ -811,4 +846,6 @@ class EpisodeVisualizer(widgets.VBox):
         self.episode_slider.observe(episode_slider_callback, type="change")
         self.episode_slider.value = 0
 
-        super(EpisodeVisualizer, self).__init__([self.episode_vbox, self.episode_image])
+        super(EpisodeVisualizer, self).__init__(
+            [self.episode_vbox, self.episode_image]
+        )
