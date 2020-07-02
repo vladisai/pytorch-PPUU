@@ -18,7 +18,7 @@ class PatchedCar(Car):
 
     def get_lane_set(self, lanes):
         # Bottom end of normal lanes
-        bottom = lanes[-1]['max']
+        bottom = lanes[-1]["max"]
 
         # No merging
         if self._position[1] < bottom:
@@ -26,7 +26,7 @@ class PatchedCar(Car):
 
         # Done merging
         if self._position[0] > 60 * LANE_W:
-            self._target_lane = lanes[-1]['mid']
+            self._target_lane = lanes[-1]["mid"]
             return {5}
 
         # We're on ramp!
@@ -50,10 +50,13 @@ class MergingMap(Simulator):
     _draw_lanes = I80._draw_lanes
 
     def __init__(self, **kwargs):
-        kwargs['nb_lanes'] = 6
-        kwargs['delta_t'] = 1/10
+        kwargs["nb_lanes"] = 6
+        kwargs["delta_t"] = 1 / 10
         super().__init__(**kwargs)
         self.nb_lanes = 7
-        self.screen_size = (85 * self.LANE_W, self.nb_lanes * self.LANE_W + 5 * self.LANE_W)
+        self.screen_size = (
+            85 * self.LANE_W,
+            self.nb_lanes * self.LANE_W + 5 * self.LANE_W,
+        )
         if self.display:  # if display is required
             self.screen = pygame.display.set_mode(self.screen_size)  # set screen size

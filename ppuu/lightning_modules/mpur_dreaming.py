@@ -18,24 +18,17 @@ class MPURDreamingModule(MPURModule):
 
     def get_adversarial_z(self, batch):
         z = self.forward_model.sample_z(
-            self.config.model_config.n_pred
-            * self.config.training_config.batch_size
+            self.config.model_config.n_pred * self.config.training_config.batch_size
         )
         z = z.view(
-            self.config.training_config.batch_size,
-            self.config.model_config.n_pred,
-            -1,
+            self.config.training_config.batch_size, self.config.model_config.n_pred, -1,
         ).detach()
         z.requires_grad = True
         optimizer_z = self.get_z_optimizer(z)
 
         for i in range(self.config.training_config.n_z_updates):
-            predictions = self.forward_model.unfold(
-                self.policy_model, batch, z
-            )
-            cost, components = self.policy_cost.calculate_z_cost(
-                batch, predictions
-            )
+            predictions = self.forward_model.unfold(self.policy_model, batch, z)
+            cost, components = self.policy_cost.calculate_z_cost(batch, predictions)
             self.log_z(cost, components, "adv")
             optimizer_z.zero_grad()
             cost.backward()
@@ -65,15 +58,11 @@ class MPURDreamingModule(MPURModule):
     def training_step(self, batch, batch_idx):
         if batch_idx % self.config.training_config.adversarial_frequency == 0:
             predictions = self.forward_adversarial(batch)
-            cost, components = self.policy_cost.calculate_z_cost(
-                batch, predictions
-            )
+            cost, components = self.policy_cost.calculate_z_cost(batch, predictions)
             self.log_z(cost, components, "adv")
         else:
             predictions = self.forward(batch)
-            cost, components = self.policy_cost.calculate_z_cost(
-                batch, predictions
-            )
+            cost, components = self.policy_cost.calculate_z_cost(batch, predictions)
             self.log_z(cost, components, "normal")
         loss = self.policy_cost.calculate_cost(batch, predictions)
         return {

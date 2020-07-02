@@ -24,9 +24,7 @@ class DeterministicPolicy(nn.Module):
         self.h_width = h_width
         self.n_hidden = n_hidden
         self.encoder = Encoder(
-            Encoder.Config(
-                a_size=0, n_inputs=self.n_cond, n_channels=self.n_channels
-            )
+            Encoder.Config(a_size=0, n_inputs=self.n_cond, n_channels=self.n_channels)
         )
         self.n_outputs = self.n_actions
         self.hsize = self.n_feature * self.h_height * self.h_width

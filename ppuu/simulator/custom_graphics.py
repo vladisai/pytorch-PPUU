@@ -55,7 +55,9 @@ def draw_text(screen, text, xy, font_size=30, colour=(255, 255, 255), font=None)
 
 def draw_rect(screen, colour, rect, direction=(1, 0), thickness=0):
     x, y, l, w = rect
-    xy = np.array(((x, y - w/2), (x, y + w/2), (x + l, y + w/2), (x + l, y - w/2)))
+    xy = np.array(
+        ((x, y - w / 2), (x, y + w / 2), (x + l, y + w / 2), (x + l, y - w / 2))
+    )
     c, s = direction
     rot = np.array(((c, -s), (s, c)))
     xy = (rot @ (xy - (x, y)).T).T + (x, y)

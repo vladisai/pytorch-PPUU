@@ -14,7 +14,7 @@ already_run = ["dreaming_uptrain", "fixed_eval_4"]
 
 def submit(executor, path):
     print("submitting", path)
-    if path.endswith('=0.ckpt'):
+    if path.endswith("=0.ckpt"):
         return None
     config = eval_policy.EvalConfig(
         checkpoint_path=path, save_gradients=True, num_processes=10
@@ -35,16 +35,12 @@ def main():
         help="interval in seconds between checks for new results",
     )
     parser.add_argument(
-        "--new_only",
-        action='store_true',
-        help="don't evaluate existing checkpoints",
+        "--new_only", action="store_true", help="don't evaluate existing checkpoints",
     )
     parser.add_argument("--cluster", type=str, default="slurm")
     opt = parser.parse_args()
 
-    executor = slurm.get_executor(
-        job_name="eval", cpus_per_task=8, cluster=opt.cluster
-    )
+    executor = slurm.get_executor(job_name="eval", cpus_per_task=8, cluster=opt.cluster)
     executor.update_parameters(slurm_time="1:00:00")
 
     path_regex = os.path.join(opt.dir, "**/*.ckpt")

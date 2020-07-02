@@ -10,9 +10,7 @@ class ForwardModelKM(ForwardModel):
         states = states.clone()
         actions = actions.clone()
 
-        ss_std = (
-            1e-8 + stats["s_std"][0].view(1, 4).expand(states.size())
-        ).cuda()
+        ss_std = (1e-8 + stats["s_std"][0].view(1, 4).expand(states.size())).cuda()
         ss_mean = stats["s_mean"][0].view(1, 4).expand(states.size()).cuda()
         aa_std = (1e-8 + stats["a_std"][0].view(1, 2)).cuda()
         aa_mean = stats["a_mean"][0].view(1, 2).cuda()
@@ -25,7 +23,7 @@ class ForwardModelKM(ForwardModel):
 
         positions = states[:, :2]
         speeds = states[:, 2:]
-        speeds_norm = (speeds.norm(dim=1).view(speeds.shape[0], 1))
+        speeds_norm = speeds.norm(dim=1).view(speeds.shape[0], 1)
 
         directions_with_negative = speeds / torch.clamp(speeds_norm, min=1e-8, max=1e6)
         directions = torch.stack(
@@ -38,16 +36,17 @@ class ForwardModelKM(ForwardModel):
 
         new_positions = positions + timestep * speeds_norm * directions
 
-        ortho_directions = torch.stack(
-            [directions[:, 1], -directions[:, 0]], axis=1
-        )
+        ortho_directions = torch.stack([directions[:, 1], -directions[:, 0]], axis=1)
 
         new_directions_unnormed = (
-            directions
-            + ortho_directions * b.unsqueeze(1) * speeds_norm * timestep
+            directions + ortho_directions * b.unsqueeze(1) * speeds_norm * timestep
         )
         new_directions = new_directions_unnormed / (
-            torch.clamp(new_directions_unnormed.norm(dim=1).view(speeds.shape[0], 1), min=1e-8, max=1e6)
+            torch.clamp(
+                new_directions_unnormed.norm(dim=1).view(speeds.shape[0], 1),
+                min=1e-8,
+                max=1e6,
+            )
         )
 
         new_speeds_norm = speeds_norm + a.unsqueeze(1) * timestep
@@ -60,10 +59,7 @@ class ForwardModelKM(ForwardModel):
         return new_states
 
     def unfold_km(
-        self,
-        actions_or_policy: Union[torch.nn.Module, torch.Tensor],
-        batch,
-        Z=None,
+        self, actions_or_policy: Union[torch.nn.Module, torch.Tensor], batch, Z=None,
     ):
         def cat_inputs(inputs, new_value):
             if len(new_value.shape) < len(inputs.shape):
@@ -111,17 +107,13 @@ class ForwardModelKM(ForwardModel):
             if torch.is_tensor(actions_or_policy):
                 actions = actions_or_policy[:, t]
             else:
-                actions = actions_or_policy(
-                    input_images_with_ego, input_states
-                )
+                actions = actions_or_policy(input_images_with_ego, input_states)
 
             z_t = Z[:, t]
             pred_image, pred_state = self.forward_single_step(
                 input_images, input_states_km, actions, z_t
             )
-            pred_state_km = self.predict_states(
-                input_states_km[:, -1], actions, stats
-            )
+            pred_state_km = self.predict_states(input_states_km[:, -1], actions, stats)
             pred_state_km_a = self.predict_states(
                 input_states_km_a[:, -1],
                 torch.stack([actions[:, 0], actions[:, 1].detach()], axis=1),

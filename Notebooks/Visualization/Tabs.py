@@ -24,10 +24,8 @@ class EpisodeReviewTab(widgets.VBox):
 
     def __init__(self):
         self.episode_review = EpisodeReview()
-        self.picker = Picker(
-            Picker.EPISODE_LEVEL, widget=self.episode_review)
-        super(EpisodeReviewTab, self).__init__(
-            [self.picker, self.episode_review])
+        self.picker = Picker(Picker.EPISODE_LEVEL, widget=self.episode_review)
+        super(EpisodeReviewTab, self).__init__([self.picker, self.episode_review])
 
 
 class PiePlotTab(widgets.VBox):
@@ -36,8 +34,7 @@ class PiePlotTab(widgets.VBox):
 
     def __init__(self):
         self.pie_plot = PiePlot()
-        self.picker = Picker(Picker.MODEL_LEVEL,
-                             widget=self.pie_plot)
+        self.picker = Picker(Picker.MODEL_LEVEL, widget=self.pie_plot)
         super(PiePlotTab, self).__init__([self.picker, self.pie_plot])
 
 
@@ -48,11 +45,14 @@ class DimensionalityReductionPlotTab(widgets.VBox):
     def __init__(self):
         self.episode_review = EpisodeReview()
         self.dimensionality_reduction_plot = DimensionalityReductionPlot(
-            widget=self.episode_review)
-        self.picker = Picker(Picker.MODEL_LEVEL,
-                             widget=self.dimensionality_reduction_plot)
+            widget=self.episode_review
+        )
+        self.picker = Picker(
+            Picker.MODEL_LEVEL, widget=self.dimensionality_reduction_plot
+        )
         super(DimensionalityReductionPlotTab, self).__init__(
-            [self.picker, self.dimensionality_reduction_plot, self.episode_review])
+            [self.picker, self.dimensionality_reduction_plot, self.episode_review]
+        )
 
 
 class HeatMapTab(widgets.VBox):
@@ -61,8 +61,7 @@ class HeatMapTab(widgets.VBox):
 
     def __init__(self):
         self.heat_map = HeatMap()
-        self.picker = Picker(
-            Picker.EXPERIMENT_LEVEL, widget=self.heat_map)
+        self.picker = Picker(Picker.EXPERIMENT_LEVEL, widget=self.heat_map)
 
         super(HeatMapTab, self).__init__([self.picker, self.heat_map])
 
@@ -81,25 +80,20 @@ class HeatMapComparisonTab(widgets.VBox):
     def __init__(self):
 
         self.heat_map = HeatMapComparison()
-        self.picker0 = Picker(
-            Picker.MODEL_LEVEL, callback=self.get_callback(0))
-        self.picker1 = Picker(
-            Picker.MODEL_LEVEL, callback=self.get_callback(1))
+        self.picker0 = Picker(Picker.MODEL_LEVEL, callback=self.get_callback(0))
+        self.picker1 = Picker(Picker.MODEL_LEVEL, callback=self.get_callback(1))
 
         self.picked_values = [None, None]
 
         self.pickers_hbox = widgets.HBox([self.picker0, self.picker1])
 
-        super(HeatMapComparisonTab, self).__init__(
-            [self.pickers_hbox, self.heat_map])
+        super(HeatMapComparisonTab, self).__init__([self.pickers_hbox, self.heat_map])
 
     def get_callback(self, index):
         def callback(episode, seed, step):
             self.picked_values[index] = (episode, seed, step)
-            if self.picked_values[0] is not None and \
-               self.picked_values[1] is not None:
-                self.heat_map.update(
-                    self.picked_values[0], self.picked_values[1])
+            if self.picked_values[0] is not None and self.picked_values[1] is not None:
+                self.heat_map.update(self.picked_values[0], self.picked_values[1])
 
         return callback
 
@@ -114,7 +108,7 @@ class PolicyComparisonTab(widgets.VBox):
     def __init__(self):
         self.experiment_multiselect = widgets.SelectMultiple(
             options=list(DataReader.find_experiments()),
-            description='Experiments:',
+            description="Experiments:",
             disabled=False,
             value=[],
         )
@@ -122,13 +116,15 @@ class PolicyComparisonTab(widgets.VBox):
         self.policy_comparison = PolicyComparison()
 
         def experiment_multiselect_change_callback(change):
-            if change.name == 'value' and change.new is not None:
+            if change.name == "value" and change.new is not None:
                 self.policy_comparison.update(change.new)
 
         self.experiment_multiselect.observe(
-            experiment_multiselect_change_callback, type='change')
+            experiment_multiselect_change_callback, type="change"
+        )
         super(PolicyComparisonTab, self).__init__(
-            [self.experiment_multiselect, self.policy_comparison])
+            [self.experiment_multiselect, self.policy_comparison]
+        )
 
 
 # class ExperimentsDirectoryTab(widgets.HBox):
@@ -226,7 +222,7 @@ class PolicyComparisonTab(widgets.VBox):
 #         This functions serves to rebuild the selector with the
 #         actual values. Used when we add a new value, delete a value,
 #         and each time we change a the name
-#         of a given experiment. It updates the values in the selector, 
+#         of a given experiment. It updates the values in the selector,
 #         preserving the selection.
 #         """
 #         self.ignore_update = True

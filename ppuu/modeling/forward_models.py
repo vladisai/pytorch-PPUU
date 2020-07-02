@@ -21,10 +21,7 @@ class ForwardModel(torch.nn.Module):
         return getattr(self._modules["forward_model"], name)
 
     def unfold(
-        self,
-        actions_or_policy: Union[torch.nn.Module, torch.Tensor],
-        batch,
-        Z=None,
+        self, actions_or_policy: Union[torch.nn.Module, torch.Tensor], batch, Z=None,
     ):
         input_images = batch["input_images"].clone()
         input_states = batch["input_states"].clone()
@@ -59,18 +56,14 @@ class ForwardModel(torch.nn.Module):
             if torch.is_tensor(actions_or_policy):
                 actions = actions_or_policy[:, t]
             else:
-                actions = actions_or_policy(
-                    input_images_with_ego, input_states
-                )
+                actions = actions_or_policy(input_images_with_ego, input_states)
 
             z_t = Z[:, t]
             pred_image, pred_state = self.forward_single_step(
                 input_images, input_states, actions, z_t
             )
             input_images = torch.cat((input_images[:, 1:], pred_image), 1)
-            input_states = torch.cat(
-                (input_states[:, 1:], pred_state.unsqueeze(1)), 1
-            )
+            input_states = torch.cat((input_states[:, 1:], pred_state.unsqueeze(1)), 1)
 
             if ego_car_required:
                 pred_image_with_ego = torch.cat(

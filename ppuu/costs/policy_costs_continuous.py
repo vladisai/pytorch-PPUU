@@ -60,14 +60,10 @@ class PolicyCostContinuous(PolicyCost):
         x_filter = torch.min(
             x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size())
         )
-        x_filter = (
-            x_filter == max_x.unsqueeze(1).expand(x_filter.size())
-        ).float()
+        x_filter = (x_filter == max_x.unsqueeze(1).expand(x_filter.size())).float()
 
         y_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_w))) * crop_w / 2
-        y_filter = (
-            y_filter.view(1, crop_w).expand(bsize * npred, crop_w).cuda()
-        )
+        y_filter = y_filter.view(1, crop_w).expand(bsize * npred, crop_w).cuda()
         #    y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
         y_filter = torch.max(y_filter, min_y.view(bsize * npred, 1))
         y_filter = (y_filter - min_y.view(bsize * npred, 1)) / (
@@ -82,8 +78,7 @@ class PolicyCostContinuous(PolicyCost):
         proximity_mask = proximity_mask ** 2
         images = images.view(bsize, npred, nchannels, crop_h, crop_w)
         costs = torch.sum(
-            (proximity_mask * images[:, :, 0].float()).view(bsize, npred, -1),
-            2,
+            (proximity_mask * images[:, :, 0].float()).view(bsize, npred, -1), 2,
         )
         return costs.view(bsize, npred), proximity_mask
 
@@ -91,8 +86,7 @@ class PolicyCostContinuous(PolicyCost):
         bsize, npred, nchannels, crop_h, crop_w = images.size()
         images = images.view(bsize, npred, nchannels, crop_h, crop_w)
         costs = torch.sum(
-            (proximity_mask * images[:, :, 2].float()).view(bsize, npred, -1),
-            2,
+            (proximity_mask * images[:, :, 2].float()).view(bsize, npred, -1), 2,
         )
         return costs.view(bsize, npred)
 
@@ -111,9 +105,7 @@ class PolicyCostContinuous(PolicyCost):
         ).view(3, 1, 2)
         vertical_filter = vertical_filter.expand(1, 3, 1, 2)
 
-        horizontal = F.conv2d(
-            images, horizontal_filter, stride=1, padding=(1, 0)
-        )
+        horizontal = F.conv2d(images, horizontal_filter, stride=1, padding=(1, 0))
         horizontal = horizontal[:, :, :-1, :]
 
         vertical = F.conv2d(images, vertical_filter, stride=1, padding=(0, 1))
@@ -153,16 +145,12 @@ class PolicyCostContinuous(PolicyCost):
             states = (
                 states
                 * (
-                    1e-8
-                    + self.data_stats["s_std"].view(1, 4).expand(states.size())
+                    1e-8 + self.data_stats["s_std"].view(1, 4).expand(states.size())
                 ).cuda()
             )
             states = (
                 states
-                + self.data_stats["s_mean"]
-                .view(1, 4)
-                .expand(states.size())
-                .cuda()
+                + self.data_stats["s_mean"].view(1, 4).expand(states.size()).cuda()
             )
 
         speed = states[:, 2:].norm(2, 1) * SCALE  # pixel/s
@@ -223,9 +211,9 @@ class PolicyCostContinuous(PolicyCost):
         )
         x_filter = torch.max(x_filter, min_x.view(bsize * npred, 1))
 
-        x_filter = (x_filter - min_x.view(bsize * npred, 1)) / (
-            max_x - min_x
-        ).view(bsize * npred, 1)
+        x_filter = (x_filter - min_x.view(bsize * npred, 1)) / (max_x - min_x).view(
+            bsize * npred, 1
+        )
         y_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_w))) * crop_w / 2
         y_filter = (
             y_filter.view(1, crop_w)
@@ -275,16 +263,10 @@ class PolicyCostContinuous(PolicyCost):
     def compute_state_costs(self, pred_images, pred_states, car_sizes):
         npred = pred_images.size(1)
         gamma_mask = (
-            torch.tensor([0.99 ** t for t in range(npred + 1)])
-            .cuda()
-            .unsqueeze(0)
+            torch.tensor([0.99 ** t for t in range(npred + 1)]).cuda().unsqueeze(0)
         )
         proximity_cost = self.compute_proximity_cost(
-            pred_images,
-            pred_states.data,
-            car_sizes,
-            unnormalize=True,
-            clip=False,
+            pred_images, pred_states.data, car_sizes, unnormalize=True, clip=False,
         )["costs"]
         lane_cost, prox_map_l = self.compute_lane_cost(pred_images, car_sizes)
         offroad_cost = self.compute_offroad_cost(pred_images, prox_map_l)

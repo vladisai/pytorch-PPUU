@@ -25,9 +25,7 @@ class ConfigBase:
 
     @classmethod
     def parse_from_dict(cls, inputs):
-        return DataclassArgParser(cls)._populate_dataclass_from_dict(
-            cls, inputs.copy()
-        )
+        return DataclassArgParser(cls)._populate_dataclass_from_dict(cls, inputs.copy())
 
 
 @dataclass
@@ -88,9 +86,7 @@ class DataclassArgParser(argparse.ArgumentParser):
     """
 
     def __init__(
-        self,
-        dataclass_types: Union[DataClassType, Iterable[DataClassType]],
-        **kwargs,
+        self, dataclass_types: Union[DataClassType, Iterable[DataClassType]], **kwargs,
     ):
         """
         Args:
@@ -170,9 +166,7 @@ class DataclassArgParser(argparse.ArgumentParser):
         return outputs
 
     @staticmethod
-    def _populate_dataclass(
-        dtype: DataClassType, namespace: argparse.Namespace
-    ):
+    def _populate_dataclass(dtype: DataClassType, namespace: argparse.Namespace):
         keys = {f.name for f in dataclasses.fields(dtype)}
         inputs = {k: v for k, v in vars(namespace).items() if k in keys}
         for k in keys:

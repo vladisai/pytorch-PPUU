@@ -67,7 +67,6 @@ class DataStore:
         return time_slot, car_id
 
 
-
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, data_store, split, n_cond, n_pred, size):
         self.split = split
@@ -96,8 +95,7 @@ class Dataset(torch.utils.data.Dataset):
             # min is important since sometimes numbers do not align causing
             # issues in stack operation below
             episode_length = min(
-                self.data_store.images[s].size(0),
-                self.data_store.states[s].size(0),
+                self.data_store.images[s].size(0), self.data_store.states[s].size(0),
             )
             if episode_length >= T:
                 t = self.random.randint(0, episode_length - T)
@@ -181,24 +179,20 @@ class Dataset(torch.utils.data.Dataset):
             (1, 1, 4) if states.dim() == 3 else (1, 4)
         )  # dim = 3: state sequence, dim = 2: single state
         states -= (
-            self.data_store.s_mean.view(*shape)
-            .expand(states.size())
-            .to(states.device)
+            self.data_store.s_mean.view(*shape).expand(states.size()).to(states.device)
         )
-        states /= (
-            1e-8 + self.data_store.s_std.view(*shape).expand(states.size())
-        ).to(states.device)
+        states /= (1e-8 + self.data_store.s_std.view(*shape).expand(states.size())).to(
+            states.device
+        )
         return states
 
     def normalise_action(self, actions):
         actions -= (
-            self.data_store.a_mean.view(1, 2)
-            .expand(actions.size())
-            .to(actions.device)
+            self.data_store.a_mean.view(1, 2).expand(actions.size()).to(actions.device)
         )
-        actions /= (
-            1e-8 + self.data_store.a_std.view(1, 2).expand(actions.size())
-        ).to(actions.device)
+        actions /= (1e-8 + self.data_store.a_std.view(1, 2).expand(actions.size())).to(
+            actions.device
+        )
         return actions
 
 
@@ -261,9 +255,7 @@ class EvaluationDataset(torch.utils.data.Dataset):
             yield self[i]
 
     def __getitem__(self, i):
-        car_info = self.get_episode_car_info(
-            self.splits[self.split][i]
-        )
+        car_info = self.get_episode_car_info(self.splits[self.split][i])
         return car_info
 
     def get_episode_car_info(self, episode):

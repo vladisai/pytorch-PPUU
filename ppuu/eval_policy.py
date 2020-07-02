@@ -29,6 +29,7 @@ from ppuu.lightning_modules.mpur import MPURModule
 from ppuu.eval import PolicyEvaluator
 from ppuu import slurm
 
+
 def get_optimal_pool_size():
     available_processes = len(os.sched_getaffinity(0))
     # we can't use more than 10, as in that case we don't fit into Gpu.
@@ -79,10 +80,7 @@ def main(config):
     )
 
     evaluator = PolicyEvaluator(
-        test_dataset,
-        4,
-        build_gradients=config.save_gradients,
-        enable_logging=True,
+        test_dataset, 4, build_gradients=config.save_gradients, enable_logging=True,
     )
     result = evaluator.evaluate(mpur_module, output_dir=config.output_dir)
     print(result["stats"])
@@ -93,7 +91,7 @@ if __name__ == "__main__":
     config = EvalConfig.parse_from_command_line()
     use_slurm = slurm.parse_from_command_line()
     if use_slurm:
-        executor = slurm.get_executor('eval', 8)
+        executor = slurm.get_executor("eval", 8)
         job = executor.submit(main, config)
         print(f"submitted to slurm with job id: {job.job_id}")
     else:

@@ -7,13 +7,7 @@ from ppuu.modeling.common_models import Encoder, UNetwork, Decoder
 
 class encoder(nn.Module):
     def __init__(
-        self,
-        opt,
-        a_size,
-        n_inputs,
-        states=True,
-        state_input_size=4,
-        n_channels=3,
+        self, opt, a_size, n_inputs, states=True, state_input_size=4, n_channels=3,
     ):
         super(encoder, self).__init__()
         self.opt = opt
@@ -29,9 +23,7 @@ class encoder(nn.Module):
                 opt.nfeature,
             )
             self.f_encoder = nn.Sequential(
-                nn.Conv2d(
-                    n_channels * self.n_inputs, self.feature_maps[0], 4, 2, 1
-                ),
+                nn.Conv2d(n_channels * self.n_inputs, self.feature_maps[0], 4, 2, 1),
                 nn.Dropout2d(p=opt.dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv2d(self.feature_maps[0], self.feature_maps[1], 4, 2, 1),
@@ -48,9 +40,7 @@ class encoder(nn.Module):
                 opt.nfeature,
             )
             self.f_encoder = nn.Sequential(
-                nn.Conv2d(
-                    n_channels * self.n_inputs, self.feature_maps[0], 4, 2, 1
-                ),
+                nn.Conv2d(n_channels * self.n_inputs, self.feature_maps[0], 4, 2, 1),
                 nn.Dropout2d(p=opt.dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv2d(self.feature_maps[0], self.feature_maps[1], 4, 2, 1),
@@ -92,16 +82,11 @@ class encoder(nn.Module):
         bsize = images.size(0)
         h = self.f_encoder(
             images.view(
-                bsize,
-                self.n_inputs * self.n_channels,
-                self.opt.height,
-                self.opt.width,
+                bsize, self.n_inputs * self.n_channels, self.opt.height, self.opt.width,
             )
         )
         if states is not None:
-            h = h + self.s_encoder(states.contiguous().view(bsize, -1)).view(
-                h.size()
-            )
+            h = h + self.s_encoder(states.contiguous().view(bsize, -1)).view(h.size())
         if actions is not None:
             a = self.a_encoder(actions.contiguous().view(bsize, self.a_size))
             h = h + a.view(h.size())
@@ -120,14 +105,10 @@ class u_network(nn.Module):
         )
 
         self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(
-                self.opt.nfeature, self.opt.nfeature, (4, 1), 2, 1
-            ),
+            nn.ConvTranspose2d(self.opt.nfeature, self.opt.nfeature, (4, 1), 2, 1),
             nn.Dropout2d(p=opt.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.ConvTranspose2d(
-                self.opt.nfeature, self.opt.nfeature, (4, 3), 2, 0
-            ),
+            nn.ConvTranspose2d(self.opt.nfeature, self.opt.nfeature, (4, 3), 2, 0),
         )
 
         assert self.opt.layers == 3  # hardcoded sizes
@@ -166,11 +147,7 @@ class decoder(nn.Module):
                 nn.Dropout2d(p=opt.dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.ConvTranspose2d(
-                    self.feature_maps[1],
-                    self.feature_maps[0],
-                    (5, 5),
-                    2,
-                    (0, 1),
+                    self.feature_maps[1], self.feature_maps[0], (5, 5), 2, (0, 1),
                 ),
                 nn.Dropout2d(p=opt.dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
@@ -184,11 +161,7 @@ class decoder(nn.Module):
                 nn.Dropout2d(p=opt.dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv2d(
-                    self.feature_maps[2],
-                    self.feature_maps[2],
-                    (4, 1),
-                    (2, 1),
-                    0,
+                    self.feature_maps[2], self.feature_maps[2], (4, 1), (2, 1), 0,
                 ),
                 nn.Dropout2d(p=opt.dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
@@ -210,20 +183,12 @@ class decoder(nn.Module):
                 nn.Dropout2d(p=opt.dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.ConvTranspose2d(
-                    self.feature_maps[2],
-                    self.feature_maps[1],
-                    (5, 5),
-                    2,
-                    (0, 1),
+                    self.feature_maps[2], self.feature_maps[1], (5, 5), 2, (0, 1),
                 ),
                 nn.Dropout2d(p=opt.dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.ConvTranspose2d(
-                    self.feature_maps[1],
-                    self.feature_maps[0],
-                    (2, 4),
-                    2,
-                    (1, 0),
+                    self.feature_maps[1], self.feature_maps[0], (2, 4), 2, (1, 0),
                 ),
                 nn.Dropout2d(p=opt.dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
@@ -252,15 +217,11 @@ class decoder(nn.Module):
 
     def forward(self, h):
         bsize = h.size(0)
-        h = h.view(
-            bsize, self.feature_maps[-1], self.opt.h_height, self.opt.h_width
-        )
+        h = h.view(bsize, self.feature_maps[-1], self.opt.h_height, self.opt.h_width)
         h_reduced = self.h_reducer(h).view(bsize, -1)
         pred_state = self.s_predictor(h_reduced)
         pred_image = self.f_decoder(h)
-        pred_image = pred_image[
-            :, :, : self.opt.height, : self.opt.width
-        ].clone()
+        pred_image = pred_image[:, :, : self.opt.height, : self.opt.width].clone()
         pred_image = pred_image.view(
             bsize, 1, 3 * self.n_out, self.opt.height, self.opt.width
         )
@@ -319,18 +280,14 @@ class FwdCNN(nn.Module):
         # encode the inputs (without the action)
         bsize = input_images.size(0)
         h_x = self.encoder(input_images, input_states)
-        h_x = h_x.view(
-            bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width
-        )
+        h_x = h_x.view(bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width)
         a_emb = self.a_encoder(action).view(h_x.size())
 
         h = h_x
         h = h + a_emb
         h = h + self.u_network(h)
         pred_image, pred_state = self.decoder(h)
-        pred_image = torch.sigmoid(
-            pred_image + input_images[:, -1].unsqueeze(1)
-        )
+        pred_image = torch.sigmoid(pred_image + input_images[:, -1].unsqueeze(1))
         pred_state = pred_state + input_states[:, -1]
         return pred_image, pred_state
 
@@ -344,14 +301,10 @@ class FwdCNN(nn.Module):
             h = h + a_emb
             h = h + self.u_network(h)
             pred_image, pred_state = self.decoder(h)
-            pred_image = torch.sigmoid(
-                pred_image + input_images[:, -1].unsqueeze(1)
-            )
+            pred_image = torch.sigmoid(pred_image + input_images[:, -1].unsqueeze(1))
             pred_state = pred_state + input_states[:, -1]
             input_images = torch.cat((input_images[:, 1:], pred_image), 1)
-            input_states = torch.cat(
-                (input_states[:, 1:], pred_state.unsqueeze(1)), 1
-            )
+            input_states = torch.cat((input_states[:, 1:], pred_state.unsqueeze(1)), 1)
             pred_images.append(pred_image)
             pred_states.append(pred_state)
 
@@ -402,9 +355,7 @@ class FwdCNN_VAE(nn.Module):
             self.encoder.n_inputs = opt.ncond
             self.decoder.n_out = 1
 
-        self.y_encoder = Encoder(
-            Encoder.Config(a_size=0, n_inputs=1, states=False)
-        )
+        self.y_encoder = Encoder(Encoder.Config(a_size=0, n_inputs=1, states=False))
 
         self.z_network = nn.Sequential(
             nn.Linear(opt.hidden_size, opt.nfeature),
@@ -438,18 +389,14 @@ class FwdCNN_VAE(nn.Module):
         z_exp = self.z_expander(z).view(
             bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width
         )
-        h_x = h_x.view(
-            bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width
-        )
+        h_x = h_x.view(bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width)
         a_emb = self.a_encoder(action).view(h_x.size())
 
         h = h_x + z_exp
         h = h + a_emb
         h = h + self.u_network(h)
         pred_image, pred_state = self.decoder(h)
-        pred_image = torch.sigmoid(
-            pred_image + input_images[:, -1].unsqueeze(1)
-        )
+        pred_image = torch.sigmoid(pred_image + input_images[:, -1].unsqueeze(1))
         pred_state = pred_state + input_states[:, -1]
 
         return pred_image, pred_state
@@ -483,24 +430,20 @@ class FwdCNN_VAE(nn.Module):
                 # we are training or estimating z distribution
                 target_images, target_states, _ = targets
                 # encode the targets into z
-                h_y = self.y_encoder(
-                    target_images[:, t].unsqueeze(1).contiguous()
-                )
+                h_y = self.y_encoder(target_images[:, t].unsqueeze(1).contiguous())
                 if random.random() < z_dropout:
                     z = self.sample_z(bsize, method=None, h_x=h_x).data
                 else:
-                    mu_logvar = self.z_network(
-                        (h_x + h_y).view(bsize, -1)
-                    ).view(bsize, 2, self.opt.nz)
+                    mu_logvar = self.z_network((h_x + h_y).view(bsize, -1)).view(
+                        bsize, 2, self.opt.nz
+                    )
                     mu = mu_logvar[:, 0]
                     logvar = mu_logvar[:, 1]
                     z = self.reparameterize(mu, logvar, True)
                     # this can go to inf when taking exp(), so clamp it
                     logvar = torch.clamp(logvar, max=4)
                     if self.opt.model == "fwd-cnn-vae-fp":
-                        kld = -0.5 * torch.sum(
-                            1 + logvar - mu.pow(2) - logvar.exp()
-                        )
+                        kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
                         kld /= bsize
                         ploss += kld
                     else:
@@ -527,15 +470,11 @@ class FwdCNN_VAE(nn.Module):
             if sampling is not None:
                 pred_image.detach()
                 pred_state.detach()
-            pred_image = torch.sigmoid(
-                pred_image + input_images[:, -1].unsqueeze(1)
-            )
+            pred_image = torch.sigmoid(pred_image + input_images[:, -1].unsqueeze(1))
             pred_state = pred_state + input_states[:, -1]
 
             input_images = torch.cat((input_images[:, 1:], pred_image), 1)
-            input_states = torch.cat(
-                (input_states[:, 1:], pred_state.unsqueeze(1)), 1
-            )
+            input_states = torch.cat((input_states[:, 1:], pred_state.unsqueeze(1)), 1)
             pred_images.append(pred_image)
             pred_states.append(pred_state)
 

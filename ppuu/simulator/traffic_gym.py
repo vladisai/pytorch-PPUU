@@ -6,6 +6,7 @@ import random
 import numpy as np
 import scipy.misc
 import sys, pickle
+
 # from skimage import measure, transform
 # from matplotlib.image import imsave
 import PIL.Image
@@ -27,14 +28,14 @@ STATE_H, STATE_W = 117, 24
 STATE_D = 4
 
 colours = {
-    'w': (255, 255, 255),
-    'k': (000, 000, 000),
-    'r': (255, 000, 000),
-    'g': (000, 255, 000),
-    'm': (255, 000, 255),
-    'b': (000, 000, 255),
-    'c': (000, 255, 255),
-    'y': (255, 255, 000),
+    "w": (255, 255, 255),
+    "k": (000, 000, 000),
+    "r": (255, 000, 000),
+    "g": (000, 255, 000),
+    "m": (255, 000, 255),
+    "b": (000, 000, 255),
+    "c": (000, 255, 255),
+    "y": (255, 255, 000),
 }
 
 # Car coordinate system, origin under the centre of the rear axis
@@ -65,7 +66,18 @@ class Car:
     SCALE = SCALE
     LANE_W = LANE_W
 
-    def __init__(self, lanes, free_lanes, dt, car_id, look_ahead, screen_w, font, policy_type, policy_network=None):
+    def __init__(
+        self,
+        lanes,
+        free_lanes,
+        dt,
+        car_id,
+        look_ahead,
+        screen_w,
+        font,
+        policy_type,
+        policy_network=None,
+    ):
         """
         Initialise a sedan on a random lane
         :param lanes: tuple of lanes, with ``min`` and ``max`` y coordinates
@@ -75,22 +87,21 @@ class Car:
         self._width = round(1.8 * self.SCALE)
         self.id = car_id
         lane = random.choice(tuple(free_lanes))
-        if lane == 6 and type(self).__name__ == 'PatchedCar':
-            self._position = np.array((0, lanes[-1]['max'] + 42), np.float)
+        if lane == 6 and type(self).__name__ == "PatchedCar":
+            self._position = np.array((0, lanes[-1]["max"] + 42), np.float)
             self._direction = np.array((1, -0.035), np.float) / np.sqrt(1 + 0.035 ** 2)
         else:
-            self._position = np.array((
-                -self._length,
-                lanes[lane]['mid']
-            ), np.float)
+            self._position = np.array((-self._length, lanes[lane]["mid"]), np.float)
             self._direction = np.array((1, 0), np.float)
-        self._target_speed = max(
-            0,
-            (MAX_SPEED - random.randrange(0, 15) - 10 * lane)
-        ) * 1000 / 3600 * self.SCALE  # m / s
+        self._target_speed = (
+            max(0, (MAX_SPEED - random.randrange(0, 15) - 10 * lane))
+            * 1000
+            / 3600
+            * self.SCALE
+        )  # m / s
         self._speed = self._target_speed
         self._dt = dt
-        self._colour = colours['c']
+        self._colour = colours["c"]
         self._braked = False
         self._passing = False
         self._target_lane = self._position[1]
@@ -114,7 +125,7 @@ class Car:
 
     @staticmethod
     def get_text(n, font):
-        text = font.render(str(n), True, colours['b'])
+        text = font.render(str(n), True, colours["b"])
         text_rect = text.get_rect()
         return text, text_rect
 
@@ -133,7 +144,9 @@ class Car:
         :return: cost
         """
         d = self._direction
-        d_o = np.array((self._direction[1], -self._direction[0]))  # ortho direction, pointing left
+        d_o = np.array(
+            (self._direction[1], -self._direction[0])
+        )  # ortho direction, pointing left
         # max(0, .) required because my.front can > other.back
         cost_ahead = max(0, 1 - max(0, (other - self) @ d) / self.safe_distance)
         # abs() required because there are cars on the right too
@@ -215,7 +228,7 @@ class Car:
 
         return obs, mask, cost
 
-    def draw(self, surface, mode='human', offset=0):
+    def draw(self, surface, mode="human", offset=0):
         """
         Draw current car on screen with a specific colour
         :param surface: PyGame ``Surface`` where to draw
@@ -227,10 +240,14 @@ class Car:
 
         d = self._direction
 
-        if mode == 'human':
+        if mode == "human":
             if self.is_controlled:
-                pygame.draw.rect(surface, (0, 255, 0),
-                                 (int(x - 10), int(y - 15), self._length + 10 + 10, 30), 2)
+                pygame.draw.rect(
+                    surface,
+                    (0, 255, 0),
+                    (int(x - 10), int(y - 15), self._length + 10 + 10, 30),
+                    2,
+                )
 
             # # Highlight colliding vehicle / debugging purpose
             # if self.collisions_per_frame > 0:
@@ -256,16 +273,19 @@ class Car:
             self._text[1].top = y - self._width // 2
             surface.blit(self._text[0], self._text[1])
 
-            if self._braked: self._colour = colours['g']
+            if self._braked:
+                self._colour = colours["g"]
             return _r
-        if mode == 'machine':
-            return draw_rect(surface, colours['g'], rectangle, d)
-        if mode == 'ego-car':
-            return draw_rect(surface, colours['b'], rectangle, d)
-        if mode == 'ghost':
-            return draw_rect(surface, colours['y'], rectangle, d)
+        if mode == "machine":
+            return draw_rect(surface, colours["g"], rectangle, d)
+        if mode == "ego-car":
+            return draw_rect(surface, colours["b"], rectangle, d)
+        if mode == "ghost":
+            return draw_rect(surface, colours["y"], rectangle, d)
 
-    def step(self, action):  # takes also the parameter action = state temporal derivative
+    def step(
+        self, action
+    ):  # takes also the parameter action = state temporal derivative
         """
         Update current position, given current velocity and acceleration
         """
@@ -276,7 +296,9 @@ class Car:
         self._position += self._speed * self._direction * self._dt
 
         ortho_direction = np.array((self._direction[1], -self._direction[0]))
-        direction_vector = self._direction + ortho_direction * b * self._speed * self._dt
+        direction_vector = (
+            self._direction + ortho_direction * b * self._speed * self._dt
+        )
         self._direction = direction_vector / (np.linalg.norm(direction_vector) + 1e-3)
 
         self._speed += a * self._dt
@@ -284,7 +306,7 @@ class Car:
         # Deal with latent variable and visual indicator
         if self._passing and abs(self._error) < 0.5:
             self._passing = False
-            self._colour = colours['c']
+            self._colour = colours["c"]
 
     def get_lane_set(self, lanes):
         """
@@ -296,7 +318,10 @@ class Car:
         y = self._position[1]
         half_w = self._width // 2
         for lane_idx, lane in enumerate(lanes):
-            if lane['min'] <= y - half_w <= lane['max'] or lane['min'] <= y + half_w <= lane['max']:
+            if (
+                lane["min"] <= y - half_w <= lane["max"]
+                or lane["min"] <= y + half_w <= lane["max"]
+            ):
                 busy_lanes.add(lane_idx)
         return busy_lanes
 
@@ -313,12 +338,13 @@ class Car:
         return self._position
 
     def _brake(self, fraction):
-        if self._passing: return 0
+        if self._passing:
+            return 0
         # Maximum braking acceleration, eq. (1) from
         # http://www.tandfonline.com/doi/pdf/10.1080/16484142.2007.9638118
         g, mu = 9.81, 0.9  # gravity and friction coefficient
         acceleration = -fraction * g * mu * self.SCALE
-        self._colour = colours['y']
+        self._colour = colours["y"]
         self._braked = True
         return acceleration
 
@@ -326,14 +352,14 @@ class Car:
         self._target_lane = self._position[1] - self.LANE_W
         self._noisy_target_lane = self._noisy_target_lane
         self._passing = True
-        self._colour = colours['m']
+        self._colour = colours["m"]
         self._braked = False
 
     def _pass_right(self):
         self._target_lane = self._position[1] + self.LANE_W
         self._noisy_target_lane = self._noisy_target_lane
         self._passing = True
-        self._colour = colours['m']
+        self._colour = colours["m"]
         self._braked = False
 
     def __gt__(self, other):
@@ -355,9 +381,9 @@ class Car:
         return self.back - other.front
 
     def policy(self, observation, policy_type):
-        if policy_type == 'hardcoded':
+        if policy_type == "hardcoded":
             return self.policy_hardcoded(observation)
-        elif policy_type == 'imitation':
+        elif policy_type == "imitation":
             return self.policy_imitation(observation)
 
     def policy_hardcoded(self, observation):
@@ -377,17 +403,21 @@ class Car:
                     elif self._safe_right(observation):
                         self._pass_right()
                     else:
-                        a = self._brake(min((self.safe_distance / distance) ** 0.2 - 1, 1))
+                        a = self._brake(
+                            min((self.safe_distance / distance) ** 0.2 - 1, 1)
+                        )
                 else:
                     if self._safe_right(observation):
                         self._pass_right()
                     elif self._safe_left(observation):
                         self._pass_left()
                     else:
-                        a = self._brake(min((self.safe_distance / distance) ** 0.2 - 1, 1))
+                        a = self._brake(
+                            min((self.safe_distance / distance) ** 0.2 - 1, 1)
+                        )
 
             elif distance <= 0:
-                self._colour = colours['r']
+                self._colour = colours["r"]
                 self.crashed = True
 
         if random.random() < 0.05:
@@ -416,22 +446,34 @@ class Car:
         return action
 
     def _safe_left(self, state):
-        if self.back[0] < self.safe_distance: return False  # Cannot see in the future
-        if self._passing: return False
-        if state[0] is None: return False  # On the leftmost lane
-        if state[0][0] and (self - state[0][0])[0] < state[0][0].safe_distance: return False
-        if state[0][1] and (state[0][1] - self)[0] < self.safe_distance: return False
+        if self.back[0] < self.safe_distance:
+            return False  # Cannot see in the future
+        if self._passing:
+            return False
+        if state[0] is None:
+            return False  # On the leftmost lane
+        if state[0][0] and (self - state[0][0])[0] < state[0][0].safe_distance:
+            return False
+        if state[0][1] and (state[0][1] - self)[0] < self.safe_distance:
+            return False
         return True
 
     def _safe_right(self, state):
-        if self.back[0] < self.safe_distance: return False  # Cannot see in the future
-        if self._passing: return False
-        if state[2] is None: return False  # On the rightmost lane
-        if state[2][0] and (self - state[2][0])[0] < state[2][0].safe_distance: return False
-        if state[2][1] and (state[2][1] - self)[0] < self.safe_distance: return False
+        if self.back[0] < self.safe_distance:
+            return False  # Cannot see in the future
+        if self._passing:
+            return False
+        if state[2] is None:
+            return False  # On the rightmost lane
+        if state[2][0] and (self - state[2][0])[0] < state[2][0].safe_distance:
+            return False
+        if state[2][1] and (state[2][1] - self)[0] < self.safe_distance:
+            return False
         return True
 
-    def _get_observation_image(self, m, screen_surface, width_height, scale, global_frame):
+    def _get_observation_image(
+        self, m, screen_surface, width_height, scale, global_frame
+    ):
         d = self._direction
 
         x_y = np.ceil(np.array((abs(d) @ width_height, abs(d) @ width_height[::-1])))
@@ -439,7 +481,7 @@ class Car:
         try:
             sub_surface = screen_surface.subsurface((*(centre + m - x_y / 2), *x_y))
         except ValueError as ex:  # if the agent fucks up
-            print(f'{self} fucked up')  # notify about the event
+            print(f"{self} fucked up")  # notify about the event
             self.off_screen = True  # we're off_screen
             return self._states_image[-1]  # return last state
         theta = np.arctan2(*d[::-1]) * 180 / np.pi  # in degrees
@@ -450,12 +492,18 @@ class Car:
         x = (surf_w - width_height[0]) // 2
         y = (surf_h - width_height[1]) // 2
         sub_rot_surface = rot_surface.subsurface(x, y, *width_height)
-        sub_rot_array = pygame.surfarray.array3d(sub_rot_surface).transpose(1, 0, 2)  # flip x and y
+        sub_rot_array = pygame.surfarray.array3d(sub_rot_surface).transpose(
+            1, 0, 2
+        )  # flip x and y
         # sub_rot_array_scaled = rescale(sub_rot_array, scale, mode='constant')  # output not consistent with below
-        new_h = int(scale*sub_rot_array.shape[0])
-        new_w = int(scale*sub_rot_array.shape[1])
-        sub_rot_array_scaled = np.array(PIL.Image.fromarray(sub_rot_array).resize((new_w, new_h), resample=2)) #bilinear
-        sub_rot_array_scaled_up = np.rot90(sub_rot_array_scaled)  # facing upward, not flipped
+        new_h = int(scale * sub_rot_array.shape[0])
+        new_w = int(scale * sub_rot_array.shape[1])
+        sub_rot_array_scaled = np.array(
+            PIL.Image.fromarray(sub_rot_array).resize((new_w, new_h), resample=2)
+        )  # bilinear
+        sub_rot_array_scaled_up = np.rot90(
+            sub_rot_array_scaled
+        )  # facing upward, not flipped
         sub_rot_array_scaled_up[:, :, 0] *= 4
         assert sub_rot_array_scaled_up.max() <= 255
 
@@ -463,9 +511,13 @@ class Car:
         x = np.ceil((surf_w - self._length) / 2)
         y = np.ceil((surf_h - self.LANE_W) / 2)
         neighbourhood = rot_surface.subsurface(x, y, self._length, self.LANE_W)
-        neighbourhood_array = pygame.surfarray.array3d(neighbourhood).transpose(1, 0, 2)  # flip x and y
+        neighbourhood_array = pygame.surfarray.array3d(neighbourhood).transpose(
+            1, 0, 2
+        )  # flip x and y
         lanes = neighbourhood_array[:, :, 0]
-        lane_mask = np.broadcast_to((1 - abs(np.linspace(-1, 1, self.LANE_W))).reshape(-1, 1), lanes.shape)
+        lane_mask = np.broadcast_to(
+            (1 - abs(np.linspace(-1, 1, self.LANE_W))).reshape(-1, 1), lanes.shape
+        )
         lane_cost = (lanes * lane_mask).max() / 255
 
         # Compute x/y minimum distance to other vehicles (pixel version)
@@ -476,7 +528,9 @@ class Car:
         max_x = np.ceil((crop_w - max(self._length - alpha, 0)) / 2)
         max_y = np.ceil((crop_h - max(self._width - alpha, 0)) / 2)
         min_x = max(np.ceil(max_x - self.safe_distance), 0)
-        min_y = np.ceil(crop_h / 2 - self._width)  # assumes other._width / 2 = self._width / 2
+        min_y = np.ceil(
+            crop_h / 2 - self._width
+        )  # assumes other._width / 2 = self._width / 2
         x_filter = (1 - abs(np.linspace(-1, 1, crop_w))) * crop_w / 2  # 45 degree
         x_filter[x_filter > max_x] = max_x  # chop off top
         x_filter[x_filter < min_x] = min_x  # chop off bottom
@@ -514,20 +568,26 @@ class Car:
         # self._colour = (255 * lane_cost, 0, 255 * (1 - lane_cost))
 
         # return state_image, lane_cost, proximity_cost, frame
-        return torch.from_numpy(sub_rot_array_scaled_up.copy()), lane_cost, proximity_cost, global_frame
+        return (
+            torch.from_numpy(sub_rot_array_scaled_up.copy()),
+            lane_cost,
+            proximity_cost,
+            global_frame,
+        )
 
     def store(self, object_name, object_):
-        if object_name == 'action':
+        if object_name == "action":
             self._actions.append(torch.Tensor(object_))
-        elif object_name == 'state':
+        elif object_name == "state":
             self._states.append(self._get_obs(*object_))
-        elif object_name == 'state_image':
+        elif object_name == "state_image":
             self._states_image.append(self._get_observation_image(*object_))
-        elif object_name == 'ego_car_image' and self._ego_car_image is None:
+        elif object_name == "ego_car_image" and self._ego_car_image is None:
             self._ego_car_image = self._get_observation_image(*object_)[0]
 
     def get_last(self, n, done, norm_state=False, return_reward=False, gamma=0.99):
-        if len(self._states_image) < n: return None  # no enough samples
+        if len(self._states_image) < n:
+            return None  # no enough samples
         # n × (state_image, lane_cost, proximity_cost, frame) ->
         # -> (n × state_image, n × lane_cost, n × proximity_cost, n × frame)
         transpose = list(zip(*self._states_image))
@@ -535,13 +595,21 @@ class Car:
         state_images = torch.stack(state_images).permute(0, 3, 1, 2)[-n:]
         ego_car_new_shape = list(state_images.shape)
         ego_car_new_shape[1] = 1
-        ego_car_channel = self._ego_car_image[:, :, 2][None, None, :].expand(ego_car_new_shape)
+        ego_car_channel = self._ego_car_image[:, :, 2][None, None, :].expand(
+            ego_car_new_shape
+        )
         state_images = torch.cat((state_images, ego_car_channel), 1)
 
-        zip_ = list(zip(*self._states))  # n × (obs, mask, cost) -> (n × obs, n × mask, n × cost)
-        states = torch.stack(zip_[0])[:, 0][-n:]  # select the ego-state (of 1 + 6 states we keep track)
+        zip_ = list(
+            zip(*self._states)
+        )  # n × (obs, mask, cost) -> (n × obs, n × mask, n × cost)
+        states = torch.stack(zip_[0])[:, 0][
+            -n:
+        ]  # select the ego-state (of 1 + 6 states we keep track)
         if norm_state is not False:  # normalise the states, if requested
-            states = states.sub(norm_state['s_mean']).div(norm_state['s_std'])  # N(0, 1) range
+            states = states.sub(norm_state["s_mean"]).div(
+                norm_state["s_std"]
+            )  # N(0, 1) range
             state_images = state_images.float().div(255)  # [0, 1] range
         observation = dict(context=state_images, state=states)
 
@@ -553,34 +621,45 @@ class Car:
             arrived_to_dst=self.arrived_to_dst,
         )
 
-        if return_reward:  # if we're playing with model free RL, have fun with reward shaping
+        if (
+            return_reward
+        ):  # if we're playing with model free RL, have fun with reward shaping
             arrived = self.arrived_to_dst
             collision = self.collisions_per_frame > 0
             done = done or collision  # die if collide
             lambda_lane = 0.2
             max_rew = 1 + lambda_lane
             win = max_rew / (1 - gamma)
-            reward = max_rew - cost['pixel_proximity_cost'] - lambda_lane * cost['lane_cost'] + win * arrived
+            reward = (
+                max_rew
+                - cost["pixel_proximity_cost"]
+                - lambda_lane * cost["lane_cost"]
+                + win * arrived
+            )
 
             # So, observation must be just one damn numpy thingy
-            observation = torch.cat((
-                states.view(n, -1),
-                state_images.view(n, -1),
-            ), dim=1).numpy()
+            observation = torch.cat(
+                (states.view(n, -1), state_images.view(n, -1),), dim=1
+            ).numpy()
 
-            return observation, reward, self.off_screen or done, dict(v=str(self), a=self.arrived_to_dst)
+            return (
+                observation,
+                reward,
+                self.off_screen or done,
+                dict(v=str(self), a=self.arrived_to_dst),
+            )
 
         return observation, cost, self.off_screen or done, self
 
-    def dump_state_image(self, save_dir='scratch/', mode='img'):
-        os.system('mkdir -p ' + save_dir)
+    def dump_state_image(self, save_dir="scratch/", mode="img"):
+        os.system("mkdir -p " + save_dir)
         transpose = list(zip(*self._states_image))
         if len(transpose) == 0:
-            print(f'failure, {save_dir}')
+            print(f"failure, {save_dir}")
             # print(transpose)
             return
         im = transpose[0]
-        if mode == 'tensor':
+        if mode == "tensor":
             lane_cost = torch.Tensor(transpose[1])
             pixel_proximity_cost = torch.Tensor(transpose[2])
             frames = np.array(transpose[3])
@@ -590,31 +669,37 @@ class Car:
             mask = torch.stack(zip_[1])
             # save in torch format
             im_pth = torch.stack(im).permute(0, 3, 1, 2)
-            with open(os.path.join(save_dir, f'car{self.id}.pkl'), 'wb') as f:
-                pickle.dump({
-                    'images': im_pth,
-                    'actions': torch.stack(self._actions),
-                    'lane_cost': lane_cost,
-                    'pixel_proximity_cost': pixel_proximity_cost,
-                    'states': states,
-                    'proximity_cost': proximity_cost,
-                    'mask': mask,
-                    'frames': frames,
-                    'ego_car': self._ego_car_image.permute(2, 0, 1),
-                }, f)
-        elif mode == 'img':
+            with open(os.path.join(save_dir, f"car{self.id}.pkl"), "wb") as f:
+                pickle.dump(
+                    {
+                        "images": im_pth,
+                        "actions": torch.stack(self._actions),
+                        "lane_cost": lane_cost,
+                        "pixel_proximity_cost": pixel_proximity_cost,
+                        "states": states,
+                        "proximity_cost": proximity_cost,
+                        "mask": mask,
+                        "frames": frames,
+                        "ego_car": self._ego_car_image.permute(2, 0, 1),
+                    },
+                    f,
+                )
+        elif mode == "img":
             save_dir = os.path.join(save_dir, str(self.id))
-            os.system('mkdir -p ' + save_dir)
+            os.system("mkdir -p " + save_dir)
             for t in range(len(im)):
-                imwrite(f'{save_dir}/im{t:05d}.png', im[t].numpy())
+                imwrite(f"{save_dir}/im{t:05d}.png", im[t].numpy())
 
     @property
     def valid(self):
-        return self.back[0] > self.look_ahead and self.front[0] < self.screen_w - 1.75 * self.look_ahead
+        return (
+            self.back[0] > self.look_ahead
+            and self.front[0] < self.screen_w - 1.75 * self.look_ahead
+        )
 
     def __repr__(self) -> str:
         cls = self.__class__
-        return f'{cls.__module__}.{cls.__name__}.{self.id}'
+        return f"{cls.__module__}.{cls.__name__}.{self.id}"
 
     @property
     def shape(self):
@@ -628,20 +713,46 @@ class Simulator(core.Env):
     # Global constants
     SCALE = SCALE
     LANE_W = LANE_W
-    DUMP_NAME = 'data_ai_v0'
+    DUMP_NAME = "data_ai_v0"
 
     # Action space definition
-    action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # brake / accelerate, right / left
+    action_space = spaces.Box(
+        low=-1, high=1, shape=(2,), dtype=np.float32
+    )  # brake / accelerate, right / left
 
-    def __init__(self, display=True, nb_lanes=4, fps=30, delta_t=None, traffic_rate=15, state_image=False, store=False,
-                 policy_type='hardcoded', nb_states=0, data_dir='', normalise_action=False, normalise_state=False,
-                 return_reward=False, gamma=0.99, show_frame_count=True, store_simulator_video=False):
+    def __init__(
+        self,
+        display=True,
+        nb_lanes=4,
+        fps=30,
+        delta_t=None,
+        traffic_rate=15,
+        state_image=False,
+        store=False,
+        policy_type="hardcoded",
+        nb_states=0,
+        data_dir="",
+        normalise_action=False,
+        normalise_state=False,
+        return_reward=False,
+        gamma=0.99,
+        show_frame_count=True,
+        store_simulator_video=False,
+    ):
 
         # Observation spaces definition
-        self.observation_space = spaces.Box(low=-1, high=1, shape=(nb_states, STATE_D + STATE_C * STATE_H * STATE_W), dtype=np.float32)
+        self.observation_space = spaces.Box(
+            low=-1,
+            high=1,
+            shape=(nb_states, STATE_D + STATE_C * STATE_H * STATE_W),
+            dtype=np.float32,
+        )
 
         self.offset = int(1.5 * self.LANE_W)
-        self.screen_size = (80 * self.LANE_W, nb_lanes * self.LANE_W + self.offset + self.LANE_W // 2)
+        self.screen_size = (
+            80 * self.LANE_W,
+            nb_lanes * self.LANE_W + self.offset + self.LANE_W // 2,
+        )
         self.fps = fps  # updates per second
         self.delta_t = delta_t or 1 / fps  # simulation timing interval
         self.nb_lanes = nb_lanes  # total number of lanes
@@ -653,9 +764,9 @@ class Simulator(core.Env):
         self.collision = None  # an accident happened
         self.episode = 0  # episode counter
         self.car_id = None  # car counter init
-        self.state_image = state_image or policy_type == 'imitation'
+        self.state_image = state_image or policy_type == "imitation"
         self.mean_fps = None
-        self.store = store or policy_type == 'imitation'
+        self.store = store or policy_type == "imitation"
         self.next_car_id = None
         self.photos = None
         self.look_ahead = MAX_SPEED * 1000 / 3600 * self.SCALE
@@ -695,9 +806,11 @@ class Simulator(core.Env):
 
     def build_lanes(self, nb_lanes):
         return tuple(
-            {'min': self.offset + n * self.LANE_W,
-             'mid': self.offset + self.LANE_W / 2 + n * self.LANE_W,
-             'max': self.offset + (n + 1) * self.LANE_W}
+            {
+                "min": self.offset + n * self.LANE_W,
+                "mid": self.offset + self.LANE_W / 2 + n * self.LANE_W,
+                "max": self.offset + (n + 1) * self.LANE_W,
+            }
             for n in range(nb_lanes)
         )
 
@@ -714,10 +827,12 @@ class Simulator(core.Env):
         self.next_car_id = 0
         self.mean_fps = None
         self.time_counter = 0
-        pygame.display.set_caption(f'Traffic simulator, episode {self.episode}, start from frame {self.frame}')
+        pygame.display.set_caption(
+            f"Traffic simulator, episode {self.episode}, start from frame {self.frame}"
+        )
         if control:
             self.controlled_car = {
-                'locked': False,
+                "locked": False,
             }
         self.user_is_done = False
         self.done = False
@@ -733,11 +848,13 @@ class Simulator(core.Env):
         bsize = images.size(0)
 
         states -= s_mean.view(1, 1, 4).expand(states.size())
-        states /= (1e-8 + s_std.view(1, 1, 4).expand(states.size()))
+        states /= 1e-8 + s_std.view(1, 1, 4).expand(states.size())
 
         images = images.float()
         states = states.float()
-        _, _, _, actions = self.policy_network(images, states, sample=True, unnormalize=True)
+        _, _, _, actions = self.policy_network(
+            images, states, sample=True, unnormalize=True
+        )
         actions = actions.view(bsize, -1, 2)
         return actions
 
@@ -765,7 +882,8 @@ class Simulator(core.Env):
                     self.lane_occupancy[l].remove(v)
             # Remove from the environment cars outside the screen
             if v.back[0] > self.screen_size[0]:
-                for l in lanes_occupied: self.lane_occupancy[l].remove(v)
+                for l in lanes_occupied:
+                    self.lane_occupancy[l].remove(v)
                 self.vehicles.remove(v)
 
             # Update available lane beginnings
@@ -773,11 +891,24 @@ class Simulator(core.Env):
                 free_lanes -= lanes_occupied
 
         # Randomly add vehicles, up to 1 / dt per second
-        if random.random() < self.traffic_rate * np.sin(2 * np.pi * self.frame * self.delta_t) * self.delta_t:
+        if (
+            random.random()
+            < self.traffic_rate
+            * np.sin(2 * np.pi * self.frame * self.delta_t)
+            * self.delta_t
+        ):
             if free_lanes:
-                car = self.EnvCar(self.lanes, free_lanes, self.delta_t, self.next_car_id,
-                                  self.look_ahead, self.screen_size[0], self.font[20], policy_type=self.policy_type,
-                                  policy_network=self.policy_network)
+                car = self.EnvCar(
+                    self.lanes,
+                    free_lanes,
+                    self.delta_t,
+                    self.next_car_id,
+                    self.look_ahead,
+                    self.screen_size[0],
+                    self.font[20],
+                    policy_type=self.policy_type,
+                    policy_network=self.policy_network,
+                )
                 self.next_car_id += 1
                 self.vehicles.append(car)
                 for l in car.get_lane_set(self.lanes):
@@ -785,7 +916,11 @@ class Simulator(core.Env):
                     self.lane_occupancy[l].insert(0, car)
 
         if self.state_image:
-            self.render(mode='machine', width_height=(2 * self.look_ahead, 2 * self.look_sideways), scale=0.25)
+            self.render(
+                mode="machine",
+                width_height=(2 * self.look_ahead, 2 * self.look_sideways),
+                scale=0.25,
+            )
 
         # Generate state representation for each vehicle
 
@@ -794,7 +929,8 @@ class Simulator(core.Env):
             lane_set = v.get_lane_set(self.lanes)
             if len(lane_set) == 0:
                 lanes_occupied = v.get_lane_set(self.lanes)
-                for l in lanes_occupied: self.lane_occupancy[l].remove(v)
+                for l in lanes_occupied:
+                    self.lane_occupancy[l].remove(v)
                 self.vehicles.remove(v)
 
         states_images, states_raw, update = [], [], []
@@ -805,34 +941,44 @@ class Simulator(core.Env):
             # Provide a list of (up to) 6 neighbouring vehicles
             if len(lane_set) == 0:
                 lanes_occupied = v.get_lane_set(self.lanes)
-                for l in lanes_occupied: self.lane_occupancy[l].remove(v)
+                for l in lanes_occupied:
+                    self.lane_occupancy[l].remove(v)
                 self.vehicles.remove(v)
                 continue
 
             current_lane_idx = lane_set.pop()
 
             # Given that I'm not in the left/right-most lane
-            left_vehicles = self._get_neighbours(current_lane_idx, - 1, v) \
-                if current_lane_idx > 0 and len(lane_set) == 0 else None
+            left_vehicles = (
+                self._get_neighbours(current_lane_idx, -1, v)
+                if current_lane_idx > 0 and len(lane_set) == 0
+                else None
+            )
             mid_vehicles = self._get_neighbours(current_lane_idx, 0, v)
-            right_vehicles = self._get_neighbours(current_lane_idx, + 1, v) \
-                if current_lane_idx < len(self.lanes) - 1 else None
+            right_vehicles = (
+                self._get_neighbours(current_lane_idx, +1, v)
+                if current_lane_idx < len(self.lanes) - 1
+                else None
+            )
 
             state = left_vehicles, mid_vehicles, right_vehicles
 
-            if self.policy_type == 'imitation':
+            if self.policy_type == "imitation":
                 if len(v._states_image) > 10:  # and v.id == self.policy_car_id:
                     state_image, state_raw = v.get_last(10)
                     v.update = 1
                 else:
-                    state_image, state_raw = torch.zeros(10, 3, 117, 24), torch.zeros(10, 4)
+                    state_image, state_raw = (
+                        torch.zeros(10, 3, 117, 24),
+                        torch.zeros(10, 4),
+                    )
                     v.update = 0
 
                 states_images.append(state_image.float())
                 states_raw.append(state_raw.float())
-                v.store('state', state)
+                v.store("state", state)
 
-            if self.policy_type == 'hardcoded':
+            if self.policy_type == "hardcoded":
                 # Compute the action
                 if v.is_controlled and policy_action is not None:
                     action = policy_action
@@ -844,23 +990,26 @@ class Simulator(core.Env):
                     # else:
                     #     # if len(v._states_image) > 15:
                     #     #     pdb.set_trace()
-                    action = v.policy(state, 'hardcoded')
+                    action = v.policy(state, "hardcoded")
 
                 # Check for accident
-                if v.crashed: self.collision = v
+                if v.crashed:
+                    self.collision = v
 
                 if (self.store or v.is_controlled) and v.valid:
-                    v.store('state', state)
-                    v.store('action', action)
+                    v.store("state", state)
+                    v.store("action", action)
 
                 # update the cars
                 v.step(action)
 
-        if self.policy_type == 'imitation' and len(self.vehicles) > 0:
+        if self.policy_type == "imitation" and len(self.vehicles) > 0:
             # update the cars
             predictions_nb = 20
-            if self.time_counter == 0 or len(self.vehicles) != self.actions_buffer.size(0):
-                print('new actions')
+            if self.time_counter == 0 or len(self.vehicles) != self.actions_buffer.size(
+                0
+            ):
+                print("new actions")
                 states_images = torch.stack(states_images)
                 states_raw = torch.stack(states_raw)
                 self.actions_buffer = self.policy_imitation([states_images, states_raw])
@@ -876,7 +1025,9 @@ class Simulator(core.Env):
                 # print(action)
                 # action = np.array([0, 0])
                 b = action[1]
-                action[1] = min(abs(b), v._speed / MAX_SPEED / SCALE * .01) * np.sign(b)
+                action[1] = min(abs(b), v._speed / MAX_SPEED / SCALE * 0.01) * np.sign(
+                    b
+                )
                 v.step(action)
                 # if v.id == 2:
                 # print(v.id, *action, v._speed / SCALE, v._target_speed / SCALE)
@@ -895,7 +1046,8 @@ class Simulator(core.Env):
         # Shallow copy the target lane
         target_lane = self.lane_occupancy[current_lane_idx + d_lane][:]
         # If I find myself in the target list, remove me
-        if v in target_lane: target_lane.remove(v)
+        if v in target_lane:
+            target_lane.remove(v)
         # Find me in the lane
         my_idx = bisect.bisect(target_lane, v)
         behind = target_lane[my_idx - 1] if my_idx > 0 else None
@@ -903,8 +1055,8 @@ class Simulator(core.Env):
 
         return behind, ahead
 
-    def render(self, mode='human', width_height=None, scale=1.):
-        if mode == 'human' and self.display:
+    def render(self, mode="human", width_height=None, scale=1.0):
+        if mode == "human" and self.display:
 
             # if self.frame % 1000 == 0:
             #     pygame.image.save(self.screen, "Peachtree/ghosts.png")
@@ -913,10 +1065,12 @@ class Simulator(core.Env):
 
             # measure time elapsed, enforce it to be >= 1/fps
             fps = int(1 / self.clock.tick(self.fps) * 1e3)
-            self.mean_fps = 0.9 * self.mean_fps + 0.1 * fps if self.mean_fps is not None else fps
+            self.mean_fps = (
+                0.9 * self.mean_fps + 0.1 * fps if self.mean_fps is not None else fps
+            )
 
             # clear the screen
-            self.screen.fill(colours['k'])
+            self.screen.fill(colours["k"])
 
             # background pictures
             if self.photos:
@@ -929,9 +1083,18 @@ class Simulator(core.Env):
             for v in self.vehicles:
                 v.draw(self.screen)
 
-            draw_text(self.screen, f'# cars: {len(self.vehicles)}', (10, 2), font=self.font[30])
-            draw_text(self.screen, f'frame #: {self.frame}', (120, 2), font=self.font[30])
-            draw_text(self.screen, f'fps: {self.mean_fps:.0f}', (270, 2), font=self.font[30])
+            draw_text(
+                self.screen,
+                f"# cars: {len(self.vehicles)}",
+                (10, 2),
+                font=self.font[30],
+            )
+            draw_text(
+                self.screen, f"frame #: {self.frame}", (120, 2), font=self.font[30]
+            )
+            draw_text(
+                self.screen, f"fps: {self.mean_fps:.0f}", (270, 2), font=self.font[30]
+            )
 
             pygame.display.flip()
 
@@ -952,7 +1115,7 @@ class Simulator(core.Env):
             #     self._pause()
             #     self.collision = False
 
-        if mode == 'machine':
+        if mode == "machine":
             max_extension = int(np.linalg.norm(width_height) / 2)
             machine_screen_size = np.array(self.screen_size) + 2 * max_extension
             vehicle_surface = pygame.Surface(machine_screen_size)
@@ -981,48 +1144,97 @@ class Simulator(core.Env):
                     for vv in set(self.vehicles) - {v}:
                         vv.draw(vehicle_surface, mode=mode, offset=max_extension)
                     # Superimpose the lanes
-                    vehicle_surface.blit(lane_surface, (0, 0), special_flags=pygame.BLEND_MAX)
+                    vehicle_surface.blit(
+                        lane_surface, (0, 0), special_flags=pygame.BLEND_MAX
+                    )
                     # Empty ego-surface
                     ego_surface.fill((0, 0, 0))
                     # Draw myself blue on the ego_surface
-                    ego_rect = v.draw(ego_surface, mode='ego-car', offset=max_extension)
+                    ego_rect = v.draw(ego_surface, mode="ego-car", offset=max_extension)
                     # Add me on top of others without shadowing
                     # vehicle_surface.blit(ego_surface, ego_rect, ego_rect, special_flags=pygame.BLEND_MAX)
-                    v.store('state_image', (max_extension, vehicle_surface, width_height, scale, self.frame))
-                    v.store('ego_car_image', (max_extension, ego_surface, width_height, scale, self.frame))
+                    v.store(
+                        "state_image",
+                        (
+                            max_extension,
+                            vehicle_surface,
+                            width_height,
+                            scale,
+                            self.frame,
+                        ),
+                    )
+                    v.store(
+                        "ego_car_image",
+                        (max_extension, ego_surface, width_height, scale, self.frame),
+                    )
                     # Store whole history, if requested
                     if self.store_sim_video:
                         if self.ghost:
-                            self.ghost.draw(vehicle_surface, mode='ghost', offset=max_extension)
-                        v.frames.append(pygame.surfarray.array3d(vehicle_surface).transpose(1, 0, 2))  # flip x and y
+                            self.ghost.draw(
+                                vehicle_surface, mode="ghost", offset=max_extension
+                            )
+                        v.frames.append(
+                            pygame.surfarray.array3d(vehicle_surface).transpose(1, 0, 2)
+                        )  # flip x and y
 
             # # save surface as image, for visualisation only
             # pygame.image.save(vehicle_surface, "vehicle_surface.png")
             # self._pause()
 
-    def _draw_lanes(self, surface, mode='human', offset=0):
+    def _draw_lanes(self, surface, mode="human", offset=0):
         draw_line = pygame.draw.line
-        if mode == 'human':
+        if mode == "human":
             lanes = self.lanes
             sw = self.screen_size[0]  # screen width
             for lane in lanes:
-                draw_dashed_line(surface, colours['w'], (0, lane['min']), (sw, lane['min']), 3)
-                draw_dashed_line(surface, colours['r'], (0, lane['mid']), (sw, lane['mid']))
-            draw_line(surface, colours['w'], (0, lanes[0]['min']), (sw, lanes[0]['min']), 3)
-            bottom = lanes[-1]['max']
-            draw_line(surface, colours['w'], (0, bottom), (sw, bottom), 3)
+                draw_dashed_line(
+                    surface, colours["w"], (0, lane["min"]), (sw, lane["min"]), 3
+                )
+                draw_dashed_line(
+                    surface, colours["r"], (0, lane["mid"]), (sw, lane["mid"])
+                )
+            draw_line(
+                surface, colours["w"], (0, lanes[0]["min"]), (sw, lanes[0]["min"]), 3
+            )
+            bottom = lanes[-1]["max"]
+            draw_line(surface, colours["w"], (0, bottom), (sw, bottom), 3)
 
             look_ahead = MAX_SPEED * 1000 / 3600 * self.SCALE
             o = self.offset
-            draw_line(surface, (255, 255, 0), (look_ahead, o), (look_ahead, 9.4 * LANE_W))
-            draw_line(surface, (255, 255, 0), (sw - 1.75 * look_ahead, o), (sw - 1.75 * look_ahead, bottom))
-            draw_line(surface, (255, 255, 0), (sw - 0.75 * look_ahead, o), (sw - 0.75 * look_ahead, bottom), 5)
-        if mode == 'machine':
+            draw_line(
+                surface, (255, 255, 0), (look_ahead, o), (look_ahead, 9.4 * LANE_W)
+            )
+            draw_line(
+                surface,
+                (255, 255, 0),
+                (sw - 1.75 * look_ahead, o),
+                (sw - 1.75 * look_ahead, bottom),
+            )
+            draw_line(
+                surface,
+                (255, 255, 0),
+                (sw - 0.75 * look_ahead, o),
+                (sw - 0.75 * look_ahead, bottom),
+                5,
+            )
+        if mode == "machine":
             sw = self.screen_size[0] + 2 * offset  # screen width
             for lane in self.lanes:
                 m = offset
-                draw_line(surface, colours['r'], (0, lane['min'] + m), (sw, lane['min'] + m), 1)
-                draw_line(surface, colours['r'], (0, lane['max'] + m), (sw, lane['max'] + m), 1)
+                draw_line(
+                    surface,
+                    colours["r"],
+                    (0, lane["min"] + m),
+                    (sw, lane["min"] + m),
+                    1,
+                )
+                draw_line(
+                    surface,
+                    colours["r"],
+                    (0, lane["max"] + m),
+                    (sw, lane["max"] + m),
+                    1,
+                )
 
     def _pause(self):
         pause = True
@@ -1031,7 +1243,11 @@ class Simulator(core.Env):
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
                     sys.exit()
-                elif e.type == pygame.MOUSEBUTTONUP or e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE:
+                elif (
+                    e.type == pygame.MOUSEBUTTONUP
+                    or e.type == pygame.KEYDOWN
+                    and e.key == pygame.K_SPACE
+                ):
                     pause = False
 
     def _get_vehicle(self, id_):

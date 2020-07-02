@@ -68,9 +68,7 @@ def run_trial(output_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--output_dir", type=str, required=True, help="output dir"
-    )
+    parser.add_argument("--output_dir", type=str, required=True, help="output dir")
     args = parser.parse_args()
     set_start_method("spawn")
 

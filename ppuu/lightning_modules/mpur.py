@@ -113,9 +113,7 @@ class MPURModule(pl.LightningModule):
         predictions = self(batch)
         loss = self.policy_cost.calculate_cost(batch, predictions)
         logs = loss.copy()
-        logs["action_norm"] = (
-            predictions["pred_actions"].norm(2, 2).pow(2).mean()
-        )
+        logs["action_norm"] = predictions["pred_actions"].norm(2, 2).pow(2).mean()
         return {
             "loss": loss["policy_loss"],
             "log": logs,
@@ -139,15 +137,12 @@ class MPURModule(pl.LightningModule):
         return {
             "val_loss": avg_loss,
             "log": tensorboard_logs,
-            "progress_bar": {
-                "success_rate": eval_results["stats"]["success_rate"]
-            },
+            "progress_bar": {"success_rate": eval_results["stats"]["success_rate"]},
         }
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
-            self.policy_model.parameters(),
-            self.config.training_config.learning_rate,
+            self.policy_model.parameters(), self.config.training_config.learning_rate,
         )
         return optimizer
 

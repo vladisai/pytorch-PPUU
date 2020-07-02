@@ -46,16 +46,12 @@ class PolicyCostKM(PolicyCostContinuous):
             states = (
                 states
                 * (
-                    1e-8
-                    + self.data_stats["s_std"].view(1, 4).expand(states.size())
+                    1e-8 + self.data_stats["s_std"].view(1, 4).expand(states.size())
                 ).cuda()
             )
             states = (
                 states
-                + self.data_stats["s_mean"]
-                .view(1, 4)
-                .expand(states.size())
-                .cuda()
+                + self.data_stats["s_mean"].view(1, 4).expand(states.size()).cuda()
             )
 
         states = states.view(bsize, npred, 4)
@@ -91,9 +87,7 @@ class PolicyCostKM(PolicyCostContinuous):
         REPEAT_SHAPE = (bsize, npred, 1, 1)
 
         y_d = width / 2 + LANE_WIDTH_METRES
-        x_s = (
-            1.5 * torch.clamp(speeds_norm.detach(), min=10) + length * 1.5 + 1
-        )
+        x_s = 1.5 * torch.clamp(speeds_norm.detach(), min=10) + length * 1.5 + 1
 
         x_s = x_s.view(REPEAT_SHAPE)
         x_s_rotation = torch.ones(REPEAT_SHAPE).cuda() * 1
@@ -121,9 +115,7 @@ class PolicyCostKM(PolicyCostContinuous):
         y_prime = s * xx + c * yy - y_pos  # and here a double - => +
 
         z_x_prime = torch.clamp(
-            (x_s - torch.abs(x_prime))
-            / (x_s - length.view(bsize, 1, 1, 1) / 2),
-            min=0,
+            (x_s - torch.abs(x_prime)) / (x_s - length.view(bsize, 1, 1, 1) / 2), min=0,
         )
         z_x_prime_rotation = torch.clamp(
             (x_s_rotation - torch.abs(x_prime)) / (x_s_rotation), min=0
@@ -179,9 +171,7 @@ class PolicyCostKM(PolicyCostContinuous):
         costs_m = self.agg_func(costs.view(bsize, npred, -1), 2)
         return costs_m.view(bsize, npred)
 
-    def compute_state_costs_for_training(
-        self, pred_images, pred_states, car_sizes
-    ):
+    def compute_state_costs_for_training(self, pred_images, pred_states, car_sizes):
         proximity_masks = self.get_masks(
             pred_images[:, :, :3].contiguous().detach(),
             pred_states["km"],
@@ -191,18 +181,14 @@ class PolicyCostKM(PolicyCostContinuous):
 
         npred = pred_images.size(1)
         gamma_mask = (
-            torch.tensor([0.99 ** t for t in range(npred + 1)])
-            .cuda()
-            .unsqueeze(0)
+            torch.tensor([0.99 ** t for t in range(npred + 1)]).cuda().unsqueeze(0)
         )
         proximity_cost = self.compute_proximity_cost_km(
             pred_images, proximity_masks[1],
         )["costs"]
 
         lane_cost = self.compute_lane_cost_km(pred_images, proximity_masks[0])
-        offroad_cost = self.compute_offroad_cost_km(
-            pred_images, proximity_masks[0]
-        )
+        offroad_cost = self.compute_offroad_cost_km(pred_images, proximity_masks[0])
 
         lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred])
         offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred])
@@ -218,9 +204,7 @@ class PolicyCostKM(PolicyCostContinuous):
 
 
 class PolicyCostKMSplit(PolicyCostKM):
-    def compute_state_costs_for_training(
-        self, pred_images, pred_states, car_sizes
-    ):
+    def compute_state_costs_for_training(self, pred_images, pred_states, car_sizes):
         proximity_mask_a = self.get_masks(
             pred_images[:, :, :3].contiguous().detach(),
             pred_states["km_a"],
@@ -236,17 +220,11 @@ class PolicyCostKMSplit(PolicyCostKM):
 
         npred = pred_images.size(1)
         gamma_mask = (
-            torch.tensor([0.99 ** t for t in range(npred + 1)])
-            .cuda()
-            .unsqueeze(0)
+            torch.tensor([0.99 ** t for t in range(npred + 1)]).cuda().unsqueeze(0)
         )
         proximity_cost = (
-            self.compute_proximity_cost_km(pred_images, proximity_mask_a,)[
-                "costs"
-            ]
-            + self.compute_proximity_cost_km(pred_images, proximity_mask_b,)[
-                "costs"
-            ]
+            self.compute_proximity_cost_km(pred_images, proximity_mask_a,)["costs"]
+            + self.compute_proximity_cost_km(pred_images, proximity_mask_b,)["costs"]
         ) / 2
         lane_cost = (
             self.compute_lane_cost_km(pred_images, proximity_mask_a)

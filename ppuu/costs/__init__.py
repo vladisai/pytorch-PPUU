@@ -6,5 +6,6 @@ MODEL_MAPPING = dict(
     vanilla=PolicyCost, continuous=PolicyCostContinuous, km=PolicyCostKM
 )
 
+
 def get_cost_model_from_name(name):
     return MODEL_MAPPING[name]
