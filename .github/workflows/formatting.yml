@@ -32,8 +32,14 @@ jobs:
         echo Add other actions to build,
         echo test, and deploy your project.
         
-    - name: Black Check
+    - name: Black Formatter
       uses: jpetrucciani/black-check@19.10b0
       with:
         # File or directory to run black on
         path: .
+        
+    - name: Flake8
+      uses: suo/flake8-github-action@v1
+      with:
+        checkName: Flake8
+  
