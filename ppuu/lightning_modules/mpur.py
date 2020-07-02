@@ -230,5 +230,5 @@ class MPURModule(pl.LightningModule):
 
 @inject(cost_type=PolicyCostContinuous, fm_type=ForwardModel)
 class MPURContinuousModule(MPURModule):
-    x = 'heeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+    x = "heeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     pass
