@@ -12,9 +12,7 @@ import os
 from functools import lru_cache
 
 import torch
-import pandas
 import numpy as np
-import imageio
 from torchvision.transforms import ToPILImage
 
 
@@ -77,7 +75,7 @@ class DataReader:
         return images
 
     @staticmethod
-    def get_last_gradient(experiment, seed, checkpoint, episode):
+    def get_last_gradient(experiment, version, checkpoint, episode):
         """Get the last gradient for the model and episode
 
         Returns:

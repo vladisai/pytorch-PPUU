@@ -31,17 +31,17 @@ from DimensionalityReduction import DimensionalityReduction
 
 class Picker(widgets.VBox):
     """Picker widget
-    This widget is in essence a set of drop-down menus.
-    They allow, in turns, to choose experiment, version, checkpoint, and episode.
+    This widget is in essence a set of drop-down menus.  They allow, in turns,
+    to choose experiment, version, checkpoint, and episode.
 
     The picker can be created for different levels of granularity:
         EXPERIMENT_LEVEL is only one dropdown that lets us choose the
-                         experiment.
-        MODEL_LEVEL includes dropdowns for experiment, version, and checkpoint and
-                    lets us choose the model
+            experiment.
+        MODEL_LEVEL includes dropdowns for experiment, version, and
+            checkpoint and lets us choose the model.
         EPISODE_LEVEL includes dropdowns for experiment, version, checkpoint,
-                      and episode, letting us choose evaluation of a model
-                      on a given episode.
+            and episode, letting us choose evaluation of a model on a
+            given episode.
     """
 
     EXPERIMENT_LEVEL = 0
@@ -98,7 +98,7 @@ class Picker(widgets.VBox):
             if change.name == "value" and change.new is not None:
                 self.ignore_updates = True
                 if level >= Picker.MODEL_LEVEL:
-                    self.version_dropdown.options = DataReader.find_experiment_versions(
+                    self.version_dropdown.options = DataReader.find_experiment_versions(  # noqa: E501
                         experiment=self.experiment_dropdown.value,
                     )
                     self.version_dropdown.value = None
@@ -114,7 +114,7 @@ class Picker(widgets.VBox):
                 return
             if change.name == "value" and change.new is not None:
                 self.ignore_updates = True
-                self.checkpoint_dropdown.options = DataReader.find_version_checkpoints(
+                self.checkpoint_dropdown.options = DataReader.find_version_checkpoints(  # noqa: E501
                     experiment=self.experiment_dropdown.value,
                     version=self.version_dropdown.value,
                 )
@@ -129,7 +129,7 @@ class Picker(widgets.VBox):
             if change.name == "value" and change.new is not None:
                 self.ignore_updates = True
                 if level >= Picker.EPISODE_LEVEL:
-                    self.episode_dropdown.options = DataReader.find_checkpoint_episodes(
+                    self.episode_dropdown.options = DataReader.find_checkpoint_episodes(  # noqa: E501
                         experiment=self.experiment_dropdown.value,
                         version=self.version_dropdown.value,
                         checkpoint=self.checkpoint_dropdown.value,
@@ -239,9 +239,9 @@ class PolicyComparison(widgets.VBox):
         colors = bq.colorschemes.CATEGORY10
         for i, experiment in enumerate(experiments):
             result = DataReader.get_success_rates_for_experiment(experiment)
-            x = np.array(result['checkpoints'])
-            means = np.array(result['means'])
-            stds = np.array(result['stds'])
+            x = np.array(result["checkpoints"])
+            means = np.array(result["means"])
+            stds = np.array(result["stds"])
             c = colors[i]
             between_fill = Lines(
                 x=[x, x],
@@ -559,40 +559,6 @@ class DimensionalityReductionPlot(widgets.VBox):
             [self.scatter_figure, self.toggle_buttons]
         )
 
-    def update2(self, experiment, version, step):
-        # used in developement, not currently used
-        self.experiment = experiment
-        self.version = version
-        self.step = step
-        features = DimensionalityReduction.get_model_failing_features(
-            experiment, version, step
-        )
-        self.failures_indices = DataReader.get_episodes_with_outcome(
-            experiment, version, step, 0
-        )
-
-        failure_features = features[np.array(failures[:-1]) - 1]
-
-        res = self.DimensionalityReduction.transform(features)
-        colors = ["gray"] * res.shape[0]
-        opacities = [0.3] * res.shape[0]
-
-        classes = self.DimensionalityReduction.cluster(failure_features)
-
-        category = bq.colorschemes.CATEGORY20[2:]
-        for i, f in enumerate(failures):
-            if f - 1 < len(colors):  # TODO: wtf?
-                if i < len(classes):
-                    colors[f - 1] = category[classes[i]]
-                else:
-                    colors[f - 1] = "red"
-                opacities[f - 1] = 0.8
-
-        self.scatter.x = res[:, 0]
-        self.scatter.y = res[:, 1]
-        self.scatter.colors = colors
-        self.scatter.opacity = opacities
-
     def update(self, experiment, version, step):
         """updates the scatter plot.
         This method is called by the model picker """
@@ -795,13 +761,14 @@ class EpisodeVisualizer(widgets.VBox):
     def __init__(self, results, episode=0):
         self.images = results["images"][episode].numpy()
         if "state_sequences" in results:
-            # states contain sequences of 20, the last state being the present state.
+            # states contain sequences of 20, the last state being the present
+            # state.
             self.states = results["state_sequences"][episode].numpy()[:, -1, :]
         else:
             self.states = None
 
         if "action_sequences" in results:
-            # actions contain sequences of 30, the first being the action taken.
+            # actions contain sequences of 30, the first being the action taken
             self.actions = results["action_sequences"][episode].numpy()[
                 :, 0, :
             ]

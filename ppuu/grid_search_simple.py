@@ -4,16 +4,13 @@ import argparse
 import numpy as np
 
 import pytorch_lightning as pl
-
-from ppuu import slurm
+from torch.multiprocessing import set_start_method
 
 from ppuu.lightning_modules import MPURKMSplitModule as Module
 from ppuu.train_policy import CustomLogger
-from ppuu import configs
+
 
 EPOCHS = 21
-
-from torch.multiprocessing import set_start_method
 
 
 def generate_config():

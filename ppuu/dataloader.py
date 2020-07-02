@@ -67,7 +67,6 @@ class DataStore:
         return time_slot, car_id
 
 
-
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, data_store, split, n_cond, n_pred, size):
         self.split = split
@@ -89,6 +88,37 @@ class Dataset(torch.utils.data.Dataset):
         return self.get_one_example()
 
     def get_one_example(self):
+        """
+        Returns one training example, which includes input staes, and images,
+        actions, and target images and states, as well as car_id and car_size.
+                 n_cond                      n_pred
+        <---------------------><---------------------------------->
+        .                     ..                                  .
+        +---------------------+.                                  .  ^          ^
+        |i|i|i|i|i|i|i|i|i|i|i|.  3 × 117 × 24                    .  |          |
+        +---------------------+.                                  .  | inputs   |
+        +---------------------+.                                  .  |          |
+        |s|s|s|s|s|s|s|s|s|s|s|.  4                               .  |          |
+        +---------------------+.                                  .  v          |
+        .                   +-----------------------------------+ .  ^          |
+        .                2  |a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a| .  | actions  |
+        .                   +-----------------------------------+ .  v          |
+        .                     +-----------------------------------+  ^          | tensors
+        .       3 × 117 × 24  |i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|  |          |
+        .                     +-----------------------------------+  |          |
+        .                     +-----------------------------------+  |          |
+        .                  4  |s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|  | targets  |
+        .                     +-----------------------------------+  |          |
+        .                     +-----------------------------------+  |          |
+        .                  2  |c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|  |          |
+        .                     +-----------------------------------+  v          v
+        +---------------------------------------------------------+             ^
+        |                           car_id                        |             | string
+        +---------------------------------------------------------+             v
+        +---------------------------------------------------------+             ^
+        |                          car_size                       |  2          | tensor
+        +---------------------------------------------------------+             v
+        """
         T = self.n_cond + self.n_pred
         while True:
             s = self.sample_episode()
@@ -131,33 +161,6 @@ class Dataset(torch.utils.data.Dataset):
         actions = actions[t0:t1].float().contiguous()
         ego_cars = ego_cars.float().contiguous()
         car_sizes = car_sizes.float()
-        #          n_cond                      n_pred
-        # <---------------------><---------------------------------->
-        # .                     ..                                  .
-        # +---------------------+.                                  .  ^          ^
-        # |i|i|i|i|i|i|i|i|i|i|i|.  3 × 117 × 24                    .  |          |
-        # +---------------------+.                                  .  | inputs   |
-        # +---------------------+.                                  .  |          |
-        # |s|s|s|s|s|s|s|s|s|s|s|.  4                               .  |          |
-        # +---------------------+.                                  .  v          |
-        # .                   +-----------------------------------+ .  ^          |
-        # .                2  |a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a| .  | actions  |
-        # .                   +-----------------------------------+ .  v          |
-        # .                     +-----------------------------------+  ^          | tensors
-        # .       3 × 117 × 24  |i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|  |          |
-        # .                     +-----------------------------------+  |          |
-        # .                     +-----------------------------------+  |          |
-        # .                  4  |s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|  | targets  |
-        # .                     +-----------------------------------+  |          |
-        # .                     +-----------------------------------+  |          |
-        # .                  2  |c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|  |          |
-        # .                     +-----------------------------------+  v          v
-        # +---------------------------------------------------------+             ^
-        # |                           car_id                        |             | string
-        # +---------------------------------------------------------+             v
-        # +---------------------------------------------------------+             ^
-        # |                          car_size                       |  2          | tensor
-        # +---------------------------------------------------------+             v
 
         return dict(
             input_images=input_images,
@@ -261,9 +264,7 @@ class EvaluationDataset(torch.utils.data.Dataset):
             yield self[i]
 
     def __getitem__(self, i):
-        car_info = self.get_episode_car_info(
-            self.splits[self.split][i]
-        )
+        car_info = self.get_episode_car_info(self.splits[self.split][i])
         return car_info
 
     def get_episode_car_info(self, episode):

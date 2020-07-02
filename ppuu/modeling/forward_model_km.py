@@ -25,9 +25,11 @@ class ForwardModelKM(ForwardModel):
 
         positions = states[:, :2]
         speeds = states[:, 2:]
-        speeds_norm = (speeds.norm(dim=1).view(speeds.shape[0], 1))
+        speeds_norm = speeds.norm(dim=1).view(speeds.shape[0], 1)
 
-        directions_with_negative = speeds / torch.clamp(speeds_norm, min=1e-8, max=1e6)
+        directions_with_negative = speeds / torch.clamp(
+            speeds_norm, min=1e-8, max=1e6
+        )
         directions = torch.stack(
             [
                 torch.abs(directions_with_negative[:, 0]),
@@ -47,7 +49,11 @@ class ForwardModelKM(ForwardModel):
             + ortho_directions * b.unsqueeze(1) * speeds_norm * timestep
         )
         new_directions = new_directions_unnormed / (
-            torch.clamp(new_directions_unnormed.norm(dim=1).view(speeds.shape[0], 1), min=1e-8, max=1e6)
+            torch.clamp(
+                new_directions_unnormed.norm(dim=1).view(speeds.shape[0], 1),
+                min=1e-8,
+                max=1e6,
+            )
         )
 
         new_speeds_norm = speeds_norm + a.unsqueeze(1) * timestep

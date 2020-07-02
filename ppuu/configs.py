@@ -37,8 +37,12 @@ class ModelConfig(ConfigBase):
 
 
 DATASET_PATHS_MAPPING = {
-    "full": "/misc/vlgscratch4/LecunGroup/nvidia-collab/traffic-data_offroad/state-action-cost/data_i80_v0/",
-    "50": "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/traffic-data_offroad_50_test_train_same/state-action-cost/data_i80_v0/",
+    "full": (
+        "/misc/vlgscratch4/LecunGroup/nvidia-collab/traffic-data_offroad/state-action-cost/data_i80_v0/"  # noqa: E501
+    ),
+    "50": (
+        "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/traffic-data_offroad_50_test_train_same/state-action-cost/data_i80_v0/"  # noqa: E501
+    ),
 }
 
 
@@ -95,10 +99,11 @@ class DataclassArgParser(argparse.ArgumentParser):
         """
         Args:
             dataclass_types:
-                Dataclass type, or list of dataclass types for which we will "fill" instances
-                with the parsed args.
+                Dataclass type, or list of dataclass types for which we will
+                "fill" instances with the parsed args.
             kwargs:
-                (Optional) Passed to `argparse.ArgumentParser()` in the regular way.
+                (Optional) Passed to `argparse.ArgumentParser()` in the regular
+                way.
         """
         super().__init__(**kwargs)
         if dataclasses.is_dataclass(dataclass_types):
@@ -108,39 +113,39 @@ class DataclassArgParser(argparse.ArgumentParser):
             self._add_dataclass_arguments(dtype)
 
     def _add_dataclass_arguments(self, dtype: DataClassType):
-        for field in dataclasses.fields(dtype):
-            field_name = f"--{field.name}"
-            kwargs = field.metadata.copy()
-            typestring = str(field.type)
+        for f in dataclasses.fields(dtype):
+            field_name = f"--{f.name}"
+            kwargs = f.metadata.copy()
+            typestring = str(f.type)
             for x in (int, float, str):
                 if typestring == f"typing.Union[{x.__name__}, NoneType]":
-                    field.type = x
-            if isinstance(field.type, type) and issubclass(field.type, Enum):
-                kwargs["choices"] = list(field.type)
-                kwargs["type"] = field.type
-                if field.default is not dataclasses.MISSING:
-                    kwargs["default"] = field.default
-            elif field.type is bool:
+                    f.type = x
+            if isinstance(f.type, type) and issubclass(f.type, Enum):
+                kwargs["choices"] = list(f.type)
+                kwargs["type"] = f.type
+                if f.default is not dataclasses.MISSING:
+                    kwargs["default"] = f.default
+            elif f.type is bool:
                 kwargs["action"] = (
-                    "store_false" if field.default is True else "store_true"
+                    "store_false" if f.default is True else "store_true"
                 )
-                if field.default is True:
-                    field_name = f"--no-{field.name}"
-                    kwargs["dest"] = field.name
-            elif dataclasses.is_dataclass(field.type):
-                self._add_dataclass_arguments(field.type)
+                if f.default is True:
+                    field_name = f"--no-{f.name}"
+                    kwargs["dest"] = f.name
+            elif dataclasses.is_dataclass(f.type):
+                self._add_dataclass_arguments(f.type)
             else:
-                kwargs["type"] = field.type
-                if field.default is not dataclasses.MISSING:
-                    kwargs["default"] = field.default
+                kwargs["type"] = f.type
+                if f.default is not dataclasses.MISSING:
+                    kwargs["default"] = f.default
                 else:
                     kwargs["required"] = True
             self.add_argument(field_name, **kwargs)
 
     def parse_args_into_dataclasses(self, args=None,) -> Tuple[DataClass, ...]:
         """
-        Parse command-line args into instances of the specified dataclass types.
-        This relies on argparse's `ArgumentParser.parse_known_args`.
+        Parse command-line args into instances of the specified dataclass
+        types.  This relies on argparse's `ArgumentParser.parse_known_args`.
         See the doc at:
         docs.python.org/3.7/library/argparse.html#argparse.ArgumentParser.parse_args
         Args:

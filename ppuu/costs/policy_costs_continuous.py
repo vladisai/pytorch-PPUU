@@ -7,8 +7,6 @@ from dataclasses import dataclass, field
 
 from ppuu.costs.policy_costs import PolicyCost
 
-from ppuu import configs
-
 
 class PolicyCostContinuous(PolicyCost):
     @dataclass
@@ -255,8 +253,6 @@ class PolicyCostContinuous(PolicyCost):
         pre_max = proximity_mask * (green_contours ** 2)
         # costs = torch.max(pre_max.view(bsize, npred, -1), 2)[0]
         costs = torch.sum(pre_max.view(bsize, npred, -1), 2)
-        # costs = torch.sum((proximity_mask * images[:, :, green_channel].float()).view(bsize, npred, -1), 2)
-        # costs = torch.max((proximity_mask * images[:, :, green_channel].float()).view(bsize, npred, -1), 2)[0]
 
         images = images.view(bsize, npred, nchannels, crop_h, crop_w)
         green_image = images[:, :, green_channel].float()

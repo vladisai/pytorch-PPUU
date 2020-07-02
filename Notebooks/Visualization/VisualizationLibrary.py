@@ -6,7 +6,6 @@ import Tabs
 
 
 class Visualization:
-
     def __init__(self):
         self.tab = widgets.Tab()
         self.tab.children = [
@@ -18,14 +17,15 @@ class Visualization:
             Tabs.DimensionalityReductionPlotTab(),
             # Tabs.ExperimentsDirectoryTab()
         ]
-        titles = ['Policy performance',
-                  'Episode review',
-                  'Success Pie',
-                  'Success Heatmap',
-                  'Heatmap Compare',
-                  'Failures scatter plot',
-                  # 'Edit',
-                  ]
+        titles = [
+            "Policy performance",
+            "Episode review",
+            "Success Pie",
+            "Success Heatmap",
+            "Heatmap Compare",
+            "Failures scatter plot",
+            # 'Edit',
+        ]
         # self.tab.children = [Tabs.HeatMapComparisonTab()]
         # titles = ['test']
         for i in range(len(self.tab.children)):

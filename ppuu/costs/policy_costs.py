@@ -310,7 +310,8 @@ class PolicyCost(PolicyCostBase):
         )
 
         original_value = self.forward_model.training  # to switch back later
-        self.forward_model.train()  # turn on dropout, for uncertainty estimation
+        # turn on dropout, for uncertainty estimation
+        self.forward_model.train()
         predictions = self.forward_model.unfold(
             actions.clone(),
             dict(input_images=input_images, input_states=input_states,),
@@ -424,15 +425,18 @@ class PolicyCost(PolicyCostBase):
         return result
 
     def estimate_uncertainty_stats(self, dataloader):
-        """Computes uncertainty estimates for the ground truth actions in the training
-        set. This will give us an idea of what normal ranges are using actions the
-        forward model was trained on.
+        """Computes uncertainty estimates for the ground truth actions in the
+        training set. This will give us an idea of what normal ranges are using
+        actions the forward model was trained on.
         """
         u_images, u_states, u_costs = [], [], []
         data_iter = iter(dataloader)
         for i in range(self.config.uncertainty_n_batches):
             print(
-                f"[estimating normal uncertainty ranges: {i / self.config.uncertainty_n_batches:2.1%}]",
+                (
+                    f"[estimating normal uncertainty ranges:"
+                    f" {i / self.config.uncertainty_n_batches:2.1%}]"
+                ),
                 end="\r",
             )
             try:

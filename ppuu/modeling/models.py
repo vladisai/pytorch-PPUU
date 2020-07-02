@@ -1,10 +1,8 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import random
 
 from ppuu.modeling.common_models import Encoder, UNetwork, Decoder
-from ppuu.modeling import policy_models
 
 
 class encoder(nn.Module):

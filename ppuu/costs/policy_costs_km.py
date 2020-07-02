@@ -96,7 +96,7 @@ class PolicyCostKM(PolicyCostContinuous):
         )
 
         x_s = x_s.view(REPEAT_SHAPE)
-        x_s_rotation = torch.ones(REPEAT_SHAPE).cuda() * 1
+        # x_s_rotation = torch.ones(REPEAT_SHAPE).cuda() * 1
 
         y = torch.linspace(-LOOK_SIDEWAYS_M, LOOK_SIDEWAYS_M, crop_w).cuda()
         # x should be from positive to negative, as when we draw the image,
@@ -125,9 +125,9 @@ class PolicyCostKM(PolicyCostContinuous):
             / (x_s - length.view(bsize, 1, 1, 1) / 2),
             min=0,
         )
-        z_x_prime_rotation = torch.clamp(
-            (x_s_rotation - torch.abs(x_prime)) / (x_s_rotation), min=0
-        )
+        # z_x_prime_rotation = torch.clamp(
+        #     (x_s_rotation - torch.abs(x_prime)) / (x_s_rotation), min=0
+        # )
         r_y_prime = torch.clamp(
             (y_d.view(bsize, 1, 1, 1) - torch.abs(y_prime))
             / (y_d - width / 2).view(bsize, 1, 1, 1),
@@ -136,7 +136,8 @@ class PolicyCostKM(PolicyCostContinuous):
 
         # Acceleration probe
         x_major = z_x_prime ** self.config.masks_power
-        # x_major[:, :, (x_major.shape[2] // 2 + 10):, :] = x_major[:, :, (x_major.shape[2] // 2 + 10):, :].clone() ** 2
+        # x_major[:, :, (x_major.shape[2] // 2 + 10):, :] =
+        # = x_major[:, :, (x_major.shape[2] // 2 + 10):, :].clone() ** 2
         y_ramp = torch.clamp(r_y_prime ** self.config.masks_power, max=1)
         result_acceleration = x_major * y_ramp
 
@@ -144,7 +145,8 @@ class PolicyCostKM(PolicyCostContinuous):
         # x_ramp = torch.clamp(z_x_prime, max=1).float()
         x_ramp = torch.clamp(z_x_prime ** self.config.masks_power, max=1)
         # x_ramp = (z_x_prime > 0).float()
-        # x_ramp[:, :, (x_ramp.shape[2] // 2 + 10):, :] = x_ramp[:, :, (x_ramp.shape[2] // 2 + 10):, :].clone() ** 2
+        # x_ramp[:, :, (x_ramp.shape[2] // 2 + 10):, :]
+        # = x_ramp[:, :, (x_ramp.shape[2] // 2 + 10):, :].clone() ** 2
         y_major = r_y_prime ** self.config.masks_power
         result_rotation = x_ramp * y_major
 

@@ -1,20 +1,15 @@
 import os
 import argparse
-import re
 import time
 import glob
 
 from ppuu import slurm
 from ppuu import eval_policy
 
-MODEL_REGEX = ".*policy_networks.*step\d+.model$"
-
-already_run = ["dreaming_uptrain", "fixed_eval_4"]
-
 
 def submit(executor, path):
     print("submitting", path)
-    if path.endswith('=0.ckpt'):
+    if path.endswith("=0.ckpt"):
         return None
     config = eval_policy.EvalConfig(
         checkpoint_path=path, save_gradients=True, num_processes=10
@@ -36,7 +31,7 @@ def main():
     )
     parser.add_argument(
         "--new_only",
-        action='store_true',
+        action="store_true",
         help="don't evaluate existing checkpoints",
     )
     parser.add_argument("--cluster", type=str, default="slurm")
@@ -49,6 +44,8 @@ def main():
 
     path_regex = os.path.join(opt.dir, "**/*.ckpt")
     print(path_regex)
+
+    already_run = []
 
     first_run = True
     while True:

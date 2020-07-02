@@ -7,7 +7,16 @@ class ControlledI80Car(I80Car):
     # Import get_lane_set from PatchedCar
     get_lane_set = PatchedCar.get_lane_set
 
-    def __init__(self, df, y_offset, look_ahead, screen_w, font=None, kernel=0, dt=1/10):
+    def __init__(
+        self,
+        df,
+        y_offset,
+        look_ahead,
+        screen_w,
+        font=None,
+        kernel=0,
+        dt=1 / 10,
+    ):
         super().__init__(df, y_offset, look_ahead, screen_w, font, kernel, dt)
         self.is_controlled = False
         self.buffer_size = 0
@@ -18,7 +27,10 @@ class ControlledI80Car(I80Car):
     @property
     def current_lane(self):
         # If following the I-80 trajectories
-        if not self.is_controlled or len(self._states_image) < self.buffer_size:
+        if (
+            not self.is_controlled
+            or len(self._states_image) < self.buffer_size
+        ):
             return super().current_lane
 
         # Otherwise fetch x location
@@ -31,18 +43,18 @@ class ControlledI80Car(I80Car):
         y = self._position[1]
 
         # If way too up
-        if y < self.lanes[0]['min']:
+        if y < self.lanes[0]["min"]:
             self.off_screen = True
             self.arrived_to_dst = False
             return 0
 
         # Maybe within a sensible range?
         for lane_idx, lane in enumerate(self.lanes):
-            if lane['min'] <= y <= lane['max']:
+            if lane["min"] <= y <= lane["max"]:
                 return lane_idx
 
         # Or maybe on the ramp
-        bottom = self.lanes[-1]['max']
+        bottom = self.lanes[-1]["max"]
         if y <= bottom + 53 - x * 0.035:
             return 6
 
@@ -53,7 +65,9 @@ class ControlledI80Car(I80Car):
 
     @property
     def is_autonomous(self):
-        return self.is_controlled and len(self._states_image) > self.buffer_size
+        return (
+            self.is_controlled and len(self._states_image) > self.buffer_size
+        )
 
 
 class ControlledI80(I80):

@@ -172,11 +172,11 @@ class Decoder(nn.Module):
             opt.height
             opt.width
         """
-        super(decoder, self).__init__()
+        super(Decoder, self).__init__()
         self.layers = layers
         self.n_feature = n_feature
         self.dropout = dropout
-        self.h_height = h_heght
+        self.h_height = h_height
         self.h_width = h_width
         self.height = height
         self.width = width
