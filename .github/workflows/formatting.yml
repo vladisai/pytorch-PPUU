@@ -38,8 +38,12 @@ jobs:
         # File or directory to run black on
         path: .
         
-    - name: Flake8
-      uses: suo/flake8-github-action@v1
+    - name: Lintly-Flake8
+      uses: grantmcconnaughey/lintly-flake8-github-action@v1.0
       with:
-        checkName: Flake8
+        # The GitHub API token to use for creating PR reviews
+        token: ${{ secrets.GITHUB_TOKEN }}
+        # Fail if *any* violations are detected or only *new* ones (valid values are "new" or "any")
+        failIf: any
+        args: #.
   
