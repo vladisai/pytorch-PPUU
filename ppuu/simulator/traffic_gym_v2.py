@@ -1,5 +1,5 @@
-from simulator.traffic_gym import Simulator, Car
-from simulator.map_i80 import I80
+from ppuu.simulator.traffic_gym import Simulator, Car
+from ppuu.simulator.map_i80 import I80
 import pygame
 
 # Conversion LANE_W from real world to pixels

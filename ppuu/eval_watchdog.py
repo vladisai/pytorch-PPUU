@@ -7,6 +7,16 @@ from ppuu import slurm
 from ppuu import eval_policy
 
 
+def should_run(checkpoint, contains_filter):
+    if len(contains_filter) == 0:
+        return True
+    res = False
+    for i in contains_filter:
+        if i in checkpoint:
+            res = True
+    return res
+
+
 def submit(executor, path):
     print("submitting", path)
     if path.endswith("=0.ckpt"):
@@ -34,13 +44,20 @@ def main():
         action="store_true",
         help="don't evaluate existing checkpoints",
     )
+    parser.add_argument(
+        "--contains_filter",
+        type=str,
+        default='[]',
+        help="run only experiments containing words from the filter list",
+    )
     parser.add_argument("--cluster", type=str, default="slurm")
     opt = parser.parse_args()
+    contains_filter = eval(opt.contains_filter)
 
     executor = slurm.get_executor(
         job_name="eval", cpus_per_task=8, cluster=opt.cluster
     )
-    executor.update_parameters(slurm_time="1:00:00")
+    executor.update_parameters(slurm_time="2:00:00")
 
     path_regex = os.path.join(opt.dir, "**/*.ckpt")
     print(path_regex)
@@ -51,6 +68,8 @@ def main():
     while True:
         checkpoints = glob.glob(path_regex, recursive=True)
         for checkpoint in checkpoints:
+            if not should_run(checkpoint, contains_filter):
+                continue
             if checkpoint not in already_run:
                 already_run.append(checkpoint)
                 if not first_run or not opt.new_only:
@@ -58,6 +77,8 @@ def main():
                     if job is not None and opt.cluster in ["local", "debug"]:
                         print(job.result())
         print("done")
+        if opt.check_interval == -1:
+            break
         time.sleep(opt.check_interval)
         first_run = False
 

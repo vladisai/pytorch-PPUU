@@ -288,7 +288,7 @@ class DataReader:
         across all checkpoints.
         The resulting shape of the np array is
         (versions, checkpoints), where versions is the number of versions,
-                              and checkpoints is the number of checkpoints.
+                             and checkpoints is the number of checkpoints.
         """
         results = {}
         for version in DataReader.find_experiment_versions(experiment):
@@ -305,22 +305,22 @@ class DataReader:
         return result
 
     @staticmethod
-    def get_episodes_with_outcome(experiment, seed, step, outcome):
-        """Gets episodes with given outcome for a given model.
+    def get_episodes_with_outcome(experiment, version, checkpoint, outcome):
+        raise NotImplementedError
+
+    @staticmethod
+    def get_checkpoint_outcomes(experiment, version, checkpoint):
+        """Gets episodes outcomes for a given model.
         If outcome == 1, returns successful episodes,
         if outcome == 0, returns failing episodes.
         """
-        path = DataReader.get_evaluation_log_file(experiment, seed, step)
-        with open(path, "r") as f:
-            lines = f.readlines()
-        regex = re.compile(r".*ep:\s+(\d+).*\|\ssuccess:\s+(\d).*")
-        result = []
-        for line in lines:
-            match = regex.match(line)
-            if match:
-                if int(match.group(2)) == outcome:
-                    result.append(int(match.group(1)))
-        return result
+        results = DataReader.get_evaluation_result(
+            experiment, version, checkpoint
+        )
+        return np.array([
+            results["results_per_episode"][str(k)]["road_completed"]
+            for k in range(EPISODES)
+        ])
 
     @staticmethod
     def get_episode_success_map(experiment, seed, step):
@@ -339,31 +339,27 @@ class DataReader:
         return result
 
     @staticmethod
-    def get_episodes_success_counts(experiment):
+    def get_experiment_success_counts(experiment):
         """For a given experiment, for all episodes checks performance of all
         the models with all possible seeds and checkpoints, and returns
         an array of shape (episodes) where episodes is the number of episodes,
         where Ith value is the number of models in this experiment that
         succeeded in this episode.
         """
-        seeds = DataReader.find_option_values("seed", experiment)
+        versions = DataReader.find_experiment_versions(experiment)
         result = np.zeros(EPISODES)
-        for seed in seeds:
-            checkpoints = DataReader.find_option_values(
-                "checkpoint", experiment, seed
+        total_checkpoints = 0
+        for version in versions:
+            checkpoints = DataReader.find_version_checkpoints(
+                experiment, version
             )
             for checkpoint in checkpoints:
-                success = DataReader.get_episodes_with_outcome(
-                    experiment, seed, checkpoint, 1
+                total_checkpoints += 1
+                outcomes = DataReader.get_checkpoint_outcomes(
+                    experiment, version, checkpoint
                 )
-                success = np.array(success)
-                success = success - 1
-                one_hot = np.zeros((len(success), EPISODES))
-                one_hot[np.arange(len(success)), success] = 1
-                one_hot = (np.sum(one_hot, axis=0),)
-                one_hot = np.squeeze(one_hot)
-                result += one_hot
-        return result
+                result += outcomes
+        return result, total_checkpoints
 
     @staticmethod
     def get_episode_speeds(experiment, seed, checkpoint, episode):

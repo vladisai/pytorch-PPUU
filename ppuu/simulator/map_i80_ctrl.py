@@ -1,5 +1,5 @@
-from simulator.map_i80 import I80, I80Car
-from simulator.traffic_gym_v2 import PatchedCar
+from ppuu.simulator.map_i80 import I80, I80Car
+from ppuu.simulator.traffic_gym_v2 import PatchedCar
 
 
 class ControlledI80Car(I80Car):

@@ -8,7 +8,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 import logging
 from dataclasses import dataclass
-from torch.multiprocessing import set_start_method
+import torch.multiprocessing
 
 from ppuu import configs
 from ppuu import dataloader
@@ -59,7 +59,8 @@ class EvalConfig(configs.ConfigBase):
 
 
 def main(config):
-    set_start_method("spawn")
+    torch.multiprocessing.set_sharing_strategy("file_system")
+    torch.multiprocessing.set_start_method("spawn")
     mpur_module = MPURModule.load_from_checkpoint(
         checkpoint_path=config.checkpoint_path
     )
@@ -70,7 +71,7 @@ def main(config):
 
     evaluator = PolicyEvaluator(
         test_dataset,
-        4,
+        config.num_processes,
         build_gradients=config.save_gradients,
         enable_logging=True,
     )

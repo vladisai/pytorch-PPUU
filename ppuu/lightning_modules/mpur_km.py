@@ -2,7 +2,11 @@
 
 
 from ppuu.lightning_modules.mpur import MPURModule, inject
-from ppuu.costs.policy_costs_km import PolicyCostKM, PolicyCostKMSplit
+from ppuu.costs.policy_costs_km import (
+    PolicyCostKM,
+    PolicyCostKMSplit,
+    PolicyCostKMTaper,
+)
 from ppuu.modeling.forward_model_km import ForwardModelKM
 
 
@@ -16,4 +20,9 @@ class MPURKMModule(MPURModule):
 
 @inject(cost_type=PolicyCostKMSplit, fm_type=ForwardModelKM)
 class MPURKMSplitModule(MPURKMModule):
+    pass
+
+
+@inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelKM)
+class MPURKMTaperModule(MPURKMModule):
     pass

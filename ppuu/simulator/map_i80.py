@@ -3,7 +3,7 @@ from os.path import isfile
 
 import torch
 
-from simulator.traffic_gym import Simulator, Car, colours
+from ppuu.simulator.traffic_gym import Simulator, Car, colours
 import pygame
 import pandas as pd
 import numpy as np

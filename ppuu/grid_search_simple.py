@@ -4,9 +4,9 @@ import argparse
 import numpy as np
 
 import pytorch_lightning as pl
-from torch.multiprocessing import set_start_method
+import torch.multiprocessing
 
-from ppuu.lightning_modules import MPURKMSplitModule as Module
+from ppuu.lightning_modules import MPURKMTaperModule as Module
 from ppuu.train_policy import CustomLogger
 
 
@@ -22,12 +22,15 @@ def generate_config():
     config.cost_config.lambda_o = (
         config.cost_config.lambda_l * np.random.uniform(0.1, 2) ** 2
     )
-    config.cost_config.u_reg = 0.05
+    config.cost_config.u_reg = (
+        config.cost_config.lambda_l * np.random.uniform(0, 1.5) ** 3
+    )
     config.cost_config.lambda_a = (
         config.cost_config.lambda_l * np.random.uniform(0, 1) ** 2
     )
     config.cost_config.agg_func_str = f"logsumexp-{np.random.randint(15, 85)}"
     config.cost_config.masks_power = np.random.uniform(1, 10)
+    config.model_config.model_type = "km_taper"
     return config
 
 
@@ -64,12 +67,13 @@ def run_trial(output_dir):
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method("spawn")
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--output_dir", type=str, required=True, help="output dir"
     )
     args = parser.parse_args()
-    set_start_method("spawn")
 
     for i in range(1000):
         run_trial(args.output_dir)

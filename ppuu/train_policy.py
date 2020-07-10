@@ -4,7 +4,7 @@ import json
 from collections import defaultdict
 
 import pytorch_lightning as pl
-from torch.multiprocessing import set_start_method
+import torch.multiprocessing
 
 from ppuu import lightning_modules
 from ppuu import slurm
@@ -57,7 +57,11 @@ class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
 
 
 def main(config):
-    set_start_method("spawn")
+    try:
+        torch.multiprocessing.set_sharing_strategy("file_system")
+        torch.multiprocessing.set_start_method("spawn")
+    except RuntimeError:
+        pass
 
     module = lightning_modules.get_module(config.model_config.model_type)
 
@@ -77,7 +81,9 @@ def main(config):
         check_val_every_n_epoch=period,
         num_sanity_val_steps=0,
         checkpoint_callback=ModelCheckpoint(
-            filepath=os.path.join(logger.log_dir, "checkpoints"),
+            filepath=os.path.join(
+                logger.log_dir, "checkpoints", "{epoch}_{success_rate}"
+            ),
             save_top_k=-1,
             save_last=True,
             run_eval=config.training_config.run_eval,
@@ -86,6 +92,7 @@ def main(config):
     )
     if config.model_config.checkpoint:
         model = module.load_from_checkpoint(config.model_config.checkpoint)
+        config.cost_config = model.CostType.Config.parse_from_dict(model.hparams.cost_config)
         model.set_hparams(config)
     else:
         model = module(config)
@@ -94,8 +101,6 @@ def main(config):
 
 
 if __name__ == "__main__":
-    print("hasdfa aaaa")
-    print("hahaha")
     module = lightning_modules.get_module_from_command_line()
     config = module.Config.parse_from_command_line()
     use_slurm = slurm.parse_from_command_line()

@@ -81,3 +81,40 @@ class MPURDreamingModule(MPURModule):
             "log": loss,
             "progress_bar": loss,
         }
+
+
+@inject(cost_type=PolicyCostContinuous)
+class MPURDreamingLBFGSModule(MPURDreamingModule):
+    def get_adversarial_z(self, batch):
+        z = self.forward_model.sample_z(
+            self.config.model_config.n_pred
+            * self.config.training_config.batch_size
+        )
+        z = z.view(
+            self.config.training_config.batch_size,
+            self.config.model_config.n_pred,
+            -1,
+        ).detach()
+        z.requires_grad = True
+        optimizer_z = self.get_z_optimizer(z)
+
+        def lbfgs_closure():
+            optimizer_z.zero_grad()
+            predictions = self.forward_model.unfold(
+                self.policy_model, batch, z
+            )
+            cost, components = self.policy_cost.calculate_z_cost(
+                batch, predictions
+            )
+            self.log_z(cost, components, "adv")
+            optimizer_z.zero_grad()
+            cost.backward()
+            return cost
+
+        optimizer_z.step(lbfgs_closure)
+        return z
+
+    def get_z_optimizer(self, Z):
+        return torch.optim.LBFGS(
+            [Z], max_iter=self.config.training_config.n_z_updates
+        )

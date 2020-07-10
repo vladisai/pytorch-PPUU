@@ -135,6 +135,7 @@ class MPURModule(pl.LightningModule):
         avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
         tensorboard_logs = {"val_loss": avg_loss}
         eval_results = self.evaluator.evaluate(self)
+        # eval_results = {'stats': {'success_rate': 0.0}}
         tensorboard_logs.update(eval_results["stats"])
         return {
             "val_loss": avg_loss,
@@ -190,7 +191,7 @@ class MPURModule(pl.LightningModule):
         loader = DataLoader(
             self.train_dataset,
             batch_size=self.config.training_config.batch_size,
-            num_workers=1,
+            num_workers=0,
             worker_init_fn=self.worker_init_fn,
         )
         return loader
@@ -199,7 +200,7 @@ class MPURModule(pl.LightningModule):
         loader = DataLoader(
             self.val_dataset,
             batch_size=self.config.training_config.batch_size,
-            num_workers=1,
+            num_workers=0,
             worker_init_fn=self.worker_init_fn,
         )
         return loader
@@ -230,5 +231,4 @@ class MPURModule(pl.LightningModule):
 
 @inject(cost_type=PolicyCostContinuous, fm_type=ForwardModel)
 class MPURContinuousModule(MPURModule):
-    x = "heeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     pass
