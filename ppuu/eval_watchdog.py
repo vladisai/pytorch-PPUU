@@ -47,7 +47,7 @@ def main():
     parser.add_argument(
         "--contains_filter",
         type=str,
-        default='[]',
+        default="[]",
         help="run only experiments containing words from the filter list",
     )
     parser.add_argument("--cluster", type=str, default="slurm")

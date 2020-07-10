@@ -92,7 +92,9 @@ def main(config):
     )
     if config.model_config.checkpoint:
         model = module.load_from_checkpoint(config.model_config.checkpoint)
-        config.cost_config = model.CostType.Config.parse_from_dict(model.hparams.cost_config)
+        config.cost_config = model.CostType.Config.parse_from_dict(
+            model.hparams.cost_config
+        )
         model.set_hparams(config)
     else:
         model = module(config)

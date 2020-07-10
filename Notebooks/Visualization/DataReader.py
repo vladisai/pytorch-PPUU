@@ -317,10 +317,12 @@ class DataReader:
         results = DataReader.get_evaluation_result(
             experiment, version, checkpoint
         )
-        return np.array([
-            results["results_per_episode"][str(k)]["road_completed"]
-            for k in range(EPISODES)
-        ])
+        return np.array(
+            [
+                results["results_per_episode"][str(k)]["road_completed"]
+                for k in range(EPISODES)
+            ]
+        )
 
     @staticmethod
     def get_episode_success_map(experiment, seed, step):
