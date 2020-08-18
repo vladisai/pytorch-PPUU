@@ -1,8 +1,8 @@
 """Train a policy / controller"""
 
 from dataclasses import dataclass
-
 import torch
+import torch.optim as optim
 
 from ppuu.costs.policy_costs_continuous import PolicyCostContinuous
 from ppuu.lightning_modules.mpur import MPURModule, inject
@@ -15,6 +15,11 @@ class MPURDreamingModule(MPURModule):
         lrt_z: float = 0.1
         n_z_updates: int = 10
         adversarial_frequency: int = 10
+        n_adversarial_policy_updates: int = 1
+
+    def __init__(self, hparams=None):
+        super().__init__(hparams)
+        self.adversarial_z = None
 
     def get_adversarial_z(self, batch):
         z = self.forward_model.sample_z(
@@ -26,6 +31,7 @@ class MPURDreamingModule(MPURModule):
             self.config.model_config.n_pred,
             -1,
         ).detach()
+        original_z = z.clone()
         z.requires_grad = True
         optimizer_z = self.get_z_optimizer(z)
 
@@ -34,13 +40,16 @@ class MPURDreamingModule(MPURModule):
                 self.policy_model, batch, z
             )
             cost, components = self.policy_cost.calculate_z_cost(
-                batch, predictions
+                batch, predictions, original_z
             )
             self.log_z(cost, components, "adv")
             optimizer_z.zero_grad()
             cost.backward()
             optimizer_z.step()
 
+        self.logger.log_custom("z_difference", (z - original_z).norm().item())
+        self.logger.log_custom("z_norm", (z).norm().item())
+        self.logger.log_custom("z_original_norm", (original_z).norm().item())
         return z
 
     def log_z(self, cost, components, t):
@@ -58,11 +67,19 @@ class MPURDreamingModule(MPURModule):
 
     def forward_adversarial(self, batch):
         self.forward_model.eval()
-        z = self.get_adversarial_z(batch)
-        predictions = self.forward_model.unfold(self.policy_model, batch, z)
+        if self.adversarial_z is None:
+            self.adversarial_z = self.get_adversarial_z(batch)
+        predictions = self.forward_model.unfold(
+            self.policy_model, batch, self.adversarial_z
+        )
         return predictions
 
-    def training_step(self, batch, batch_idx):
+    def optimizer_step(
+        self, epoch, batch_idx, optimizer, optimizer_idx, *args, **kwargs
+    ):
+        optimizer.step()
+
+    def training_step(self, batch, batch_idx, optimizer_idx=0):
         if batch_idx % self.config.training_config.adversarial_frequency == 0:
             predictions = self.forward_adversarial(batch)
             cost, components = self.policy_cost.calculate_z_cost(
@@ -70,7 +87,12 @@ class MPURDreamingModule(MPURModule):
             )
             self.log_z(cost, components, "adv")
         else:
-            predictions = self.forward(batch)
+            self.adversarial_z = None
+            if optimizer_idx != 0:
+                # We don't use extra optimizers unless we're doing adversarial
+                # z.
+                return {"loss": torch.tensor(0.0, requires_grad=True)}
+            predictions = self(batch)
             cost, components = self.policy_cost.calculate_z_cost(
                 batch, predictions
             )
@@ -81,6 +103,15 @@ class MPURDreamingModule(MPURModule):
             "log": loss,
             "progress_bar": loss,
         }
+
+    def configure_optimizers(self):
+        optimizer = optim.Adam(
+            self.policy_model.parameters(),
+            self.config.training_config.learning_rate,
+        )
+        return [
+            optimizer
+        ] * self.config.training_config.n_adversarial_policy_updates
 
 
 @inject(cost_type=PolicyCostContinuous)
@@ -95,6 +126,7 @@ class MPURDreamingLBFGSModule(MPURDreamingModule):
             self.config.model_config.n_pred,
             -1,
         ).detach()
+        original_z = z.clone()
         z.requires_grad = True
         optimizer_z = self.get_z_optimizer(z)
 
@@ -112,6 +144,9 @@ class MPURDreamingLBFGSModule(MPURDreamingModule):
             return cost
 
         optimizer_z.step(lbfgs_closure)
+        self.logger.log_custom("z_difference", (z - original_z).norm().item())
+        self.logger.log_custom("z_norm", (z).norm().item())
+        self.logger.log_custom("z_original_norm", (original_z).norm().item())
         return z
 
     def get_z_optimizer(self, Z):

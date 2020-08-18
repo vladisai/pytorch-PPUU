@@ -14,7 +14,9 @@ from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu import configs
 from ppuu.modeling import policy_models
 from ppuu.modeling.forward_models import ForwardModel
+from ppuu.modeling.policy_models import MixoutDeterministicPolicy
 from ppuu.eval import PolicyEvaluator
+from ppuu.data import Augmenter
 
 
 def inject(cost_type=PolicyCost, fm_type=ForwardModel):
@@ -94,6 +96,26 @@ class MPURModule(pl.LightningModule):
         )
         self.policy_model.train()
 
+        if self.config.model_config.checkpoint is not None:
+            checkpoint = torch.load(self.config.model_config.checkpoint)
+            self.load_state_dict(checkpoint["state_dict"])
+
+        if self.config.training_config.freeze_encoder:
+            for name, p in self.policy_model.named_parameters():
+                if "fc" not in name:
+                    p.requires_grad = False
+
+        if self.config.training_config.mixout_p is not None:
+            self.policy_model = MixoutDeterministicPolicy(
+                self.policy_model, p=self.config.training_config.mixout_p
+            )
+            self.policy_model.to(self.device)
+
+        self.augmenter = Augmenter(
+            self.config.training_config.noise_augmentation_std,
+            self.config.training_config.noise_augmentation_p,
+        )
+
     def set_hparams(self, hparams=None):
         if hparams is None:
             hparams = MPURModule.Config()
@@ -106,7 +128,9 @@ class MPURModule(pl.LightningModule):
 
     def forward(self, batch):
         self.forward_model.eval()
-        predictions = self.forward_model.unfold(self.policy_model, batch)
+        predictions = self.forward_model.unfold(
+            self.policy_model, batch, augmenter=self.augmenter
+        )
         return predictions
 
     def training_step(self, batch, batch_idx):
@@ -134,15 +158,19 @@ class MPURModule(pl.LightningModule):
     def validation_epoch_end(self, outputs):
         avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
         tensorboard_logs = {"val_loss": avg_loss}
-        eval_results = self.evaluator.evaluate(self)
-        # eval_results = {'stats': {'success_rate': 0.0}}
-        tensorboard_logs.update(eval_results["stats"])
+        progress_bar = {}
+        if self.config.training_config.validation_eval:
+            eval_results = self.evaluator.evaluate(self)
+            # eval_results = {'stats': {'success_rate': 0.0}}
+            tensorboard_logs.update(eval_results["stats"])
+            progress_bar["success_rate"] = eval_results["stats"][
+                "success_rate"
+            ]
+
         return {
             "val_loss": avg_loss,
             "log": tensorboard_logs,
-            "progress_bar": {
-                "success_rate": eval_results["stats"]["success_rate"]
-            },
+            "progress_bar": {"success_rate": progress_bar,},
         }
 
     def configure_optimizers(self):
@@ -150,7 +178,8 @@ class MPURModule(pl.LightningModule):
             self.policy_model.parameters(),
             self.config.training_config.learning_rate,
         )
-        return optimizer
+        scheduler = optim.lr_scheduler.StepLR(optimizer, 20, 0.50)
+        return [optimizer], [scheduler]
 
     @staticmethod
     def _worker_init_fn(index):
@@ -219,12 +248,20 @@ class MPURModule(pl.LightningModule):
     def _load_model_state(cls, checkpoint, *args, **kwargs):
         copy = dict()
         for k in checkpoint["state_dict"]:
+            # Adjust for nested forward model.
             if k.startswith("forward_model") and not k.startswith(
                 "forward_model.forward_model."
             ):
                 copy["forward_model." + k] = checkpoint["state_dict"][k]
-            else:
+            elif k.startswith("policy_model.original_model"):
+                if "fc" not in k:
+                    copy[k.replace(".original_model", "")] = checkpoint[
+                        "state_dict"
+                    ][k]
+            elif "target" not in k:
                 copy[k] = checkpoint["state_dict"][k]
+
+            # Change for mixout network.
         checkpoint["state_dict"] = copy
         return super()._load_model_state(checkpoint, *args, **kwargs)
 

@@ -14,7 +14,7 @@ from ppuu.modeling.forward_model_km import ForwardModelKM
 class MPURKMModule(MPURModule):
     def forward(self, batch):
         self.forward_model.eval()
-        predictions = self.forward_model.unfold_km(self.policy_model, batch)
+        predictions = self.forward_model.unfold_km(self.policy_model, batch, augmenter=self.augmenter)
         return predictions
 
 

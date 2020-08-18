@@ -60,13 +60,12 @@ class DataReader:
     @staticmethod
     def get_gradients(experiment, version, checkpoint, episode):
         """Get gradients for a given model evaluation on a given episode"""
-        gradients = (
-            DataReader.get_episode_result(
-                experiment, version, checkpoint, episode
-            )["gradients"]
-            .detach()
-            .cpu()
-        )
+        gradients = DataReader.get_episode_result(
+            experiment, version, checkpoint, episode
+        )["gradients"]
+        if gradients is None:
+            return []
+        gradients = gradients.detach().cpu()
         if len(gradients.shape) == 5:
             gradients = gradients[0]
         images = []
@@ -197,7 +196,16 @@ class DataReader:
         version_checkpoints_path = DataReader.get_version_checkpoints_path(
             experiment, version
         )
-        return sorted(os.listdir(version_checkpoints_path))
+        checkpoints = []
+        if os.path.exists(version_checkpoints_path):
+            for d in os.listdir(version_checkpoints_path):
+                if os.path.exists(
+                    os.path.join(
+                        version_checkpoints_path, d, "evaluation_results.json"
+                    )
+                ):
+                    checkpoints.append(d)
+        return checkpoints
 
     @staticmethod
     @lru_cache(maxsize=100)
@@ -276,6 +284,8 @@ class DataReader:
         checkpoints = DataReader.find_version_checkpoints(experiment, version)
         result = {}
         for checkpoint in checkpoints:
+            if checkpoint.startswith("last"):
+                continue
             checkpoint_int = int(re.findall(r"\d+", checkpoint)[0])
             result[checkpoint_int] = DataReader.get_success_rate(
                 experiment, version, checkpoint

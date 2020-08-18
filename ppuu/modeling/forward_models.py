@@ -23,6 +23,7 @@ class ForwardModel(torch.nn.Module):
         actions_or_policy: Union[torch.nn.Module, torch.Tensor],
         batch,
         Z=None,
+        augmenter=None,
     ):
         input_images = batch["input_images"].clone()
         input_states = batch["input_states"].clone()
@@ -57,6 +58,9 @@ class ForwardModel(torch.nn.Module):
             if torch.is_tensor(actions_or_policy):
                 actions = actions_or_policy[:, t]
             else:
+                next_input = input_images_with_ego
+                if augmenter:
+                    next_input = augmenter(next_input)
                 actions = actions_or_policy(
                     input_images_with_ego, input_states
                 )

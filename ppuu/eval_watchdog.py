@@ -8,26 +8,42 @@ from ppuu import eval_policy
 
 
 def should_run(checkpoint, contains_filter):
-    if len(contains_filter) == 0:
-        return True
-    res = False
-    for i in contains_filter:
-        if i in checkpoint:
-            res = True
+    res = True
+
+    # if contains filter is not empty, match filenames
+    if len(contains_filter) > 0:
+        res = False
+        for i in contains_filter:
+            if i in checkpoint:
+                res = True
+    # check if evaluation result file is already there
+    results_path = os.path.join(
+        checkpoint.replace("checkpoints", "evaluation_results"),
+        "evaluation_results.json",
+    )
+    if os.path.exists(results_path):
+        res = False
+    if checkpoint.endswith("=0.ckpt"):
+        res = False
+    if checkpoint.endswith("last.ckpt"):
+        res = False
     return res
 
 
 def submit(executor, path):
     print("submitting", path)
-    if path.endswith("=0.ckpt"):
-        return None
     config = eval_policy.EvalConfig(
         checkpoint_path=path, save_gradients=True, num_processes=10
     )
-    if not os.path.exists(config.output_dir):
-        return executor.submit(eval_policy.main, config)
-    else:
-        return None
+    return executor.submit(eval_policy.main, config)
+
+
+def get_all_checkpoints(path, contains_filter):
+    path_regex = os.path.join(path, "**/*.ckpt")
+    checkpoints = glob.glob(path_regex, recursive=True)
+    checkpoints = filter(lambda x: os.path.isfile(x), checkpoints)
+    checkpoints = filter(lambda x: should_run(x, contains_filter), checkpoints)
+    return checkpoints
 
 
 def main():
@@ -45,6 +61,11 @@ def main():
         help="don't evaluate existing checkpoints",
     )
     parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="don't run jobs",
+    )
+    parser.add_argument(
         "--contains_filter",
         type=str,
         default="[]",
@@ -59,23 +80,22 @@ def main():
     )
     executor.update_parameters(slurm_time="2:00:00")
 
-    path_regex = os.path.join(opt.dir, "**/*.ckpt")
-    print(path_regex)
-
     already_run = []
 
     first_run = True
     while True:
-        checkpoints = glob.glob(path_regex, recursive=True)
+        checkpoints = get_all_checkpoints(opt.dir, contains_filter)
         for checkpoint in checkpoints:
-            if not should_run(checkpoint, contains_filter):
-                continue
             if checkpoint not in already_run:
                 already_run.append(checkpoint)
-                if not first_run or not opt.new_only:
+                if opt.debug:
+                    print('would run', checkpoint)
+                if not opt.debug and (not first_run or not opt.new_only):
                     job = submit(executor, checkpoint)
-                    if job is not None and opt.cluster in ["local", "debug"]:
-                        print(job.result())
+                    if job is not None:
+                        if opt.cluster in ["local", "debug"]:
+                            print(job.result())
+                        print("job id: ", job.job_id)
         print("done")
         if opt.check_interval == -1:
             break

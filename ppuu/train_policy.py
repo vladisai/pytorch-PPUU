@@ -17,6 +17,7 @@ class CustomLogger(pl.loggers.TensorBoardLogger):
         self.logs = []
         self.custom_logs = defaultdict(lambda: [])
         self.json_filename = json_filename
+        self.ctr = 0
 
     @pl.loggers.base.rank_zero_only
     def log_metrics(self, metrics, step=None):
@@ -25,6 +26,13 @@ class CustomLogger(pl.loggers.TensorBoardLogger):
 
     def log_custom(self, key, value):
         self.custom_logs[key].append(value)
+        if type(value) == tuple:
+            self.experiment.add_scalar(
+                f"custom/{key}/{value[1]}", value[0], self.ctr
+            )
+        else:
+            self.experiment.add_scalar(f"custom/{key}", value, self.ctr)
+        self.ctr += 1
 
     def save(self):
         super().save()
@@ -63,6 +71,12 @@ def main(config):
     except RuntimeError:
         pass
 
+    if config.training_config.debug or config.training_config.fast_dev_run:
+        config.training_config.set_dataset("50")
+        config.training_config.epoch_size = 10
+        config.training_config.n_epochs = 10
+        config.cost_config.uncertainty_n_batches = 10
+
     module = lightning_modules.get_module(config.model_config.model_type)
 
     pl.seed_everything(config.training_config.seed)
@@ -73,13 +87,16 @@ def main(config):
         version=f"seed={config.training_config.seed}",
     )
 
+
     period = max(1, config.training_config.n_epochs // 5)
+
     trainer = pl.Trainer(
         gpus=1,
         gradient_clip_val=50.0,
         max_epochs=config.training_config.n_epochs,
         check_val_every_n_epoch=period,
         num_sanity_val_steps=0,
+        fast_dev_run=config.training_config.fast_dev_run,
         checkpoint_callback=ModelCheckpoint(
             filepath=os.path.join(
                 logger.log_dir, "checkpoints", "{epoch}_{success_rate}"
@@ -90,14 +107,15 @@ def main(config):
         ),
         logger=logger,
     )
-    if config.model_config.checkpoint:
-        model = module.load_from_checkpoint(config.model_config.checkpoint)
-        config.cost_config = model.CostType.Config.parse_from_dict(
-            model.hparams.cost_config
-        )
-        model.set_hparams(config)
-    else:
-        model = module(config)
+    # if config.model_config.checkpoint:
+    #     model = module.load_from_checkpoint(config.model_config.checkpoint)
+    #     config.cost_config = model.CostType.Config.parse_from_dict(
+    #         model.hparams.cost_config
+    #     )
+    #     model.set_hparams(config)
+    #     model.configure_uptraining()
+    # else:
+    model = module(config)
     trainer.fit(model)
     return model
 

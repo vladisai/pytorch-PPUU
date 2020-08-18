@@ -417,9 +417,10 @@ class EpisodeReview(widgets.VBox):
                     0, len(self.images) - len(self.gradient_images)
                 )
                 if change.new >= gradient_shift:
-                    self.episode_gradient_image.value = self.gradient_images[
-                        change.new - gradient_shift
-                    ]
+                    if len(self.gradient_images) > change.new - gradient_shift:
+                        self.episode_gradient_image.value = self.gradient_images[
+                            change.new - gradient_shift
+                        ]
                 self.episode_image.value = self.images[change.new]
                 self.update_timestamp_line(change.new)
 

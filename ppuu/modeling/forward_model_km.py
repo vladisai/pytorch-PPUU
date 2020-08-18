@@ -70,6 +70,7 @@ class ForwardModelKM(ForwardModel):
         actions_or_policy: Union[torch.nn.Module, torch.Tensor],
         batch,
         Z=None,
+        augmenter=None,
     ):
         def cat_inputs(inputs, new_value):
             if len(new_value.shape) < len(inputs.shape):
@@ -117,6 +118,9 @@ class ForwardModelKM(ForwardModel):
             if torch.is_tensor(actions_or_policy):
                 actions = actions_or_policy[:, t]
             else:
+                next_input = input_images_with_ego
+                if augmenter:
+                    next_input = augmenter(next_input)
                 actions = actions_or_policy(
                     input_images_with_ego, input_states
                 )

@@ -1,8 +1,10 @@
 """Cost model that uses the kinematic model.
 """
 
-import torch
 from dataclasses import dataclass, field
+
+import torch
+import numpy as np
 
 from ppuu.costs.policy_costs_continuous import PolicyCostContinuous
 
@@ -24,7 +26,8 @@ class AggregationFunction:
 class PolicyCostKM(PolicyCostContinuous):
     @dataclass
     class Config(PolicyCostContinuous.Config):
-        masks_power: int = 4.22
+        masks_power_x: int = 4.22
+        masks_power_y: int = 4.22
         agg_func_str: str = "logsumexp-67"
         lambda_a: float = field(default=0.02)
         lambda_l: float = field(default=1.77)
@@ -129,19 +132,19 @@ class PolicyCostKM(PolicyCostContinuous):
         )
 
         # Acceleration probe
-        x_major = z_x_prime ** self.config.masks_power
+        x_major = z_x_prime ** self.config.masks_power_x
         # x_major[:, :, (x_major.shape[2] // 2 + 10):, :] =
         # = x_major[:, :, (x_major.shape[2] // 2 + 10):, :].clone() ** 2
-        y_ramp = torch.clamp(r_y_prime ** self.config.masks_power, max=1)
+        y_ramp = torch.clamp(r_y_prime ** self.config.masks_power_y, max=1)
         result_acceleration = x_major * y_ramp
 
         # Rotation probe
         # x_ramp = torch.clamp(z_x_prime, max=1).float()
-        x_ramp = torch.clamp(z_x_prime ** self.config.masks_power, max=1)
+        x_ramp = torch.clamp(z_x_prime ** self.config.masks_power_x, max=1)
         # x_ramp = (z_x_prime > 0).float()
         # x_ramp[:, :, (x_ramp.shape[2] // 2 + 10):, :]
         # = x_ramp[:, :, (x_ramp.shape[2] // 2 + 10):, :].clone() ** 2
-        y_major = r_y_prime ** self.config.masks_power
+        y_major = r_y_prime ** self.config.masks_power_y
         result_rotation = x_ramp * y_major
 
         return result_rotation, result_acceleration
@@ -176,7 +179,7 @@ class PolicyCostKM(PolicyCostContinuous):
         return costs_m.view(bsize, npred)
 
     def compute_state_costs_for_training(
-        self, pred_images, pred_states, car_sizes
+        self, pred_images, pred_states, pred_actions, car_sizes
     ):
         proximity_masks = self.get_masks(
             pred_images[:, :, :3].contiguous().detach(),
@@ -215,7 +218,7 @@ class PolicyCostKM(PolicyCostContinuous):
 
 class PolicyCostKMSplit(PolicyCostKM):
     def compute_state_costs_for_training(
-        self, pred_images, pred_states, car_sizes
+        self, pred_images, pred_states, pred_actions, car_sizes
     ):
         proximity_mask_a = self.get_masks(
             pred_images[:, :, :3].contiguous().detach(),
@@ -269,7 +272,19 @@ class PolicyCostKMSplit(PolicyCostKM):
 class PolicyCostKMTaper(PolicyCostKM):
     """Cost with tapered end"""
 
-    def get_masks(self, images, states, car_size, unnormalize):
+    @dataclass
+    class Config(PolicyCostContinuous.Config):
+        masks_power_x: int = 4.22
+        masks_power_y: int = 4.22
+        agg_func_str: str = "sum"
+        lambda_a: float = field(default=0.23)
+        lambda_j: float = field(default=2.5)
+        lambda_l: float = field(default=2.86)
+        lambda_o: float = field(default=3.18)
+        lambda_p: float = field(default=25.5)
+        u_reg: float = field(default=1.62)
+
+    def get_masks(self, images, states, actions, car_size, unnormalize):
         bsize, npred, nchannels, crop_h, crop_w = images.shape
         device = images.device
 
@@ -284,7 +299,19 @@ class PolicyCostKMTaper(PolicyCostKM):
                 states.size()
             ).to(device)
 
+            actions = actions * (
+                1e-8
+                + self.data_stats["a_std"].view(1, 2).expand(actions.size())
+            ).to(device)
+            actions = actions + self.data_stats["a_mean"].view(1, 2).expand(
+                actions.size()
+            ).to(device)
+
         states = states.view(bsize, npred, 4)
+        actions = actions.view(bsize, npred, 2)
+        clipped_actions = actions[:, 1:, :]
+        last_action = actions[:, -1, :].unsqueeze(1)
+        stitched_actions = torch.cat((clipped_actions, last_action), dim=1)  #
 
         LANE_WIDTH_METRES = 3.7
         LANE_WIDTH_PIXELS = 24  # pixels / 3.7 m, lane width
@@ -294,18 +321,9 @@ class PolicyCostKMTaper(PolicyCostKM):
         LOOK_AHEAD_M = MAX_SPEED_MS  # meters
         LOOK_SIDEWAYS_M = 2 * LANE_WIDTH_METRES  # meters
         METRES_IN_FOOT = 0.3048
+        TIMESTEP = 0.1
 
         car_size = car_size.to(device)
-        positions = states[:, :, :2]
-        speeds = states[:, :, 2:]
-        speeds_norm = speeds.norm(1, 2) / PIXELS_IN_METRE
-        # speeds_o = torch.ones_like(speeds).cuda()
-        # directions = torch.atan2(speeds_o[:, :, 1], speeds_o[:, :, 0])
-        directions = torch.atan2(speeds[:, :, 1], speeds[:, :, 0])
-
-        positions_adjusted = positions - positions.detach()
-        # here we flip directions because they're flipped otherwise
-        directions_adjusted = -(directions - directions.detach())
 
         width, length = car_size[:, 0], car_size[:, 1]  # feet
         width = width * METRES_IN_FOOT
@@ -313,6 +331,24 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         length = length * METRES_IN_FOOT
         length = length.view(bsize, 1)
+
+        positions = states[:, :, :2]
+        speeds = states[:, :, 2:]
+        speeds_norm = speeds.norm(1, 2) / PIXELS_IN_METRE
+        speeds_norm_pixels = speeds.norm(1, 2)
+
+
+        alphas = torch.atan(speeds_norm_pixels * actions[:, :, 1] * TIMESTEP)
+        gammas = (np.pi - alphas) / 2
+        radii = -1 * speeds_norm * TIMESTEP / (2 * torch.cos(gammas) + 1e-7) # in meters
+
+        # speeds_o = torch.ones_like(speeds).cuda()
+        # directions = torch.atan2(speeds_o[:, :, 1], speeds_o[:, :, 0])
+        directions = torch.atan2(speeds[:, :, 1], speeds[:, :, 0])
+
+        positions_adjusted = positions - positions.detach()
+        # here we flip directions because they're flipped otherwise
+        directions_adjusted = -(directions - directions.detach())
 
         REPEAT_SHAPE = (bsize, npred, 1, 1)
 
@@ -335,6 +371,20 @@ class PolicyCostKMTaper(PolicyCostKM):
         xx, yy = torch.meshgrid(x, y)
         xx = xx.repeat(bsize, npred, 1, 1)
         yy = yy.repeat(bsize, npred, 1, 1)
+
+        center_y = radii.unsqueeze(-1).unsqueeze(-1)
+        center_x = torch.zeros_like(center_y)
+
+        r = torch.sqrt((yy - center_y) ** 2 + (xx - center_x) ** 2)
+        x1 = xx - center_x
+
+        is_to_the_right = (center_y > 0).float() * 2 - 1
+        y1 = (center_y - yy) * is_to_the_right
+
+        alpha = torch.atan2(x1, y1)
+        ll = alpha * r
+        yy = center_y - is_to_the_right * r
+        xx = center_x + ll
 
         c, s = torch.cos(directions_adjusted), torch.sin(directions_adjusted)
         c = c.view(REPEAT_SHAPE)
@@ -384,21 +434,22 @@ class PolicyCostKMTaper(PolicyCostKM):
             y_multiply_coefficient, min_multiplier
         )
         r_y_prime = torch.clamp(r_y_prime * y_multiply_coefficient, max=1)
-        r_y_prime = r_y_prime ** self.config.masks_power
+        r_y_prime = r_y_prime ** self.config.masks_power_y
 
         # Acceleration probe
-        x_major = z_x_prime ** self.config.masks_power
-        # x_major[:, :, (x_major.shape[2] // 2 + 10):, :] =
-        # = x_major[:, :, (x_major.shape[2] // 2 + 10):, :].clone() ** 2
-        y_ramp = torch.clamp(r_y_prime ** self.config.masks_power, max=1)
-        return x_major * y_ramp
+        x_major = z_x_prime ** self.config.masks_power_x
+        # x_major[:, :, (x_major.shape[2] // 2 + 10) :, :] = (
+        #     x_major[:, :, (x_major.shape[2] // 2 + 10) :, :].clone() ** 2
+        # )
+        return x_major * r_y_prime # , x_major, r_y_prime
 
     def compute_state_costs_for_training(
-        self, pred_images, pred_states, car_sizes
+        self, pred_images, pred_states, pred_actions, car_sizes
     ):
         proximity_mask = self.get_masks(
             pred_images[:, :, :3].contiguous().detach(),
             pred_states["km"],
+            pred_actions,
             car_sizes,
             unnormalize=True,
         )

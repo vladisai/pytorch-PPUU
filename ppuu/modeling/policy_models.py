@@ -3,6 +3,80 @@
 from torch import nn
 
 from ppuu.modeling.common_models import Encoder
+from ppuu.modeling.mixout import MixLinear
+
+
+class MixoutDeterministicPolicy(nn.Module):
+    def __init__(self, original_model, p):
+        super().__init__()
+        self.original_model = original_model
+        fc_layers = []
+        for layer in original_model.fc:
+            if isinstance(layer, nn.Linear):
+                fc_layers.append(
+                    MixLinear(
+                        layer.in_features,
+                        layer.out_features,
+                        bias=True,
+                        target=layer.weight,
+                        p=p,
+                    )
+                )
+            else:
+                fc_layers.append(layer)
+        self.fc = nn.Sequential(*fc_layers)
+
+    def forward(
+        self,
+        state_images,
+        states,
+        context=None,
+        sample=True,
+        normalize_inputs=False,
+        normalize_outputs=False,
+        n_samples=1,
+    ):
+        if normalize_inputs:
+            state_images = state_images.clone().float().div_(255.0)
+            states -= (
+                self.stats["s_mean"]
+                .cuda()
+                .view(1, 4)
+                .expand(states.size())
+            )
+            states /= (
+                self.stats["s_std"]
+                .cuda()
+                .view(1, 4)
+                .expand(states.size())
+            )
+            if state_images.dim() == 4:  # if processing single vehicle
+                state_images = state_images.cuda().unsqueeze(0)
+                states = states.cuda().unsqueeze(0)
+
+        bsize = state_images.size(0)
+        h = self.original_model.encoder(state_images, states).view(
+            bsize, self.original_model.hsize
+        )
+        h = self.original_model.proj(h)  # from hidden_size to n_hidden
+        a = self.fc(h).view(bsize, self.original_model.n_outputs)
+
+        if normalize_outputs:
+            a = a.data
+            a.clamp_(-3, 3)
+            a *= (
+                self.stats["a_std"]
+                .view(1, 2)
+                .expand(a.size())
+                .cuda()
+            )
+            a += (
+                self.stats["a_mean"]
+                .view(1, 2)
+                .expand(a.size())
+                .cuda()
+            )
+        return a
 
 
 class DeterministicPolicy(nn.Module):

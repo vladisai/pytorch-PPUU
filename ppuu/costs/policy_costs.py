@@ -21,11 +21,13 @@ class PolicyCost(PolicyCostBase):
 
         u_reg: float = field(default=0.05)
         lambda_a: float = field(default=0.0)
+        lambda_j: float = field(default=0.0)
         lambda_l: float = field(default=0.2)
         lambda_o: float = field(default=1.0)
         lambda_p: float = field(default=1.0)
         gamma: float = field(default=0.99)
         u_hinge: float = field(default=0.5)
+        dreaming_z_reg: float = field(default=0.1)
         uncertainty_n_pred: int = field(default=30)
         uncertainty_n_models: int = field(default=10)
         uncertainty_n_batches: int = field(default=100)
@@ -501,7 +503,9 @@ class PolicyCost(PolicyCostBase):
     def compute_state_costs_for_uncertainty(self, images, states, car_sizes):
         return self.compute_state_costs(images, states, car_sizes)
 
-    def compute_state_costs_for_training(self, images, states, car_sizes):
+    def compute_state_costs_for_training(
+        self, images, states, actions, car_sizes
+    ):
         return self.compute_state_costs(images, states, car_sizes)
 
     def compute_state_costs_for_z(self, images, states, car_sizes):
@@ -513,6 +517,7 @@ class PolicyCost(PolicyCostBase):
         uncertainty_loss,
         lane_loss,
         action_loss,
+        jerk_loss,
         offroad_loss,
     ):
         return (
@@ -521,11 +526,12 @@ class PolicyCost(PolicyCostBase):
             + self.config.lambda_l * lane_loss
             + self.config.lambda_a * action_loss
             + self.config.lambda_o * offroad_loss
+            + self.config.lambda_j * jerk_loss
         )
 
     def calculate_cost(self, inputs, predictions):
         u_loss = self.calculate_uncertainty_cost(inputs, predictions)
-        loss_a = (
+        loss_j = (
             (
                 predictions["pred_actions"][:, 1:]
                 - predictions["pred_actions"][:, :-1]
@@ -534,10 +540,11 @@ class PolicyCost(PolicyCostBase):
             .pow(2)
             .mean()
         )
-
+        loss_a = (predictions["pred_actions"]).norm(2, 2).pow(2).mean()
         state_losses = self.compute_state_costs_for_training(
             predictions["pred_images"],
             predictions["pred_states"],
+            predictions["pred_actions"],
             inputs["car_sizes"],
         )
         result = dict(
@@ -546,11 +553,12 @@ class PolicyCost(PolicyCostBase):
             offroad_loss=state_losses["offroad_loss"],
             uncertainty_loss=u_loss,
             action_loss=loss_a,
+            jerk_loss=loss_j,
         )
         result["policy_loss"] = self.compute_combined_loss(**result)
         return result
 
-    def calculate_z_cost(self, inputs, predictions):
+    def calculate_z_cost(self, inputs, predictions, original_z=None):
         u_loss = self.calculate_uncertainty_cost(inputs, predictions)
         proximity_loss = self.compute_state_costs_for_z(
             predictions["pred_images"],
@@ -562,9 +570,18 @@ class PolicyCost(PolicyCostBase):
             uncertainty_loss=u_loss,
             lane_loss=0,
             action_loss=0,
+            jerk_loss=0,
             offroad_loss=0,
         )
-        components = dict(proximity_loss=proximity_loss, u_loss=u_loss,)
+        z_reg = torch.tensor(0)
+        if original_z is not None:
+            z_reg = self.config.dreaming_z_reg * (
+                (predictions["Z"] - original_z).norm(2, -1).mean() / predictions["Z"].shape[-1]
+            )
+            result += z_reg
+        components = dict(
+            proximity_loss=proximity_loss, u_loss=u_loss, z_reg=z_reg
+        )
         return result, components
 
     def get_grad_vid(self, policy_model, batch, device="cuda"):
@@ -595,6 +612,7 @@ class PolicyCost(PolicyCostBase):
             uncertainty_loss=0,
             lane_loss=costs["lane_loss"],
             action_loss=0,
+            jerk_loss=0,
             offroad_loss=costs["offroad_loss"],
         )
         combined_loss.backward()

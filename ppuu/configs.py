@@ -63,6 +63,13 @@ class TrainingConfig(ConfigBase):
     experiment_name: str = field(default="train_mpur")
     slurm: bool = field(default=False)
     run_eval: bool = field(default=False)
+    debug: bool = field(default=False)
+    fast_dev_run: bool = field(default=False)
+    freeze_encoder: bool = field(default=False)
+    mixout_p: float = field(default=None)
+    validation_eval: bool = field(default=True)
+    noise_augmentation_std: float = field(default=0.07)
+    noise_augmentation_p: float = field(default=0.5)
 
     def __post_init__(self):
         self.set_dataset(self.dataset)
