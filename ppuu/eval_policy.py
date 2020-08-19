@@ -27,6 +27,7 @@ def get_optimal_pool_size():
 @dataclass
 class EvalConfig(configs.ConfigBase):
     checkpoint_path: str = None
+    alternative_checkpoint_path: str = None
     dataset: str = "full"
     save_gradients: bool = False
     debug: bool = False
@@ -64,6 +65,11 @@ def main(config):
     mpur_module = MPURModule.load_from_checkpoint(
         checkpoint_path=config.checkpoint_path
     )
+    alternative_module = None
+    if config.alternative_checkpoint_path:
+        alternative_module = MPURModule.load_from_checkpoint(
+            checkpoint_path=config.alternative_checkpoint_path
+        )
 
     test_dataset = dataloader.EvaluationDataset(
         config.dataset, "test", config.test_size_cap
@@ -75,7 +81,11 @@ def main(config):
         build_gradients=config.save_gradients,
         enable_logging=True,
     )
-    result = evaluator.evaluate(mpur_module, output_dir=config.output_dir)
+    result = evaluator.evaluate(
+        mpur_module,
+        output_dir=config.output_dir,
+        alternative_module=alternative_module,
+    )
     print(result["stats"])
 
 

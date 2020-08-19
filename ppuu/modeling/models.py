@@ -279,7 +279,9 @@ class FwdCNN(nn.Module):
         # If we are given a model file, use it to initialize this model.
         # otherwise initialize from scratch
         if mfile == "":
-            self.encoder = encoder(opt, 0, opt.ncond)
+            self.encoder = Encoder(
+                Encoder.Config(a_size=0, n_inputs=opt.ncond)
+            )
             self.decoder = Decoder(
                 layers=opt.layers,
                 n_feature=opt.nfeature,
@@ -339,15 +341,9 @@ class FwdCNN(nn.Module):
         input_images, input_states = inputs
         pred_images, pred_states = [], []
         for t in range(npred):
-            h = self.encoder(input_images, input_states)
-            a_emb = self.a_encoder(actions[:, t]).view(h.size())
-            h = h + a_emb
-            h = h + self.u_network(h)
-            pred_image, pred_state = self.decoder(h)
-            pred_image = torch.sigmoid(
-                pred_image + input_images[:, -1].unsqueeze(1)
+            pred_image, pred_state = self.forward_single_step(
+                input_images, input_states, actions[:, t], None
             )
-            pred_state = pred_state + input_states[:, -1]
             input_images = torch.cat((input_images[:, 1:], pred_image), 1)
             input_states = torch.cat(
                 (input_states[:, 1:], pred_state.unsqueeze(1)), 1
@@ -367,7 +363,10 @@ class FwdCNN_VAE(nn.Module):
         self.opt = opt
 
         if mfile == "":
-            self.encoder = encoder(opt, 0, opt.ncond)
+            # self.encoder = encoder(opt, 0, opt.ncond)
+            self.encoder = Encoder(
+                Encoder.Config(a_size=0, n_inputs=opt.ncond)
+            )
             self.decoder = Decoder(
                 layers=opt.layers,
                 n_feature=opt.nfeature,
@@ -544,12 +543,3 @@ class FwdCNN_VAE(nn.Module):
         z_list = torch.stack(z_list, 1)
         return [pred_images, pred_states, z_list], [ploss, ploss2]
 
-    def intype(self, t):
-        if t == "gpu":
-            self.cuda()
-            self.z_zero = self.z_zero.cuda()
-            self.use_cuda = True
-        elif t == "cpu":
-            self.cpu()
-            self.use_cuda = False
-            self.z_zero = self.z_zero.cpu()

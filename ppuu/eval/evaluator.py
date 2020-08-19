@@ -2,7 +2,10 @@ import os
 import logging
 import time
 import json
+import copy
+import math
 from typing import Optional
+from collections import deque, namedtuple
 
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
@@ -12,12 +15,14 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 
-import numpy
 import pandas as pd
 import gym
 import torch
 
 from ppuu import dataloader
+
+
+MAX_ENV_QUEUE_SIZE = 5
 
 
 class PolicyEvaluator:
@@ -28,12 +33,14 @@ class PolicyEvaluator:
         build_gradients: bool = False,
         return_episode_data: bool = False,
         enable_logging: bool = True,
+        rollback_seconds: int = 3,
     ):
         self.dataset = dataset
         self.build_gradients = build_gradients
         self.return_episode_data = return_episode_data
         self.num_processes = num_processes
         self.enable_logging = enable_logging
+        self.rollback_seconds = rollback_seconds
 
         i80_env_id = "I-80-v1"
         if i80_env_id not in [e.id for e in gym.envs.registry.all()]:
@@ -61,33 +68,48 @@ class PolicyEvaluator:
             success_rate=results_per_episode_df["road_completed"].mean(),
             collision_rate=results_per_episode_df["has_collided"].mean(),
             off_screen_rate=results_per_episode_df["off_screen"].mean(),
+            alternative_better=results_per_episode_df["alternative_better"].mean(),
+            alternative_distance_diff=results_per_episode_df["alternative_distance_diff"].mean(),
+            succeeded=int(results_per_episode_df["road_completed"].sum()),
         )
 
-    def _process_one_episode(
-        self, policy_model, policy_cost, car_info, index, output_dir
-    ):
-        inputs = self.env.reset(
-            time_slot=car_info["time_slot"], vehicle_id=car_info["car_id"]
+    def unfold(self, env, inputs, policy):
+        Unfolding = namedtuple(
+            "Unfolding",
+            [
+                "images",
+                "states",
+                "costs",
+                "actions",
+                "env_copies",
+                "done",
+                "has_collided",
+                "off_screen",
+                "road_completed",
+            ],
         )
+        TimeCapsule = namedtuple("TimeCapsule", ["env", "inputs", "cost"])
+
         images, states, costs, actions = (
             [],
             [],
             [],
             [],
         )
-        cntr = 0
-        # inputs, cost, done, info = env.step(numpy.zeros((2,)))
-        input_state_t0 = inputs["state"].contiguous()[-1]
-        cost_sequence, action_sequence, state_sequence = [], [], []
         has_collided = False
         off_screen = False
+        road_completed = False
         done = False
+
+        env_copies = deque(maxlen=self.rollback_seconds)
+
+        t = 0
 
         while not done:
             input_images = inputs["context"].contiguous()
             input_states = inputs["state"].contiguous()
 
-            a = policy_model(
+            a = policy(
                 input_images.cuda(),
                 input_states.cuda(),
                 sample=True,
@@ -96,19 +118,28 @@ class PolicyEvaluator:
             )
             a = a.cpu().view(1, 2).numpy()
 
-            action_sequence.append(a)
-            state_sequence.append(input_states)
-            cntr += 1
-
-            inputs, cost, done, info = self.env.step(a[0])
+            # env_copy = copy.deepcopy(self.env)
+            inputs, cost, done, info = env.step(a[0])
             if info.collisions_per_frame > 0:
                 has_collided = True
                 done = True
+
+            if cost["arrived_to_dst"]:
+                road_completed = True
+
+            # every second, we save a copy of the environment
+            if t % 10 == 0:
+                # need to remove lane surfaces because they're unpickleable
+                env._lane_surfaces = dict()
+                env_copies.append(
+                    TimeCapsule(copy.deepcopy(env), inputs, cost)
+                )
+            t += 1
+
             off_screen = info.off_screen
             images.append(input_images[-1])
             states.append(input_states[-1])
-            costs.append([cost["pixel_proximity_cost"], cost["lane_cost"]])
-            cost_sequence.append(cost)
+            costs.append(cost)
             actions.append(
                 (
                     (torch.tensor(a[0]) - self.dataset.stats["a_mean"])
@@ -116,38 +147,91 @@ class PolicyEvaluator:
                 )
             )
 
-        input_state_tfinal = inputs["state"][-1]
         images = torch.stack(images)
         states = torch.stack(states)
-        costs = torch.tensor(costs)
         actions = torch.stack(actions)
-
-        result = dict(
-            time_travelled=len(images),
-            distance_travelled=(
-                input_state_tfinal[0] - input_state_t0[0]
-            ).item(),
-            road_completed=1 if cost["arrived_to_dst"] else 0,
-            off_screen=off_screen,
-            has_collided=has_collided,
+        return Unfolding(
+            images,
+            states,
+            costs,
+            actions,
+            env_copies,
+            done,
+            has_collided,
+            off_screen,
+            road_completed,
         )
 
-        images_3_channels = (images[:, :3] + images[:, 3:]).clamp(max=255)
-        episode_data = dict(
-            action_sequence=numpy.stack(action_sequence),
-            state_sequence=numpy.stack(state_sequence),
-            cost_sequence=numpy.stack(cost_sequence),
-            images=images_3_channels,
+    def _build_episode_data(self, unfolding):
+        return dict(
+            action_sequence=unfolding.actions,
+            state_sequence=unfolding.states,
+            cost_sequence=unfolding.costs,
+            images=(unfolding.images[:, :3] + unfolding.images[:, 3:]).clamp(
+                max=255
+            ),
             gradients=None,
-            **result,
         )
+
+    def _build_result(self, unfolding):
+        return dict(
+            time_travelled=len(unfolding.images),
+            distance_travelled=(
+                unfolding.states[-1][0] - unfolding.states[0][0]
+            ).item(),
+            road_completed=unfolding.road_completed,
+            off_screen=unfolding.off_screen,
+            has_collided=unfolding.has_collided,
+        )
+
+    def _process_one_episode(
+        self,
+        policy_model,
+        policy_cost,
+        car_info,
+        index,
+        output_dir,
+        alternative_policy=None,
+    ):
+        inputs = self.env.reset(
+            time_slot=car_info["time_slot"], vehicle_id=car_info["car_id"]
+        )
+        unfolding = self.unfold(self.env, inputs, policy_model)
+        alternative_unfolding = None
+        if unfolding.has_collided and alternative_policy is not None:
+            alternative_unfolding = self.unfold(
+                unfolding.env_copies[0].env,
+                unfolding.env_copies[0].inputs,
+                alternative_policy,
+            )
+
+        result = self._build_result(unfolding)
+        episode_data = self._build_episode_data(unfolding)
+        episode_data["result"] = result
+
+        if alternative_unfolding is not None:
+            result["alternative"] = self._build_result(alternative_unfolding)
+            result["alternative_better"] = int(
+                not unfolding.road_completed
+                and alternative_unfolding.road_completed
+            )
+            alternative_distance = (
+                alternative_unfolding.states[-1][0] - unfolding.states[0][0]
+            ).item()
+            result["alternative_distance_diff"] = (
+                alternative_distance - result["distance_travelled"]
+            )
+            episode_data["alternative"] = self._build_episode_data(unfolding)
+        else:
+            result["alternative_better"] = math.nan
+            result["alternative_distance_diff"] = math.nan
 
         if self.build_gradients:
             episode_data["gradients"] = policy_cost.get_grad_vid(
                 policy_model,
                 dict(
-                    input_images=images[:, :3].contiguous(),
-                    input_states=states,
+                    input_images=unfolding.images[:, :3].contiguous(),
+                    input_states=unfolding.states,
                     car_sizes=torch.tensor(
                         car_info["car_size"], dtype=torch.float32
                     ),
@@ -167,7 +251,10 @@ class PolicyEvaluator:
         return result
 
     def evaluate(
-        self, module: torch.nn.Module, output_dir: Optional[str] = None,
+        self,
+        module: torch.nn.Module,
+        output_dir: Optional[str] = None,
+        alternative_module: Optional[torch.nn.Module] = None,
     ):
         if output_dir is not None:
             os.makedirs(
@@ -188,6 +275,10 @@ class PolicyEvaluator:
         )
         module.policy_model.cuda()
         module.policy_model.stats = self.dataset.stats
+        if alternative_module:
+            alternative_module.policy_model.cuda()
+            alternative_module.policy_model.stats = self.dataset.stats
+
         for j, data in enumerate(self.dataset):
             async_results.append(
                 executor.submit(
@@ -197,6 +288,9 @@ class PolicyEvaluator:
                     data,
                     j,
                     output_dir,
+                    alternative_policy=alternative_module.policy_model
+                    if alternative_module is not None
+                    else None,
                 )
             )
 

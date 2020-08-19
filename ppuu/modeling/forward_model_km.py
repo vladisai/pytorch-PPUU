@@ -6,16 +6,27 @@ from ppuu.modeling.forward_models import ForwardModel
 
 
 class ForwardModelKM(ForwardModel):
-    def predict_states(self, states, actions, stats, timestep=0.1):
+    @staticmethod
+    def predict_states(states, actions, stats, timestep=0.1):
+        """
+        Args:
+            - states : tensor of shape [batch size, 4]
+            - actions : tensor of shape [batch size, 2]
+            - stats : dataset statistics
+            - timestep : the time delta between two consecutive states
+        """
         states = states.clone()
         actions = actions.clone()
+        device = states.device
 
         ss_std = (
             1e-8 + stats["s_std"][0].view(1, 4).expand(states.size())
-        ).cuda()
-        ss_mean = stats["s_mean"][0].view(1, 4).expand(states.size()).cuda()
-        aa_std = (1e-8 + stats["a_std"][0].view(1, 2)).cuda()
-        aa_mean = stats["a_mean"][0].view(1, 2).cuda()
+        ).to(device)
+        ss_mean = (
+            stats["s_mean"][0].view(1, 4).expand(states.size()).to(device)
+        )
+        aa_std = (1e-8 + stats["a_std"][0].view(1, 2)).to(device)
+        aa_mean = stats["a_mean"][0].view(1, 2).to(device)
 
         actions = actions * aa_std + aa_mean
         states = states * ss_std + ss_mean
@@ -38,16 +49,17 @@ class ForwardModelKM(ForwardModel):
             axis=1,
         )
 
-        new_positions = positions + timestep * speeds_norm * directions
+        new_positions = (
+            positions + timestep * speeds
+        )
 
         ortho_directions = torch.stack(
             [directions[:, 1], -directions[:, 0]], axis=1
         )
 
-        new_directions_unnormed = (
-            directions
-            + ortho_directions * b.unsqueeze(1) * speeds_norm * timestep
-        )
+        new_directions_unnormed = directions + ortho_directions * b.unsqueeze(
+            1
+        ) * (speeds_norm * timestep + 1e-6)
         new_directions = new_directions_unnormed / (
             torch.clamp(
                 new_directions_unnormed.norm(dim=1).view(speeds.shape[0], 1),

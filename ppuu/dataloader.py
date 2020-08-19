@@ -2,6 +2,8 @@ import random
 import os
 import re
 import logging
+import glob
+import pickle
 
 import torch
 
@@ -29,6 +31,49 @@ class DataStore:
                 self.states += data.get("states")
                 self.ids += data.get("ids")
                 self.ego_car_images += data.get("ego_car")
+            else:
+                print(data_dir)
+                images = []
+                actions = []
+                costs = []
+                states = []
+                ids = glob.glob(f'{data_dir}/{df}/car*.pkl')
+                ids.sort()
+                ego_car_images = []
+                for f in ids:
+                    print(f'[loading {f}]')
+                    fd = pickle.load(open(f, 'rb'))
+                    Ta = fd['actions'].size(0)
+                    Tp = fd['pixel_proximity_cost'].size(0)
+                    Tl = fd['lane_cost'].size(0)
+                    # assert Ta == Tp == Tl  # TODO Check why there are more costs than actions
+                    # if not(Ta == Tp == Tl): pdb.set_trace()
+                    images.append(fd['images'])
+                    actions.append(fd['actions'])
+                    costs.append(torch.cat((
+                        fd.get('pixel_proximity_cost')[:Ta].view(-1, 1),
+                        fd.get('lane_cost')[:Ta].view(-1, 1),
+                    ), 1),)
+                    states.append(fd['states'])
+                    ego_car_images.append(fd['ego_car'])
+
+                print(f'Saving {combined_data_path} to disk')
+                torch.save({
+                    'images': images,
+                    'actions': actions,
+                    'costs': costs,
+                    'states': states,
+                    'ids': ids,
+                    'ego_car': ego_car_images,
+                }, combined_data_path)
+                self.images += images
+                self.actions += actions
+                self.costs += costs
+                self.states += states
+                self.ids += ids
+                self.ego_car_images += ego_car_images
+
+
 
         self.n_episodes = len(self.images)
         splits_path = data_dir + "/splits.pth"
@@ -68,7 +113,7 @@ class DataStore:
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, data_store, split, n_cond, n_pred, size):
+    def __init__(self, data_store, split, n_cond, n_pred, size, normalize=True):
         self.split = split
         self.data_store = data_store
         self.n_cond = n_cond
@@ -76,6 +121,7 @@ class Dataset(torch.utils.data.Dataset):
         self.size = size
         self.random = random.Random()
         self.random.seed(12345)
+        self.normalize = normalize
 
     def sample_episode(self):
         return self.random.choice(self.data_store.splits[self.split])
@@ -144,10 +190,12 @@ class Dataset(torch.utils.data.Dataset):
                 car_sizes = torch.tensor([size[0], size[1]])
                 break
 
-        actions = self.normalise_action(actions.clone())
-        states = self.normalise_state_vector(states.clone())
-        images = self.normalise_state_image(images.clone())
-        ego_cars = self.normalise_state_image(ego_cars.clone())
+        if self.normalize:
+            print('normalized')
+            actions = self.normalise_action(actions.clone())
+            states = self.normalise_state_vector(states.clone())
+            images = self.normalise_state_image(images.clone())
+            ego_cars = self.normalise_state_image(ego_cars.clone())
 
         t0 = self.n_cond
         t1 = T
@@ -156,9 +204,10 @@ class Dataset(torch.utils.data.Dataset):
         target_images = images[t0:t1].float().contiguous()
         target_states = states[t0:t1].float().contiguous()
         target_costs = costs[t0:t1].float().contiguous()
-        t0 -= 1
-        t1 -= 1
-        actions = actions[t0:t1].float().contiguous()
+        # t0 -= 1
+        # t1 -= 1
+        true_actions = actions[t0:t1].float().contiguous()
+        actions = actions[t0-1:t1-1].float().contiguous()
         ego_cars = ego_cars.float().contiguous()
         car_sizes = car_sizes.float()
 
@@ -167,12 +216,15 @@ class Dataset(torch.utils.data.Dataset):
             input_states=input_states,
             ego_cars=ego_cars,
             actions=actions,
+            true_actions=true_actions,
             target_images=target_images,
             target_states=target_states,
             target_costs=target_costs,
             ids=ids,
             car_sizes=car_sizes,
             stats=self.data_store.stats,
+            s=s,
+            t=t,
         )
 
     @staticmethod
