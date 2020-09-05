@@ -24,7 +24,7 @@ def parse_from_command_line():
     return args.slurm
 
 
-def get_executor(job_name, cpus_per_task=1, cluster=None):
+def get_executor(job_name, cpus_per_task=1, cluster=None, nodes=1, gpus=1):
     with open(LOG_CONFIG_PATH, "r") as f:
         d = yaml.safe_load(f)
         config = SlurmConfig.parse_from_dict(d)
@@ -32,9 +32,11 @@ def get_executor(job_name, cpus_per_task=1, cluster=None):
     executor.update_parameters(
         name=job_name,
         slurm_time="48:00:00",  # two days
-        gpus_per_node=1,
+        gpus_per_node=gpus,
+        nodes=nodes,
         slurm_constraint="pascal|turing",
         cpus_per_task=cpus_per_task,
         mem_gb=100,
+        slurm_ntasks_per_node=gpus,
     )
     return executor

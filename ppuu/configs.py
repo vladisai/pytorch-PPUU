@@ -58,6 +58,8 @@ class TrainingConfig(ConfigBase):
     batch_size: int = field(default=6)
     validation_size: int = field(default=25)
     dataset: str = field(default="full")
+    data_shift: bool = field(default=False)
+    random_actions: bool = field(default=False)
     seed: int = field(default=42)
     output_dir: str = field(default=None)
     experiment_name: str = field(default="train_mpur")
@@ -70,6 +72,9 @@ class TrainingConfig(ConfigBase):
     validation_eval: bool = field(default=True)
     noise_augmentation_std: float = field(default=0.07)
     noise_augmentation_p: float = field(default=0.5)
+    gpus: int = field(default=1)
+    num_nodes: int = field(default=1)
+    distributed_backend: str = field(default='ddp')
 
     def __post_init__(self):
         self.set_dataset(self.dataset)

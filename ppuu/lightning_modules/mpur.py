@@ -9,14 +9,14 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 
-from ppuu.dataloader import DataStore, Dataset, EvaluationDataset
+from ppuu.data import DataStore, Dataset, EvaluationDataset
 from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu import configs
 from ppuu.modeling import policy_models
 from ppuu.modeling.forward_models import ForwardModel
-from ppuu.modeling.policy_models import MixoutDeterministicPolicy
 from ppuu.eval import PolicyEvaluator
 from ppuu.data import Augmenter
+from ppuu.modeling.mixout import MixoutWrapper
 
 
 def inject(cost_type=PolicyCost, fm_type=ForwardModel):
@@ -105,12 +105,6 @@ class MPURModule(pl.LightningModule):
                 if "fc" not in name:
                     p.requires_grad = False
 
-        if self.config.training_config.mixout_p is not None:
-            self.policy_model = MixoutDeterministicPolicy(
-                self.policy_model, p=self.config.training_config.mixout_p
-            )
-            self.policy_model.to(self.device)
-
         self.augmenter = Augmenter(
             self.config.training_config.noise_augmentation_std,
             self.config.training_config.noise_augmentation_p,
@@ -140,56 +134,80 @@ class MPURModule(pl.LightningModule):
         logs["action_norm"] = (
             predictions["pred_actions"].norm(2, 2).pow(2).mean()
         )
-        return {
-            "loss": loss["policy_loss"],
-            "log": logs,
-            "progress_bar": loss,
-        }
+        res = pl.TrainResult(loss["policy_loss"])
+        res.log_dict(
+            logs, on_step=True, on_epoch=True, prog_bar=True, logger=True,
+        )
+        return res
 
     def validation_step(self, batch, batch_idx):
         predictions = self(batch)
         loss = self.policy_cost.calculate_cost(batch, predictions)
-        return {
-            "val_loss": loss["policy_loss"],
-            "log": loss,
-            "progress_bar": loss,
-        }
+        res = pl.EvalResult(loss["policy_loss"])
+        res.log_dict(
+            loss, on_step=True, on_epoch=True, prog_bar=True, logger=True,
+        )
+        return res
 
-    def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
-        tensorboard_logs = {"val_loss": avg_loss}
-        progress_bar = {}
+    def validation_epoch_end(self, res):
+        res.dp_reduce()
         if self.config.training_config.validation_eval:
             eval_results = self.evaluator.evaluate(self)
             # eval_results = {'stats': {'success_rate': 0.0}}
-            tensorboard_logs.update(eval_results["stats"])
-            progress_bar["success_rate"] = eval_results["stats"][
-                "success_rate"
-            ]
+            res.log_dict(
+                eval_results["stats"],
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
+            )
 
-        return {
-            "val_loss": avg_loss,
-            "log": tensorboard_logs,
-            "progress_bar": {"success_rate": progress_bar,},
-        }
+        return res
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
             self.policy_model.parameters(),
             self.config.training_config.learning_rate,
         )
-        scheduler = optim.lr_scheduler.StepLR(optimizer, 20, 0.50)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, 1, 0.90)
         return [optimizer], [scheduler]
 
-    @staticmethod
-    def _worker_init_fn(index):
-        info = torch.utils.data.get_worker_info()
-        info.dataset.random.seed(info.seed)
+    def on_train_start(self):
+        """
+        The setup below happens after everything was moved
+        to the correct device, and after the data was loaded.
+        """
+        self._setup_forward_model()
+        self._setup_mixout()
+        self._setup_policy_cost()
+        self._setup_episode_evaluator()
 
-    def prepare_data(self):
-        self.data_store = DataStore(self.config.training_config.dataset)
+    def _setup_forward_model(self):
+        self.forward_model.eval()
+        self.forward_model.device = self.device
+        self.forward_model.to(self.device)
+
+    def _setup_policy_cost(self):
+        self.policy_cost = self.CostType(
+            self.config.cost_config,
+            self.forward_model,
+            self.trainer.datamodule.data_store.stats,
+        )
+        self.policy_cost.estimate_uncertainty_stats(self.train_dataloader())
+
+    def _setup_mixout(self):
+        if self.config.training_config.mixout_p is not None:
+            # self.policy_model = MixoutDeterministicPolicy(
+            #     self.policy_model, p=self.config.training_config.mixout_p
+            # )
+            self.policy_model = self.policy_model.apply(
+                lambda x: MixoutWrapper(
+                    x, self.config.training_config.mixout_p
+                )
+            )
+
+    def _setup_episode_evaluator(self):
         self.eval_dataset = EvaluationDataset.from_data_store(
-            self.data_store, split="val", size_cap=25
+            self.trainer.datamodule.data_store, split="val", size_cap=25
         )
         self.evaluator = PolicyEvaluator(
             self.eval_dataset,
@@ -198,51 +216,6 @@ class MPURModule(pl.LightningModule):
             return_episode_data=False,
             enable_logging=False,
         )
-
-        self.worker_init_fn = MPURModule._worker_init_fn
-
-        samples_in_epoch = (
-            self.config.training_config.epoch_size
-            * self.config.training_config.batch_size
-        )
-        samples_in_validation = (
-            self.config.training_config.validation_size
-            * self.config.training_config.batch_size
-        )
-        self.train_dataset = Dataset(
-            self.data_store, "train", 20, 30, size=samples_in_epoch
-        )
-        self.val_dataset = Dataset(
-            self.data_store, "val", 20, 30, size=samples_in_validation
-        )
-
-    def train_dataloader(self):
-        loader = DataLoader(
-            self.train_dataset,
-            batch_size=self.config.training_config.batch_size,
-            num_workers=0,
-            worker_init_fn=self.worker_init_fn,
-        )
-        return loader
-
-    def val_dataloader(self):
-        loader = DataLoader(
-            self.val_dataset,
-            batch_size=self.config.training_config.batch_size,
-            num_workers=0,
-            worker_init_fn=self.worker_init_fn,
-        )
-        return loader
-
-    def on_train_start(self):
-        self.forward_model.eval()
-        self.forward_model.device = self.device
-        self.forward_model.to(self.device)
-
-        self.policy_cost = self.CostType(
-            self.config.cost_config, self.forward_model, self.data_store.stats
-        )
-        self.policy_cost.estimate_uncertainty_stats(self.train_dataloader())
 
     @classmethod
     def _load_model_state(cls, checkpoint, *args, **kwargs):

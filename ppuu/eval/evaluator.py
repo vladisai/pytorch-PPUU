@@ -19,7 +19,7 @@ import pandas as pd
 import gym
 import torch
 
-from ppuu import dataloader
+from ppuu.data import dataloader
 
 
 MAX_ENV_QUEUE_SIZE = 5
@@ -68,8 +68,12 @@ class PolicyEvaluator:
             success_rate=results_per_episode_df["road_completed"].mean(),
             collision_rate=results_per_episode_df["has_collided"].mean(),
             off_screen_rate=results_per_episode_df["off_screen"].mean(),
-            alternative_better=results_per_episode_df["alternative_better"].mean(),
-            alternative_distance_diff=results_per_episode_df["alternative_distance_diff"].mean(),
+            alternative_better=results_per_episode_df[
+                "alternative_better"
+            ].mean(),
+            alternative_distance_diff=results_per_episode_df[
+                "alternative_distance_diff"
+            ].mean(),
             succeeded=int(results_per_episode_df["road_completed"].sum()),
         )
 

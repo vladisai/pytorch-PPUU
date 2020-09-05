@@ -39,16 +39,10 @@ class MixoutDeterministicPolicy(nn.Module):
         if normalize_inputs:
             state_images = state_images.clone().float().div_(255.0)
             states -= (
-                self.stats["s_mean"]
-                .cuda()
-                .view(1, 4)
-                .expand(states.size())
+                self.stats["s_mean"].cuda().view(1, 4).expand(states.size())
             )
             states /= (
-                self.stats["s_std"]
-                .cuda()
-                .view(1, 4)
-                .expand(states.size())
+                self.stats["s_std"].cuda().view(1, 4).expand(states.size())
             )
             if state_images.dim() == 4:  # if processing single vehicle
                 state_images = state_images.cuda().unsqueeze(0)
@@ -64,18 +58,8 @@ class MixoutDeterministicPolicy(nn.Module):
         if normalize_outputs:
             a = a.data
             a.clamp_(-3, 3)
-            a *= (
-                self.stats["a_std"]
-                .view(1, 2)
-                .expand(a.size())
-                .cuda()
-            )
-            a += (
-                self.stats["a_mean"]
-                .view(1, 2)
-                .expand(a.size())
-                .cuda()
-            )
+            a *= self.stats["a_std"].view(1, 2).expand(a.size()).cuda()
+            a += self.stats["a_mean"].view(1, 2).expand(a.size()).cuda()
         return a
 
 
@@ -108,10 +92,13 @@ class DeterministicPolicy(nn.Module):
 
         self.fc = nn.Sequential(
             nn.Linear(self.n_hidden, self.n_hidden),
+            nn.BatchNorm1d(self.n_hidden, momentum=0.01),
             nn.ReLU(),
             nn.Linear(self.n_hidden, self.n_hidden),
+            nn.BatchNorm1d(self.n_hidden, momentum=0.01),
             nn.ReLU(),
             nn.Linear(self.n_hidden, self.n_hidden),
+            nn.BatchNorm1d(self.n_hidden, momentum=0.01),
             nn.ReLU(),
             nn.Linear(self.n_hidden, self.n_outputs),
         )

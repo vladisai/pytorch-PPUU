@@ -11,6 +11,8 @@ from ppuu.lightning_modules.mpur_km import (
     MPURKMTaperModule,
 )
 
+from ppuu.lightning_modules.fm import FM
+
 MODULES_DICT = dict(
     vanilla=MPURModule,
     dreaming=MPURDreamingModule,
@@ -19,6 +21,7 @@ MODULES_DICT = dict(
     km_split=MPURKMSplitModule,
     km_taper=MPURKMTaperModule,
     continuous=MPURContinuousModule,
+    fm=FM,
 )
 
 

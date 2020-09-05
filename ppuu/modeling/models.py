@@ -1,3 +1,5 @@
+from typing import NamedTuple, List
+
 import torch
 import torch.nn as nn
 import random
@@ -5,330 +7,97 @@ import random
 from ppuu.modeling.common_models import Encoder, UNetwork, Decoder
 
 
-class encoder(nn.Module):
-    def __init__(
-        self,
-        opt,
-        a_size,
-        n_inputs,
-        states=True,
-        state_input_size=4,
-        n_channels=3,
-    ):
-        super(encoder, self).__init__()
-        self.opt = opt
-        self.a_size = a_size
-        self.n_inputs = opt.ncond if n_inputs is None else n_inputs
-        self.n_channels = n_channels
-        # frame encoder
-        if opt.layers == 3:
-            assert opt.nfeature % 4 == 0
-            self.feature_maps = (
-                opt.nfeature // 4,
-                opt.nfeature // 2,
-                opt.nfeature,
-            )
-            self.f_encoder = nn.Sequential(
-                nn.Conv2d(
-                    n_channels * self.n_inputs, self.feature_maps[0], 4, 2, 1
-                ),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(self.feature_maps[0], self.feature_maps[1], 4, 2, 1),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(self.feature_maps[1], self.feature_maps[2], 4, 2, 1),
-            )
-        elif opt.layers == 4:
-            assert opt.nfeature % 8 == 0
-            self.feature_maps = (
-                opt.nfeature // 8,
-                opt.nfeature // 4,
-                opt.nfeature // 2,
-                opt.nfeature,
-            )
-            self.f_encoder = nn.Sequential(
-                nn.Conv2d(
-                    n_channels * self.n_inputs, self.feature_maps[0], 4, 2, 1
-                ),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(self.feature_maps[0], self.feature_maps[1], 4, 2, 1),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(self.feature_maps[1], self.feature_maps[2], 4, 2, 1),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(self.feature_maps[2], self.feature_maps[3], 4, 2, 1),
-            )
-
-        if states:
-            n_hidden = self.feature_maps[-1]
-            # state encoder
-            self.s_encoder = nn.Sequential(
-                nn.Linear(state_input_size * self.n_inputs, n_hidden),
-                nn.Dropout(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Linear(n_hidden, n_hidden),
-                nn.Dropout(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Linear(n_hidden, opt.hidden_size),
-            )
-
-        if a_size > 0:
-            # action or cost encoder
-            n_hidden = self.feature_maps[-1]
-            self.a_encoder = nn.Sequential(
-                nn.Linear(a_size, n_hidden),
-                nn.Dropout(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Linear(n_hidden, n_hidden),
-                nn.Dropout(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Linear(n_hidden, opt.hidden_size),
-            )
-
-    def forward(self, images, states=None, actions=None):
-        bsize = images.size(0)
-        h = self.f_encoder(
-            images.view(
-                bsize,
-                self.n_inputs * self.n_channels,
-                self.opt.height,
-                self.opt.width,
-            )
-        )
-        if states is not None:
-            h = h + self.s_encoder(states.contiguous().view(bsize, -1)).view(
-                h.size()
-            )
-        if actions is not None:
-            a = self.a_encoder(actions.contiguous().view(bsize, self.a_size))
-            h = h + a.view(h.size())
-        return h
-
-
-class u_network(nn.Module):
-    def __init__(self, opt):
-        super(u_network, self).__init__()
-        self.opt = opt
-        self.encoder = nn.Sequential(
-            nn.Conv2d(self.opt.nfeature, self.opt.nfeature, 4, 2, 1),
-            nn.Dropout2d(p=opt.dropout, inplace=True),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(self.opt.nfeature, self.opt.nfeature, (4, 1), 2, 1),
-        )
-
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(
-                self.opt.nfeature, self.opt.nfeature, (4, 1), 2, 1
-            ),
-            nn.Dropout2d(p=opt.dropout, inplace=True),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.ConvTranspose2d(
-                self.opt.nfeature, self.opt.nfeature, (4, 3), 2, 0
-            ),
-        )
-
-        assert self.opt.layers == 3  # hardcoded sizes
-        self.hidden_size = self.opt.nfeature * 3 * 2
-        self.fc = nn.Sequential(
-            nn.Linear(self.hidden_size, self.opt.nfeature),
-            nn.Dropout(p=opt.dropout, inplace=True),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(self.opt.nfeature, self.hidden_size),
-        )
-
-    def forward(self, h):
-        h1 = self.encoder(h)
-        h2 = self.fc(h1.view(-1, self.hidden_size))
-        h2 = h2.view(h1.size())
-        h3 = self.decoder(h2)
-        return h3
-
-
-class decoder(nn.Module):
-    def __init__(self, opt, n_out=1):
-        super(decoder, self).__init__()
-        self.opt = opt
-        self.n_out = n_out
-        if self.opt.layers == 3:
-            assert opt.nfeature % 4 == 0
-            self.feature_maps = [
-                int(opt.nfeature / 4),
-                int(opt.nfeature / 2),
-                opt.nfeature,
-            ]
-            self.f_decoder = nn.Sequential(
-                nn.ConvTranspose2d(
-                    self.feature_maps[2], self.feature_maps[1], (4, 4), 2, 1
-                ),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.ConvTranspose2d(
-                    self.feature_maps[1],
-                    self.feature_maps[0],
-                    (5, 5),
-                    2,
-                    (0, 1),
-                ),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.ConvTranspose2d(
-                    self.feature_maps[0], self.n_out * 3, (2, 2), 2, (0, 1)
-                ),
-            )
-
-            self.h_reducer = nn.Sequential(
-                nn.Conv2d(self.feature_maps[2], self.feature_maps[2], 4, 2, 1),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(
-                    self.feature_maps[2],
-                    self.feature_maps[2],
-                    (4, 1),
-                    (2, 1),
-                    0,
-                ),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-            )
-
-        elif self.opt.layers == 4:
-            assert opt.nfeature % 8 == 0
-            self.feature_maps = [
-                int(opt.nfeature / 8),
-                int(opt.nfeature / 4),
-                int(opt.nfeature / 2),
-                opt.nfeature,
-            ]
-
-            self.f_decoder = nn.Sequential(
-                nn.ConvTranspose2d(
-                    self.feature_maps[3], self.feature_maps[2], (4, 4), 2, 1
-                ),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.ConvTranspose2d(
-                    self.feature_maps[2],
-                    self.feature_maps[1],
-                    (5, 5),
-                    2,
-                    (0, 1),
-                ),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.ConvTranspose2d(
-                    self.feature_maps[1],
-                    self.feature_maps[0],
-                    (2, 4),
-                    2,
-                    (1, 0),
-                ),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.ConvTranspose2d(
-                    self.feature_maps[0], self.n_out * 3, (2, 2), 2, (1, 0)
-                ),
-            )
-
-            self.h_reducer = nn.Sequential(
-                nn.Conv2d(opt.nfeature, opt.nfeature, (4, 1), (2, 1), 0),
-                nn.Dropout2d(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-            )
-
-        n_hidden = self.feature_maps[-1]
-
-        self.s_predictor = nn.Sequential(
-            nn.Linear(2 * n_hidden, n_hidden),
-            nn.Dropout(p=opt.dropout, inplace=True),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(n_hidden, n_hidden),
-            nn.Dropout(p=opt.dropout, inplace=True),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(n_hidden, self.n_out * 4),
-        )
-
-    def forward(self, h):
-        bsize = h.size(0)
-        h = h.view(
-            bsize, self.feature_maps[-1], self.opt.h_height, self.opt.h_width
-        )
-        h_reduced = self.h_reducer(h).view(bsize, -1)
-        pred_state = self.s_predictor(h_reduced)
-        pred_image = self.f_decoder(h)
-        pred_image = pred_image[
-            :, :, : self.opt.height, : self.opt.width
-        ].clone()
-        pred_image = pred_image.view(
-            bsize, 1, 3 * self.n_out, self.opt.height, self.opt.width
-        )
-        return pred_image, pred_state
-
-
 ###############
 # Main models
 ###############
 
+
+class FMResult(NamedTuple):
+    pred_images: torch.Tensor
+    pred_states: torch.Tensor
+    z_list: List[torch.Tensor]
+    p_loss: torch.Tensor
+
+
 # forward model, deterministic (compatible with TEN3 model, use to initialize)
 class FwdCNN(nn.Module):
-    def __init__(self, opt, mfile):
+    def __init__(
+        self,
+        layers,
+        nfeature,
+        dropout,
+        h_height,
+        h_width,
+        height,
+        width,
+        n_actions,
+        hidden_size,
+        ncond,
+    ):
         super(FwdCNN, self).__init__()
-        self.opt = opt
-        # If we are given a model file, use it to initialize this model.
-        # otherwise initialize from scratch
-        if mfile == "":
-            self.encoder = Encoder(
-                Encoder.Config(a_size=0, n_inputs=opt.ncond)
-            )
-            self.decoder = Decoder(
-                layers=opt.layers,
-                n_feature=opt.nfeature,
-                dropout=opt.dropout,
-                h_height=opt.h_height,
-                h_width=opt.h_width,
-                height=opt.height,
-                width=opt.width,
-            )
-            self.a_encoder = nn.Sequential(
-                nn.Linear(self.opt.n_actions, self.opt.nfeature),
-                nn.Dropout(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Linear(self.opt.nfeature, self.opt.nfeature),
-                nn.Dropout(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Linear(self.opt.nfeature, self.opt.hidden_size),
-            )
-            self.u_network = UNetwork(
-                n_feature=opt.nfeature, layers=opt.layers, dropout=opt.dropout
-            )
-        else:
-            print("[initializing encoder and decoder with: {}]".format(mfile))
-            self.mfile = mfile
-            pretrained_model = torch.load(mfile)["model"]
-            self.encoder = pretrained_model.encoder
-            self.decoder = pretrained_model.decoder
-            self.a_encoder = pretrained_model.a_encoder
-            self.u_network = pretrained_model.u_network
-            self.encoder.n_inputs = opt.ncond
+
+        self.layers = layers
+        self.nfeature = nfeature
+        self.dropout = dropout
+        self.h_height = h_height
+        self.h_width = h_width
+        self.height = height
+        self.width = width
+        self.n_actions = n_actions
+        self.hidden_size = hidden_size
+        self.ncond = ncond
+
+        self.encoder = Encoder(Encoder.Config(a_size=0, n_inputs=self.ncond))
+        self.decoder = Decoder(
+            layers=self.layers,
+            n_feature=self.nfeature,
+            dropout=self.dropout,
+            h_height=self.h_height,
+            h_width=self.h_width,
+            height=self.height,
+            width=self.width,
+        )
+        self.a_encoder = nn.Sequential(
+            nn.Linear(self.n_actions, self.nfeature),
+            nn.Dropout(p=self.dropout, inplace=True),
+            nn.BatchNorm1d(self.nfeature, momentum=0.01),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(self.nfeature, self.nfeature),
+            nn.Dropout(p=self.dropout, inplace=True),
+            nn.BatchNorm1d(self.nfeature, momentum=0.01),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(self.nfeature, self.hidden_size),
+        )
+        self.u_network = UNetwork(
+            n_feature=self.nfeature, layers=self.layers, dropout=self.dropout
+        )
+        # else:
+        #     print("[initializing encoder and decoder with: {}]".format(mfile))
+        #     self.mfile = mfile
+        #     pretrained_model = torch.load(mfile)["model"]
+        #     self.encoder = pretrained_model.encoder
+        #     self.decoder = pretrained_model.decoder
+        #     self.a_encoder = pretrained_model.a_encoder
+        #     self.u_network = pretrained_model.u_network
+        #     self.encoder.n_inputs = self.ncond
 
     # dummy function
     def sample_z(self, bsize, method=None):
-        return torch.zeros(bsize, 32).cuda()
+        return torch.zeros(bsize, 32)
 
-    def forward_single_step(self, input_images, input_states, action, z):
-        # encode the inputs (without the action)
+    def encode(self, input_images, input_states, action):
         bsize = input_images.size(0)
         h_x = self.encoder(input_images, input_states)
-        h_x = h_x.view(
-            bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width
-        )
+        h_x = h_x.view(bsize, self.nfeature, self.h_height, self.h_width)
         a_emb = self.a_encoder(action).view(h_x.size())
 
         h = h_x
         h = h + a_emb
         h = h + self.u_network(h)
+        return h
+
+    def forward_single_step(self, input_images, input_states, action, z):
+        h = self.encode(input_images, input_states, action)
         pred_image, pred_state = self.decoder(h)
         pred_image = torch.sigmoid(
             pred_image + input_images[:, -1].unsqueeze(1)
@@ -340,6 +109,7 @@ class FwdCNN(nn.Module):
         npred = actions.size(1)
         input_images, input_states = inputs
         pred_images, pred_states = [], []
+        ploss = torch.zeros(1).to(input_images.device)
         for t in range(npred):
             pred_image, pred_state = self.forward_single_step(
                 input_images, input_states, actions[:, t], None
@@ -353,70 +123,75 @@ class FwdCNN(nn.Module):
 
         pred_images = torch.cat(pred_images, 1)
         pred_states = torch.stack(pred_states, 1)
-        return [pred_images, pred_states, None], torch.zeros(1).cuda()
+        return FMResult(pred_images, pred_states, None, ploss)
 
 
 # this version adds the actions *after* the z variables
-class FwdCNN_VAE(nn.Module):
-    def __init__(self, opt, mfile=""):
-        super(FwdCNN_VAE, self).__init__()
-        self.opt = opt
+class FwdCNN_VAE(FwdCNN):
+    def __init__(
+        self,
+        layers,
+        nfeature,
+        dropout,
+        h_height,
+        h_width,
+        height,
+        width,
+        n_actions,
+        hidden_size,
+        ncond,
+        nz,
+        enable_kld,
+        enable_latent,
+    ):
+        super(FwdCNN_VAE, self).__init__(
+            layers,
+            nfeature,
+            dropout,
+            h_height,
+            h_width,
+            height,
+            width,
+            n_actions,
+            hidden_size,
+            ncond,
+        )
+        self.nz = nz
+        self.enable_kld = enable_kld
+        self.enable_latent = enable_latent
 
-        if mfile == "":
-            # self.encoder = encoder(opt, 0, opt.ncond)
-            self.encoder = Encoder(
-                Encoder.Config(a_size=0, n_inputs=opt.ncond)
-            )
-            self.decoder = Decoder(
-                layers=opt.layers,
-                n_feature=opt.nfeature,
-                dropout=opt.dropout,
-                h_height=opt.h_height,
-                h_width=opt.h_width,
-                height=opt.height,
-                width=opt.width,
-            )
-            self.a_encoder = nn.Sequential(
-                nn.Linear(self.opt.n_actions, self.opt.nfeature),
-                nn.Dropout(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Linear(self.opt.nfeature, self.opt.nfeature),
-                nn.Dropout(p=opt.dropout, inplace=True),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Linear(self.opt.nfeature, self.opt.hidden_size),
-            )
-            self.u_network = UNetwork(
-                n_feature=opt.nfeature, layers=opt.layers, dropout=opt.dropout
-            )
-        else:
-            print("[initializing encoder and decoder with: {}]".format(mfile))
-            self.mfile = mfile
-            pretrained_model = torch.load(mfile)
-            if type(pretrained_model) is dict:
-                pretrained_model = pretrained_model["model"]
-            self.encoder = pretrained_model.encoder
-            self.decoder = pretrained_model.decoder
-            self.a_encoder = pretrained_model.a_encoder
-            self.u_network = pretrained_model.u_network
-            self.encoder.n_inputs = opt.ncond
-            self.decoder.n_out = 1
+        #     print("[initializing encoder and decoder with: {}]".format(mfile))
+        #     self.mfile = mfile
+        #     pretrained_model = torch.load(mfile)
+        #     if type(pretrained_model) is dict:
+        #         pretrained_model = pretrained_model["model"]
+        #     self.encoder = pretrained_model.encoder
+        #     self.decoder = pretrained_model.decoder
+        #     self.a_encoder = pretrained_model.a_encoder
+        #     self.u_network = pretrained_model.u_network
+        #     self.encoder.n_inputs = opt.ncond
+        #     self.decoder.n_out = 1
 
         self.y_encoder = Encoder(
             Encoder.Config(a_size=0, n_inputs=1, states=False)
         )
 
         self.z_network = nn.Sequential(
-            nn.Linear(opt.hidden_size, opt.nfeature),
-            nn.Dropout(p=opt.dropout, inplace=True),
+            nn.Linear(self.hidden_size, self.nfeature),
+            nn.Dropout(p=self.dropout, inplace=True),
+            nn.BatchNorm1d(self.nfeature, momentum=0.01),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(opt.nfeature, opt.nfeature),
-            nn.Dropout(p=opt.dropout, inplace=True),
+            nn.Linear(self.nfeature, self.nfeature),
+            nn.Dropout(p=self.dropout, inplace=True),
+            nn.BatchNorm1d(self.nfeature, momentum=0.01),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(opt.nfeature, 2 * opt.nz),
+            nn.Linear(self.nfeature, 2 * self.nz),
         )
 
-        self.z_zero = torch.zeros(self.opt.batch_size, self.opt.nz)
-        self.z_expander = nn.Linear(opt.nz, opt.hidden_size)
+        self.z_expander = nn.Linear(self.nz, self.hidden_size)
+
+    def set_enable_latent(self, value=True):
+        self.enable_latent = value
 
     def reparameterize(self, mu, logvar, sample):
         if self.training or sample:
@@ -427,24 +202,20 @@ class FwdCNN_VAE(nn.Module):
             return mu
 
     def sample_z(self, bsize, method=None, h_x=None):
-        z = torch.randn(bsize, self.opt.nz).cuda()
+        z = torch.randn(bsize, self.nz)
         return z
 
     def forward_single_step(self, input_images, input_states, action, z):
         # encode the inputs (without the action)
-        bsize = input_images.size(0)
-        h_x = self.encoder(input_images, input_states)
+        if not self.enable_latent:
+            return super().forward_single_step(
+                input_images, input_states, action, z
+            )
+        batch_size = input_images.size(0)
         z_exp = self.z_expander(z).view(
-            bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width
+            batch_size, self.nfeature, self.h_height, self.h_width,
         )
-        h_x = h_x.view(
-            bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width
-        )
-        a_emb = self.a_encoder(action).view(h_x.size())
-
-        h = h_x + z_exp
-        h = h + a_emb
-        h = h + self.u_network(h)
+        h = self.encode(input_images, input_states, action) + z_exp
         pred_image, pred_state = self.decoder(h)
         pred_image = torch.sigmoid(
             pred_image + input_images[:, -1].unsqueeze(1)
@@ -462,14 +233,16 @@ class FwdCNN_VAE(nn.Module):
         sampling=None,
         z_dropout=0.0,
         z_seq=None,
-        noise=None,
     ):
+        if not self.enable_latent:
+            return super().forward(
+                inputs, actions, targets, sampling, z_dropout,
+            )
         input_images, input_states = inputs
         bsize = input_images.size(0)
-        actions = actions.view(bsize, -1, self.opt.n_actions)
+        actions = actions.view(bsize, -1, self.n_actions)
         npred = actions.size(1)
-        ploss = torch.zeros(1).cuda()
-        ploss2 = torch.zeros(1).cuda()
+        ploss = torch.zeros(1).to(input_images.device)
 
         pred_images, pred_states = [], []
         z_list = []
@@ -480,23 +253,25 @@ class FwdCNN_VAE(nn.Module):
             h_x = self.encoder(input_images, input_states)
             if sampling is None:
                 # we are training or estimating z distribution
-                target_images, target_states, _ = targets
+                target_images, target_states = targets
                 # encode the targets into z
                 h_y = self.y_encoder(
                     target_images[:, t].unsqueeze(1).contiguous()
                 )
                 if random.random() < z_dropout:
-                    z = self.sample_z(bsize, method=None, h_x=h_x).data
+                    z = self.sample_z(bsize, method=None, h_x=h_x).data.to(
+                        input_images.device
+                    )
                 else:
                     mu_logvar = self.z_network(
                         (h_x + h_y).view(bsize, -1)
-                    ).view(bsize, 2, self.opt.nz)
+                    ).view(bsize, 2, self.nz)
                     mu = mu_logvar[:, 0]
                     logvar = mu_logvar[:, 1]
                     z = self.reparameterize(mu, logvar, True)
                     # this can go to inf when taking exp(), so clamp it
                     logvar = torch.clamp(logvar, max=4)
-                    if self.opt.model == "fwd-cnn-vae-fp":
+                    if self.enable_kld:
                         kld = -0.5 * torch.sum(
                             1 + logvar - mu.pow(2) - logvar.exp()
                         )
@@ -508,24 +283,24 @@ class FwdCNN_VAE(nn.Module):
                 if z_seq is not None:
                     z = z_seq[t]
                 else:
-                    z = self.sample_z(bsize, method=None, h_x=h_x)
+                    z = self.sample_z(bsize, method=None, h_x=h_x).to(
+                        input_images.device
+                    )
 
             z_list.append(z)
             z_exp = self.z_expander(z).view(
-                bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width
+                bsize, self.nfeature, self.h_height, self.h_width
             )
-            h_x = h_x.view(
-                bsize, self.opt.nfeature, self.opt.h_height, self.opt.h_width
-            )
+            h_x = h_x.view(bsize, self.nfeature, self.h_height, self.h_width)
             h = h_x + z_exp
             a_emb = self.a_encoder(actions[:, t]).view(h.size())
             h = h + a_emb
             h = h + self.u_network(h)
 
             pred_image, pred_state = self.decoder(h)
-            if sampling is not None:
-                pred_image.detach()
-                pred_state.detach()
+            # if sampling is not None:
+            #     pred_image.detach()
+            #     pred_state.detach()
             pred_image = torch.sigmoid(
                 pred_image + input_images[:, -1].unsqueeze(1)
             )
@@ -541,5 +316,4 @@ class FwdCNN_VAE(nn.Module):
         pred_images = torch.cat(pred_images, 1)
         pred_states = torch.stack(pred_states, 1)
         z_list = torch.stack(z_list, 1)
-        return [pred_images, pred_states, z_list], [ploss, ploss2]
-
+        return FMResult(pred_images, pred_states, z_list, ploss)
