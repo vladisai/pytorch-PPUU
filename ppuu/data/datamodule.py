@@ -15,6 +15,10 @@ class NGSIMDataModule(pl.LightningDataModule):
     """
     Class that implements datamodule interface for lightning
     for ngsim dataset.
+
+    NOTE:
+        Using more than 0 workers seems to break when using multiple nodes,
+        as shared memory begins to leak and everything breaks.
     """
 
     def __init__(

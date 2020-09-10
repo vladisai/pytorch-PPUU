@@ -150,6 +150,7 @@ class FM(pl.LightningModule):
         self._check_plateau(res["early_stop_on"].detach())
         return res
 
+    @pl.loggers.base.rank_zero_only
     def _check_plateau(self, value):
         self.plateau_detector.update(value)
         if self.plateau_detector.detected():
@@ -159,8 +160,7 @@ class FM(pl.LightningModule):
             {
                 "latent_enabled": float(self.model.enable_latent)
                 + torch.rand(1).item() * 0.05
-            },
-            step=self.global_step,
+            }
         )
 
     def set_hparams(self, hparams=None):

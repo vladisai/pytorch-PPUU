@@ -27,6 +27,7 @@ def main(config):
         random_actions=config.training.random_actions,
         npred=config.training.n_pred,
         ncond=config.training.n_cond,
+        workers=0,
     )
 
     pl.seed_everything(config.training.seed)

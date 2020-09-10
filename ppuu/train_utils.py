@@ -13,6 +13,7 @@ def empty_list(_):
 
 
 class CustomLoggerWB(pl.loggers.WandbLogger):
+
     def __init__(
         self,
         *args,
