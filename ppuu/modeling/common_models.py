@@ -4,6 +4,7 @@ from torch import nn
 
 from ppuu import configs
 
+GROUP_NORM_ELEMENTS = 16
 
 class Encoder(nn.Module):
     @dataclass
@@ -20,6 +21,7 @@ class Encoder(nn.Module):
         dropout: float = 0.0
         height: int = 117
         width: int = 24
+        batch_norm: bool = True
 
     @staticmethod
     def build_frame_encoder(input_size, output_size, layers, dropout):
@@ -41,7 +43,7 @@ class Encoder(nn.Module):
         for i, next_size in enumerate(feature_maps):
             encoder_layers += [
                 nn.Conv2d(current_size, next_size, 4, 2, 1),
-                nn.BatchNorm2d(next_size, momentum=0.01),
+                nn.GroupNorm(next_size // GROUP_NORM_ELEMENTS, next_size),
                 nn.Dropout2d(p=dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
             ]
@@ -53,11 +55,10 @@ class Encoder(nn.Module):
     def build_values_encoder(input_size, hidden_size, output_size, dropout):
         return nn.Sequential(
             nn.Linear(input_size, hidden_size),
-            nn.BatchNorm1d(hidden_size, momentum=0.01),
+            # nn.BatchNorm1d(hidden_size, momentum=0.01),
             nn.Dropout(p=dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(hidden_size, hidden_size),
-            nn.BatchNorm1d(hidden_size, momentum=0.01),
             nn.Dropout(p=dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(hidden_size, output_size),
@@ -122,7 +123,7 @@ class UNetwork(nn.Module):
         super().__init__()
         self.encoder = nn.Sequential(
             nn.Conv2d(n_feature, n_feature, 4, 2, 1),
-            nn.BatchNorm2d(n_feature, momentum=0.01),
+            nn.GroupNorm(n_feature // GROUP_NORM_ELEMENTS, n_feature),
             nn.Dropout2d(p=dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(n_feature, n_feature, (4, 1), 2, 1),
@@ -130,7 +131,7 @@ class UNetwork(nn.Module):
 
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(n_feature, n_feature, (4, 1), 2, 1),
-            nn.BatchNorm2d(n_feature, momentum=0.01),
+            nn.GroupNorm(n_feature // GROUP_NORM_ELEMENTS, n_feature),
             nn.Dropout2d(p=dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.ConvTranspose2d(n_feature, n_feature, (4, 3), 2, 0),
@@ -140,7 +141,6 @@ class UNetwork(nn.Module):
         self.hidden_size = n_feature * 3 * 2
         self.fc = nn.Sequential(
             nn.Linear(self.hidden_size, n_feature),
-            nn.BatchNorm1d(n_feature, momentum=0.01),
             nn.Dropout(p=dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(n_feature, self.hidden_size),
@@ -198,13 +198,12 @@ class Decoder(nn.Module):
             nn.ConvTranspose2d(
                 self.feature_maps[0], self.feature_maps[1], (4, 4), 2, 1
             ),
-            nn.BatchNorm2d(self.feature_maps[1], momentum=0.01),
+            nn.GroupNorm(self.feature_maps[1] // GROUP_NORM_ELEMENTS, self.feature_maps[1]),
             nn.Dropout2d(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.ConvTranspose2d(
                 self.feature_maps[1], self.feature_maps[2], (5, 5), 2, (0, 1),
             ),
-            nn.BatchNorm2d(self.feature_maps[2], momentum=0.01),
             nn.Dropout2d(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.ConvTranspose2d(self.feature_maps[2], 3, (2, 2), 2, (0, 1)),
@@ -212,22 +211,19 @@ class Decoder(nn.Module):
 
         self.h_reducer = nn.Sequential(
             nn.Conv2d(self.n_feature, self.n_feature, 4, 2, 1),
-            nn.BatchNorm2d(self.n_feature, momentum=0.01),
+            nn.GroupNorm(self.n_feature // GROUP_NORM_ELEMENTS, self.n_feature),
             nn.Dropout2d(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(self.n_feature, self.n_feature, (4, 1), (2, 1), 0,),
             nn.Dropout2d(p=self.dropout, inplace=True),
-            nn.BatchNorm2d(self.n_feature, momentum=0.01),
             nn.LeakyReLU(0.2, inplace=True),
         )
 
         self.s_predictor = nn.Sequential(
             nn.Linear(2 * self.n_feature, self.n_feature),
-            nn.BatchNorm1d(self.n_feature, momentum=0.01),
             nn.Dropout(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(self.n_feature, self.n_feature),
-            nn.BatchNorm1d(self.n_feature, momentum=0.01),
             nn.Dropout(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(self.n_feature, 4),

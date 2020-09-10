@@ -14,6 +14,7 @@ from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu import configs
 from ppuu.modeling import policy_models
 from ppuu.modeling.forward_models import ForwardModel
+from ppuu.modeling.forward_model_lightning import ForwardModelV2
 from ppuu.eval import PolicyEvaluator
 from ppuu.data import Augmenter
 from ppuu.modeling.mixout import MixoutWrapper
@@ -242,3 +243,13 @@ class MPURModule(pl.LightningModule):
 @inject(cost_type=PolicyCostContinuous, fm_type=ForwardModel)
 class MPURContinuousModule(MPURModule):
     pass
+
+
+@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV2)
+class MPURContinuousV2Module(MPURContinuousModule):
+    @dataclass
+    class ModelConfig(MPURContinuousModule.ModelConfig):
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong/seed=42/checkpoints/epoch=999_success_rate=0.ckpt"
+
+
+# noqa: E501

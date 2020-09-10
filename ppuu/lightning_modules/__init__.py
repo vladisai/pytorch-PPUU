@@ -1,6 +1,10 @@
 import argparse
 
-from ppuu.lightning_modules.mpur import MPURModule, MPURContinuousModule
+from ppuu.lightning_modules.mpur import (
+    MPURModule,
+    MPURContinuousModule,
+    MPURContinuousV2Module,
+)
 from ppuu.lightning_modules.mpur_dreaming import (
     MPURDreamingModule,
     MPURDreamingLBFGSModule,
@@ -21,6 +25,7 @@ MODULES_DICT = dict(
     km_split=MPURKMSplitModule,
     km_taper=MPURKMTaperModule,
     continuous=MPURContinuousModule,
+    continuous_v2=MPURContinuousV2Module,
     fm=FM,
 )
 

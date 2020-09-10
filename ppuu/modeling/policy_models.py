@@ -83,7 +83,7 @@ class DeterministicPolicy(nn.Module):
         self.n_hidden = n_hidden
         self.encoder = Encoder(
             Encoder.Config(
-                a_size=0, n_inputs=self.n_cond, n_channels=self.n_channels
+                a_size=0, n_inputs=self.n_cond, n_channels=self.n_channels, batch_norm=False
             )
         )
         self.n_outputs = self.n_actions
@@ -92,13 +92,13 @@ class DeterministicPolicy(nn.Module):
 
         self.fc = nn.Sequential(
             nn.Linear(self.n_hidden, self.n_hidden),
-            nn.BatchNorm1d(self.n_hidden, momentum=0.01),
+            # nn.BatchNorm1d(self.n_hidden, momentum=0.01),
             nn.ReLU(),
             nn.Linear(self.n_hidden, self.n_hidden),
-            nn.BatchNorm1d(self.n_hidden, momentum=0.01),
+            # nn.BatchNorm1d(self.n_hidden, momentum=0.01),
             nn.ReLU(),
             nn.Linear(self.n_hidden, self.n_hidden),
-            nn.BatchNorm1d(self.n_hidden, momentum=0.01),
+            # nn.BatchNorm1d(self.n_hidden, momentum=0.01),
             nn.ReLU(),
             nn.Linear(self.n_hidden, self.n_outputs),
         )
