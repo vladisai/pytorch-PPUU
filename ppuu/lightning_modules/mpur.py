@@ -249,7 +249,7 @@ class MPURContinuousModule(MPURModule):
 class MPURContinuousV2Module(MPURContinuousModule):
     @dataclass
     class ModelConfig(MPURContinuousModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong/seed=42/checkpoints/epoch=999_success_rate=0.ckpt"
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/last.ckpt"
 
 
 # noqa: E501

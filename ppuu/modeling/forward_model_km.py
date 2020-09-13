@@ -12,7 +12,7 @@ class ForwardModelKM(ForwardModel):
         Args:
             - states : tensor of shape [batch size, 4]
             - actions : tensor of shape [batch size, 2]
-            - stats : dataset statistics
+            - stats : dataset statistics for unnormalization
             - timestep : the time delta between two consecutive states
         """
         states = states.clone()
@@ -41,17 +41,16 @@ class ForwardModelKM(ForwardModel):
         directions_with_negative = speeds / torch.clamp(
             speeds_norm, min=1e-8, max=1e6
         )
-        directions = torch.stack(
-            [
-                torch.abs(directions_with_negative[:, 0]),
-                directions_with_negative[:, 1],
-            ],
-            axis=1,
-        )
+        # directions = torch.stack(
+        #     [
+        #         torch.abs(directions_with_negative[:, 0]),
+        #         directions_with_negative[:, 1],
+        #     ],
+        #     axis=1,
+        # )
+        directions = directions_with_negative
 
-        new_positions = (
-            positions + timestep * speeds
-        )
+        new_positions = positions + timestep * speeds
 
         ortho_directions = torch.stack(
             [directions[:, 1], -directions[:, 0]], axis=1
@@ -59,7 +58,10 @@ class ForwardModelKM(ForwardModel):
 
         new_directions_unnormed = directions + ortho_directions * b.unsqueeze(
             1
-        ) * (speeds_norm * timestep + 1e-6)
+        ) * (
+            speeds_norm * timestep
+        )  # + torch.tensor([1e-6, 0]).unsqueeze(0).to(directions.device)
+
         new_directions = new_directions_unnormed / (
             torch.clamp(
                 new_directions_unnormed.norm(dim=1).view(speeds.shape[0], 1),
