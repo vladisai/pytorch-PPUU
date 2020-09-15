@@ -74,8 +74,9 @@ class TrainingConfig(ConfigBase):
     noise_augmentation_p: float = field(default=0.5)
     gpus: int = field(default=1)
     num_nodes: int = field(default=1)
-    distributed_backend: str = field(default='ddp')
+    distributed_backend: str = field(default="ddp")
     resume_from_checkpoint: str = field(default=None)
+    version: str = field(default=None)
 
     def __post_init__(self):
         self.set_dataset(self.dataset)

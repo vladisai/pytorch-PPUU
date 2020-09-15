@@ -131,12 +131,17 @@ class FM(pl.LightningModule):
         return res
 
     def validation_step(self, batch, batch_idx):
-        states_loss, images_loss, p_loss = self.shared_step(batch)
-        loss = images_loss + states_loss + self.config.model.beta * p_loss
+        predictions = self.model.unfold(batch["actions"], batch)
+        states_loss = F.mse_loss(
+            batch["target_states"], predictions["pred_states"]
+        )
+        images_loss = F.mse_loss(
+            batch["target_images"], predictions["pred_images"]
+        )
+        loss = images_loss + states_loss
         logs = {
             "val_states_loss": states_loss,
             "val_images_loss": images_loss,
-            "val_p_loss": p_loss,
             "val_total_loss": loss,
         }
         res = pl.EvalResult(loss)

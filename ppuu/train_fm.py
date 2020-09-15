@@ -35,14 +35,16 @@ def main(config):
     logger = CustomLoggerWB(
         save_dir=config.training.output_dir,
         experiment_name=config.training.experiment_name,
-        version=f"seed={config.training.seed}",
+        seed=f"seed={config.training.seed}",
+        version=config.training.version,
         project="PPUU_fm",
     )
 
     logger.log_hyperparams(module.hparams)
 
     # period = max(1, config.training.n_epochs // 5)
-    period = 1
+    period = min(10, config.training.n_epochs // 10)
+
 
     trainer = pl.Trainer(
         gradient_clip_val=5.0,
@@ -61,9 +63,13 @@ def main(config):
         gpus=config.training.gpus,
         num_nodes=config.training.num_nodes,
         distributed_backend=config.training.distributed_backend,
+        weights_save_path=logger.first_log_dir,
+        track_grad_norm=2,
     )
 
     model = module(config)
+    if config.training.resume_from_checkpoint is not None:
+        model.model.set_enable_latent(True)
     trainer.fit(model, data_module)
     return model
 

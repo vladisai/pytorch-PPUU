@@ -31,7 +31,7 @@ def get_executor(job_name, cpus_per_task=1, cluster=None, nodes=1, gpus=1):
     executor = submitit.AutoExecutor(folder=config.logs_path, cluster=cluster)
     executor.update_parameters(
         name=job_name,
-        # slurm_time="00:10:00",  # two days
+        # slurm_time="00:10:00", # two days
         slurm_time="48:00:00",  # two days
         gpus_per_node=gpus,
         nodes=nodes,

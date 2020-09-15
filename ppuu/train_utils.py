@@ -18,29 +18,34 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
         self,
         *args,
         experiment_name,
-        version,
+        seed,
         save_dir,
         json_filename="logs.json",
+        version=None,
         **kwargs,
     ):
         self.json_filename = json_filename
 
         self.logs = []
         self.custom_logs = defaultdict(empty_list)
-        self.log_dir = os.path.join(save_dir, experiment_name, version)
+        self.log_dir = os.path.join(save_dir, experiment_name, seed)
 
         name = experiment_name
 
         # find first free directory
-        if os.path.exists(self.log_dir):
-            k = 1
-            while os.path.exists(f"{self.log_dir}_{k}"):
-                k += 1
-            self.log_dir = f"{self.log_dir}_{k}"
-            name = f"{name}_{k}"
+        self.first_log_dir = self.log_dir
+        if version is not None:
+            name = f"{name}_{version}"
+        else:
+            if os.path.exists(self.log_dir):
+                k = 1
+                while os.path.exists(f"{self.log_dir}_{k}"):
+                    k += 1
+                self.log_dir = f"{self.log_dir}_{k}"
+                name = f"{name}_{k}"
 
         super().__init__(
-            *args, name=name, save_dir=save_dir, **kwargs
+            *args, name=name, save_dir=save_dir, version=version, **kwargs
         )
 
     @pl.loggers.base.rank_zero_only

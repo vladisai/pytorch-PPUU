@@ -11,8 +11,8 @@ from dataclasses import dataclass
 import torch.multiprocessing
 
 from ppuu import configs
-from ppuu import dataloader
-from ppuu.lightning_modules.mpur import MPURModule
+from ppuu.data import dataloader
+from ppuu.lightning_modules import get_module
 from ppuu.eval import PolicyEvaluator
 from ppuu import slurm
 
@@ -35,6 +35,7 @@ class EvalConfig(configs.ConfigBase):
     output_dir: str = None
     test_size_cap: int = None
     slurm: bool = False
+    model_type: str = "vanilla"
 
     def __post_init__(self):
         if self.num_processes == -1:
@@ -62,12 +63,13 @@ class EvalConfig(configs.ConfigBase):
 def main(config):
     torch.multiprocessing.set_sharing_strategy("file_system")
     torch.multiprocessing.set_start_method("spawn")
-    mpur_module = MPURModule.load_from_checkpoint(
+    Module = get_module(config.model_type)
+    mpur_module = Module.load_from_checkpoint(
         checkpoint_path=config.checkpoint_path
     )
     alternative_module = None
     if config.alternative_checkpoint_path:
-        alternative_module = MPURModule.load_from_checkpoint(
+        alternative_module = Module.load_from_checkpoint(
             checkpoint_path=config.alternative_checkpoint_path
         )
 

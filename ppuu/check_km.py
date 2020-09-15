@@ -39,6 +39,8 @@ class Config(configs.ConfigBase):
     normalize: bool = True
     single_check: bool = False
     ignore_z: bool = False
+    shift: bool = False
+    path: str = None
 
     def __post_init__(self):
         if self.dataset in configs.DATASET_PATHS_MAPPING:
@@ -87,8 +89,8 @@ def main(config):
         "test",
         20,
         30,
-        size=1000,
-        shift=False,
+        size=25,
+        shift=config.shift,
         random_actions=False,
         normalize=config.normalize,
     )
@@ -107,6 +109,12 @@ def main(config):
         model = model.eval()
         model = model.model
 
+    if config.path is not None:
+        model = FM.load_from_checkpoint(config.path)
+        model = model.cuda()
+        model = model.eval()
+        model = model.model
+
     cos_loss = torch.nn.CosineSimilarity(dim=2, eps=1e-6)
     cntr = 0
 
@@ -116,6 +124,7 @@ def main(config):
     with torch.no_grad():
         i = 0
         mse = 0.0
+        i_mse = 0.0
         mses = []
         mse_norm = 0.0
         cos = 0.0
@@ -131,6 +140,7 @@ def main(config):
                     "actions",
                     "car_sizes",
                     "target_states",
+                    "target_images",
                 ]:
                     b[k] = b[k].cuda()
 
@@ -141,9 +151,14 @@ def main(config):
                 predicted_states = predict_all_states(
                     b["input_states"], b["actions"], stats
                 )
+                pred_images = None
             else:
                 pred = model.unfold(b["actions"], b)
                 predicted_states = pred["pred_states"]
+                pred_images = pred['pred_images']
+            if pred_images is not None:
+                i_mse += F.mse_loss(pred_images, b['target_images'])
+
             c_mse = F.mse_loss(predicted_states, b["target_states"])
             predicted_norm = (
                 predicted_states[:, :, 2:].norm(dim=2).unsqueeze(-1)
@@ -173,7 +188,9 @@ def main(config):
                 ).mean()
                 cntr += 1
 
-        print("total", mse / cntr)
+        print("states", mse / cntr)
+        if i_mse > 0:
+            print("images", i_mse / cntr)
         print("speed norm", mse_norm / cntr)
         print("cos", cos / cntr)
         mses = torch.stack(mses)

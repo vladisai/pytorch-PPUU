@@ -37,19 +37,23 @@ def main(config):
     logger = CustomLoggerWB(
         save_dir=config.training_config.output_dir,
         experiment_name=config.training_config.experiment_name,
-        version=f"seed={config.training_config.seed}",
+        seed=f"seed={config.training_config.seed}",
+        version=config.training_config.version,
         project="PPUU_policy",
     )
+    logger.log_hyperparams(module.hparams)
 
     period = max(1, config.training_config.n_epochs // 5)
 
     trainer = pl.Trainer(
-        gpus=1,
+        gpus=config.training_config.gpus,
+        num_nodes=config.training_config.num_nodes,
         gradient_clip_val=50.0,
         max_epochs=config.training_config.n_epochs,
         check_val_every_n_epoch=period,
         num_sanity_val_steps=0,
         fast_dev_run=config.training_config.fast_dev_run,
+        distributed_backend=config.training_config.distributed_backend,
         checkpoint_callback=pl.callbacks.ModelCheckpoint(
             filepath=os.path.join(
                 logger.log_dir, "checkpoints", "{epoch}_{success_rate}"
@@ -58,6 +62,9 @@ def main(config):
             save_last=True,
         ),
         logger=logger,
+        resume_from_checkpoint=config.training_config.resume_from_checkpoint,
+        weights_save_path=logger.log_dir,
+        track_grad_norm=2,
     )
 
     model = module(config)
@@ -70,7 +77,12 @@ if __name__ == "__main__":
     config = module.Config.parse_from_command_line()
     use_slurm = slurm.parse_from_command_line()
     if use_slurm:
-        executor = slurm.get_executor(config.training_config.experiment_name)
+        executor = slurm.get_executor(
+            config.training_config.experiment_name,
+            cpus_per_task=4,
+            nodes=config.training_config.num_nodes,
+            gpus=config.training_config.gpus,
+        )
         job = executor.submit(main, config)
         print(f"submitted to slurm with job id: {job.job_id}")
     else:

@@ -157,7 +157,7 @@ class FwdCNN(nn.Module):
         pred_images, pred_states, pred_actions = [], [], []
 
         if Z is None:
-            Z = self.sample_z(npred * bsize)
+            Z = self.sample_z(npred * bsize).to(input_images.device)
             Z = Z.view(bsize, npred, -1)
 
         for t in range(npred):

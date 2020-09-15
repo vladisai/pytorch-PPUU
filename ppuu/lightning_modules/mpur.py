@@ -113,10 +113,10 @@ class MPURModule(pl.LightningModule):
 
     def set_hparams(self, hparams=None):
         if hparams is None:
-            hparams = MPURModule.Config()
+            hparams = self.Config()
         if isinstance(hparams, dict):
             self.hparams = hparams
-            self.config = MPURModule.Config.parse_from_dict(hparams)
+            self.config = self.Config.parse_from_dict(hparams)
         else:
             self.hparams = dataclasses.asdict(hparams)
             self.config = hparams
@@ -218,26 +218,26 @@ class MPURModule(pl.LightningModule):
             enable_logging=False,
         )
 
-    @classmethod
-    def _load_model_state(cls, checkpoint, *args, **kwargs):
-        copy = dict()
-        for k in checkpoint["state_dict"]:
-            # Adjust for nested forward model.
-            if k.startswith("forward_model") and not k.startswith(
-                "forward_model.forward_model."
-            ):
-                copy["forward_model." + k] = checkpoint["state_dict"][k]
-            elif k.startswith("policy_model.original_model"):
-                if "fc" not in k:
-                    copy[k.replace(".original_model", "")] = checkpoint[
-                        "state_dict"
-                    ][k]
-            elif "target" not in k:
-                copy[k] = checkpoint["state_dict"][k]
+    # @classmethod
+    # def _load_model_state(cls, checkpoint, *args, **kwargs):
+    #     copy = dict()
+    #     for k in checkpoint["state_dict"]:
+    #         # Adjust for nested forward model.
+    #         if k.startswith("forward_model") and not k.startswith(
+    #             "forward_model.forward_model."
+    #         ):
+    #             copy["forward_model." + k] = checkpoint["state_dict"][k]
+    #         elif k.startswith("policy_model.original_model"):
+    #             if "fc" not in k:
+    #                 copy[k.replace(".original_model", "")] = checkpoint[
+    #                     "state_dict"
+    #                 ][k]
+    #         elif "target" not in k:
+    #             copy[k] = checkpoint["state_dict"][k]
 
-            # Change for mixout network.
-        checkpoint["state_dict"] = copy
-        return super()._load_model_state(checkpoint, *args, **kwargs)
+    #         # Change for mixout network.
+    #     checkpoint["state_dict"] = copy
+    #     return super()._load_model_state(checkpoint, *args, **kwargs)
 
 
 @inject(cost_type=PolicyCostContinuous, fm_type=ForwardModel)
@@ -251,5 +251,15 @@ class MPURContinuousV2Module(MPURContinuousModule):
     class ModelConfig(MPURContinuousModule.ModelConfig):
         forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/last.ckpt"
 
+    # @classmethod
+    # def _load_model_state(cls, checkpoint, *args, **kwargs):
+    #     return super(MPURModule, cls)._load_model_state(checkpoint, *args, **kwargs)
 
 # noqa: E501
+
+@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV2)
+class MPURVanillaV2Module(MPURModule):
+    @dataclass
+    class ModelConfig(MPURContinuousModule.ModelConfig):
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/last.ckpt"
+
