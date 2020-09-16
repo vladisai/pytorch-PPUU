@@ -20,6 +20,7 @@ class DataStore:
         self.ego_car_images = []
         self.data_dir = data_dir
         data_files = next(os.walk(data_dir))[1]
+        data_files.sort()
         for df in data_files:
             combined_data_path = f"{data_dir}/{df}/all_data.pth"
             logging.info(f"Loading pickle {combined_data_path}")

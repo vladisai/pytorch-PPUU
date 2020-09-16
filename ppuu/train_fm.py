@@ -45,7 +45,6 @@ def main(config):
     # period = max(1, config.training.n_epochs // 5)
     period = min(10, config.training.n_epochs // 10)
 
-
     trainer = pl.Trainer(
         gradient_clip_val=5.0,
         max_epochs=config.training.n_epochs,
@@ -65,6 +64,7 @@ def main(config):
         distributed_backend=config.training.distributed_backend,
         weights_save_path=logger.first_log_dir,
         track_grad_norm=2,
+        resume_from_checkpoint=config.training.resume_from_checkpoint,
     )
 
     model = module(config)

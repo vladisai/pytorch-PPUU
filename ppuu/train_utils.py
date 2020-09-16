@@ -36,6 +36,7 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
         self.first_log_dir = self.log_dir
         if version is not None:
             name = f"{name}_{version}"
+            self.log_dir = f"{self.log_dir}_{version}"
         else:
             if os.path.exists(self.log_dir):
                 k = 1
@@ -45,7 +46,7 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
                 name = f"{name}_{k}"
 
         super().__init__(
-            *args, name=name, save_dir=save_dir, version=version, **kwargs
+            *args, name=name, save_dir=save_dir, version=name, **kwargs
         )
 
     @pl.loggers.base.rank_zero_only

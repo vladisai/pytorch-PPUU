@@ -27,7 +27,7 @@ MODULES_DICT = dict(
     km_taper=MPURKMTaperModule,
     continuous=MPURContinuousModule,
     continuous_v2=MPURContinuousV2Module,
-    vanilla_v2=MPURContinuousV2Module,
+    vanilla_v2=MPURVanillaV2Module,
     fm=FM,
 )
 
