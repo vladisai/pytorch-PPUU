@@ -43,6 +43,9 @@ DATASET_PATHS_MAPPING = {
     "50": (
         "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/traffic-data_offroad_50_test_train_same/state-action-cost/data_i80_v0/"  # noqa: E501
     ),
+    "full_5": (
+        "/home/us441/nvidia-collab/vlad/traffic-data_offroad/state-action-cost/data_i80_v0/"  # noqa: E501
+    ),
 }
 
 
@@ -58,7 +61,7 @@ class TrainingConfig(ConfigBase):
     batch_size: int = field(default=6)
     validation_size: int = field(default=25)
     validation_period: int = field(default=1)
-    dataset: str = field(default="full")
+    dataset: str = field(default="full_5")
     data_shift: bool = field(default=False)
     random_actions: bool = field(default=False)
     seed: int = field(default=42)

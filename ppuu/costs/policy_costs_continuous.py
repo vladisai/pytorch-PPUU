@@ -149,7 +149,7 @@ class PolicyCostContinuous(PolicyCost):
         bsize, npred, nchannels, crop_h, crop_w = images.size()
 
         images = images.view(bsize * npred, nchannels, crop_h, crop_w)
-        states = states.view(bsize * npred, 4).clone()
+        states = states.view(bsize * npred, 5).clone()
 
         if unnormalize:
             states = (
@@ -162,7 +162,7 @@ class PolicyCostContinuous(PolicyCost):
             states = (
                 states
                 + self.data_stats["s_mean"]
-                .view(1, 4)
+                .view(1, 5)
                 .expand(states.size())
                 .to(device)
             )

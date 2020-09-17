@@ -28,7 +28,7 @@ def get_optimal_pool_size():
 class EvalConfig(configs.ConfigBase):
     checkpoint_path: str = None
     alternative_checkpoint_path: str = None
-    dataset: str = "full"
+    dataset: str = "full_5"
     save_gradients: bool = False
     debug: bool = False
     num_processes: int = -1

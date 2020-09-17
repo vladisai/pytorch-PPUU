@@ -38,7 +38,6 @@ class ModelConfig(configs.ConfigBase):
 
     huber_loss: bool = False
 
-
 @dataclass
 class TrainingConfig(configs.TrainingConfig):
     decay: float = 1
@@ -92,7 +91,7 @@ class FM(pl.LightningModule):
             enable_kld=True,
             enable_latent=False,
         )
-        self.plateau_detector = PlateauDetector(1e-3, 10)
+        self.plateau_detector = PlateauDetector(1e-3, 5)
 
     def forward(self, batch):
         predictions = self.model(

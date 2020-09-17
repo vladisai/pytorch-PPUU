@@ -139,7 +139,7 @@ class PolicyCost(PolicyCostBase):
         safe_factor = 1.5
         bsize, npred, nchannels, crop_h, crop_w = images.size()
         images = images.view(bsize * npred, nchannels, crop_h, crop_w)
-        states = states.view(bsize * npred, 4).clone()
+        states = states.view(bsize * npred, 5).clone()
 
         if unnormalize:
             states = states * (
@@ -275,7 +275,7 @@ class PolicyCost(PolicyCostBase):
             width,
         )
         input_states = input_states.expand(
-            self.config.uncertainty_n_models, bsize, ncond, 4
+            self.config.uncertainty_n_models, bsize, ncond, 5
         )
         actions = actions.expand(
             self.config.uncertainty_n_models,
@@ -291,7 +291,7 @@ class PolicyCost(PolicyCostBase):
             width,
         )
         input_states = input_states.contiguous().view(
-            bsize * self.config.uncertainty_n_models, ncond, 4
+            bsize * self.config.uncertainty_n_models, ncond, 5
         )
         actions = actions.contiguous().view(
             bsize * self.config.uncertainty_n_models,
@@ -367,7 +367,7 @@ class PolicyCost(PolicyCostBase):
         pred_states = pred_states.view(
             self.config.uncertainty_n_models * bsize,
             self.config.uncertainty_n_pred,
-            4,
+            5,
         )
 
         if not estimation:
@@ -585,10 +585,10 @@ class PolicyCost(PolicyCostBase):
 
         input_images = input_images.clone().float().div_(255.0)
         input_states -= (
-            self.data_stats["s_mean"].view(1, 4).expand(input_states.size())
+            self.data_stats["s_mean"].view(1, 5).expand(input_states.size())
         )
         input_states /= (
-            self.data_stats["s_std"].view(1, 4).expand(input_states.size())
+            self.data_stats["s_std"].view(1, 5).expand(input_states.size())
         )
         if input_images.dim() == 4:  # if processing single vehicle
             input_images = input_images.to(device).unsqueeze(0)

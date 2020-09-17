@@ -255,7 +255,7 @@ class Dataset(torch.utils.data.Dataset):
 
     def normalise_state_vector(self, states):
         shape = (
-            (1, 1, 4) if states.dim() == 3 else (1, 4)
+            (1, 1, 5) if states.dim() == 3 else (1, 5)
         )  # dim = 3: state sequence, dim = 2: single state
         states -= (
             self.data_store.s_mean.view(*shape)

@@ -47,7 +47,7 @@ class FwdCNN(nn.Module):
         self.hidden_size = hidden_size
         self.ncond = ncond
 
-        self.encoder = Encoder(Encoder.Config(a_size=0, n_inputs=self.ncond))
+        self.encoder = Encoder(a_size=0, n_inputs=self.ncond)
         self.decoder = Decoder(
             layers=self.layers,
             n_feature=self.nfeature,
@@ -252,9 +252,7 @@ class FwdCNN_VAE(FwdCNN):
         #     self.encoder.n_inputs = opt.ncond
         #     self.decoder.n_out = 1
 
-        self.y_encoder = Encoder(
-            Encoder.Config(a_size=0, n_inputs=1, states=False)
-        )
+        self.y_encoder = Encoder(a_size=0, n_inputs=1, states=False)
 
         self.z_network = nn.Sequential(
             nn.Linear(self.hidden_size, self.nfeature),

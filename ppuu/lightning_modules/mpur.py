@@ -6,10 +6,9 @@ import hashlib
 
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 
-from ppuu.data import DataStore, Dataset, EvaluationDataset
+from ppuu.data import EvaluationDataset
 from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu import configs
 from ppuu.modeling import policy_models
@@ -251,7 +250,7 @@ class MPURContinuousModule(MPURModule):
 class MPURContinuousV2Module(MPURContinuousModule):
     @dataclass
     class ModelConfig(MPURContinuousModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/last.ckpt"
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/last.ckpt"  # noqa: E501
 
     # @classmethod
     # def _load_model_state(cls, checkpoint, *args, **kwargs):

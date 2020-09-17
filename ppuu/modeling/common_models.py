@@ -6,23 +6,8 @@ from ppuu import configs
 
 GROUP_NORM_ELEMENTS = 16
 
-class Encoder(nn.Module):
-    @dataclass
-    class Config(configs.ConfigBase):
-        n_feature: int = 256
-        layers: int = 3
-        n_channels: int = 3
-        n_cond: int = 20
-        n_inputs: int = 4
-        state_input_size: int = 4
-        states: bool = True
-        a_size: int = 3
-        hidden_size: int = 14 * 3 * 256
-        dropout: float = 0.0
-        height: int = 117
-        width: int = 24
-        batch_norm: bool = True
 
+class Encoder(nn.Module):
     @staticmethod
     def build_frame_encoder(input_size, output_size, layers, dropout):
         if layers == 3:
@@ -64,34 +49,58 @@ class Encoder(nn.Module):
             nn.Linear(hidden_size, output_size),
         )
 
-    def __init__(self, config):
+    def __init__(
+        self,
+        n_feature: int = 256,
+        layers: int = 3,
+        n_channels: int = 3,
+        n_cond: int = 20,
+        n_inputs: int = 4,
+        state_dimension: int = 5,
+        states: bool = True,
+        a_size: int = 3,
+        hidden_size: int = 14 * 3 * 256,
+        dropout: float = 0.0,
+        height: int = 117,
+        width: int = 24,
+        batch_norm: bool = True,
+    ):
         super().__init__()
-        self.config = config
-        self.config.n_inputs = (
-            self.config.n_cond
-            if self.config.n_inputs is None
-            else self.config.n_inputs
-        )
+        self.n_feature = n_feature
+        self.layers = layers
+        self.n_channels = n_channels
+        self.n_cond = n_cond
+        self.n_inputs = n_inputs
+        self.state_dimension = state_dimension
+        self.states = states
+        self.a_size = a_size
+        self.hidden_size = hidden_size
+        self.dropout = dropout
+        self.height = height
+        self.width = width
+        self.batch_norm = batch_norm
+
+        self.n_inputs = self.n_cond if self.n_inputs is None else self.n_inputs
         self.f_encoder = Encoder.build_frame_encoder(
-            self.config.n_channels * self.config.n_inputs,
-            self.config.n_feature,
-            self.config.layers,
-            self.config.dropout,
+            self.n_channels * self.n_inputs,
+            self.n_feature,
+            self.layers,
+            self.dropout,
         )
-        if self.config.states:
+        if self.states:
             self.s_encoder = Encoder.build_values_encoder(
-                self.config.state_input_size * self.config.n_inputs,
-                self.config.n_feature,
-                self.config.hidden_size,
-                self.config.dropout,
+                self.state_dimension * self.n_inputs,
+                self.n_feature,
+                self.hidden_size,
+                self.dropout,
             )
-        if self.config.a_size > 0:
+        if self.a_size > 0:
             # action or cost encoder
             self.a_encoder = Encoder.build_values_encoder(
-                self.config.a_size,
-                self.config.n_feature,
-                self.config.hidden_size,
-                self.config.dropout,
+                self.a_size,
+                self.n_feature,
+                self.hidden_size,
+                self.dropout,
             )
 
     def forward(self, images, states=None, actions=None):
@@ -99,9 +108,9 @@ class Encoder(nn.Module):
         h = self.f_encoder(
             images.view(
                 bsize,
-                self.config.n_inputs * self.config.n_channels,
-                self.config.height,
-                self.config.width,
+                self.n_inputs * self.n_channels,
+                self.height,
+                self.width,
             )
         )
         if states is not None:
@@ -110,7 +119,7 @@ class Encoder(nn.Module):
             )
         if actions is not None:
             a = self.a_encoder(
-                actions.contiguous().view(bsize, self.config.a_size)
+                actions.contiguous().view(bsize, self.a_size)
             )
             h = h + a.view(h.size())
         return h
@@ -168,16 +177,8 @@ class Decoder(nn.Module):
         h_width=3,
         height=117,
         width=24,
+        state_dimension=5,
     ):
-        """Dependencies:
-            opt.layers
-            opt.feature
-            opt.dropout
-            opt.h_height
-            opt.h_width
-            opt.height
-            opt.width
-        """
         super(Decoder, self).__init__()
         self.layers = layers
         self.n_feature = n_feature
@@ -186,6 +187,7 @@ class Decoder(nn.Module):
         self.h_width = h_width
         self.height = height
         self.width = width
+        self.state_dimension = state_dimension
 
         assert self.layers == 3
         assert self.n_feature % 4 == 0
@@ -226,7 +228,7 @@ class Decoder(nn.Module):
             nn.Linear(self.n_feature, self.n_feature),
             nn.Dropout(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(self.n_feature, 4),
+            nn.Linear(self.n_feature, self.state_dimension),
         )
 
     def forward(self, h):
