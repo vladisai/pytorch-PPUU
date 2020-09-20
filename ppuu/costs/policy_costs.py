@@ -142,20 +142,13 @@ class PolicyCost(PolicyCostBase):
         states = states.view(bsize * npred, 4).clone()
 
         if unnormalize:
-            states = (
-                states
-                * (
-                    1e-8
-                    + self.data_stats["s_std"].view(1, 4).expand(states.size())
-                ).cuda()
-            )
-            states = (
-                states
-                + self.data_stats["s_mean"]
-                .view(1, 4)
-                .expand(states.size())
-                .cuda()
-            )
+            states = states * (
+                1e-8
+                + self.data_stats["s_std"].view(1, 4).expand(states.size())
+            ).to(images.device)
+            states = states + self.data_stats["s_mean"].view(1, 4).expand(
+                states.size()
+            ).to(images.device)
 
         speed = states[:, 2:].norm(2, 1) * SCALE  # pixel/s
         width, length = car_size[:, 0], car_size[:, 1]  # feet
@@ -178,14 +171,14 @@ class PolicyCost(PolicyCostBase):
             .expand(bsize, npred)
             .contiguous()
             .view(bsize * npred)
-            .cuda()
+            .to(images.device)
         )
         max_y = (
             max_y.view(bsize, 1)
             .expand(bsize, npred)
             .contiguous()
             .view(bsize * npred)
-            .cuda()
+            .to(images.device)
         )
 
         min_x = torch.clamp(max_x - safe_distance, min=0)
@@ -197,7 +190,7 @@ class PolicyCost(PolicyCostBase):
             .expand(bsize, npred)
             .contiguous()
             .view(bsize * npred)
-            .cuda()
+            .to(images.device)
         )
 
         x_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_h))) * crop_h / 2
@@ -205,7 +198,7 @@ class PolicyCost(PolicyCostBase):
             x_filter.unsqueeze(0)
             .expand(bsize * npred, crop_h)
             .type(car_size.type())
-            .cuda()
+            .to(images.device)
         )
         x_filter = torch.min(
             x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size())
@@ -220,15 +213,15 @@ class PolicyCost(PolicyCostBase):
             y_filter.view(1, crop_w)
             .expand(bsize * npred, crop_w)
             .type(car_size.type())
-            .cuda()
+            .to(images.device)
         )
         y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
         y_filter = torch.max(y_filter, min_y.view(bsize * npred, 1))
         y_filter = (y_filter - min_y.view(bsize * npred, 1)) / (
             max_y.view(bsize * npred, 1) - min_y.view(bsize * npred, 1)
         )
-        x_filter = x_filter.cuda()
-        y_filter = y_filter.cuda()
+        x_filter = x_filter.to(images.device)
+        y_filter = y_filter.to(images.device)
         proximity_mask = torch.bmm(
             x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w)
         )
@@ -576,7 +569,8 @@ class PolicyCost(PolicyCostBase):
         z_reg = torch.tensor(0)
         if original_z is not None:
             z_reg = self.config.dreaming_z_reg * (
-                (predictions["Z"] - original_z).norm(2, -1).mean() / predictions["Z"].shape[-1]
+                (predictions["Z"] - original_z).norm(2, -1).mean()
+                / predictions["Z"].shape[-1]
             )
             result += z_reg
         components = dict(

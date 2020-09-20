@@ -57,6 +57,7 @@ class TrainingConfig(ConfigBase):
     epoch_size: int = field(default=500)
     batch_size: int = field(default=6)
     validation_size: int = field(default=25)
+    validation_period: int = field(default=1)
     dataset: str = field(default="full")
     data_shift: bool = field(default=False)
     random_actions: bool = field(default=False)

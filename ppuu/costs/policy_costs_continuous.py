@@ -99,6 +99,7 @@ class PolicyCostContinuous(PolicyCost):
         The idea is to get only edges of the cars so that later
         when we do summing the size of the cars doesn't affect our behavior.
         """
+        return images[:, :, 1]
         device = images.device
         horizontal_filter = torch.tensor(
             [[[0.0], [0.0]], [[-1.0], [1.0]], [[0.0], [0.0]]], device=device,
@@ -127,7 +128,8 @@ class PolicyCostContinuous(PolicyCost):
         vertical_mask[:, :, :, (width // 2) :] = -1
         vertical_masked = F.relu(vertical_mask * vertical)
 
-        result = vertical_masked[:][:] + horizontal_masked[:][:]
+        # result = vertical_masked[:][:] + horizontal_masked[:][:]
+        result = horizontal.abs() + vertical.abs()
         return result
 
     def compute_proximity_cost(
@@ -139,6 +141,8 @@ class PolicyCostContinuous(PolicyCost):
         unnormalize=False,
         clip=False,
     ):
+
+        device = images.device
 
         SCALE = 0.25
         safe_factor = 1.5
@@ -153,14 +157,14 @@ class PolicyCostContinuous(PolicyCost):
                 * (
                     1e-8
                     + self.data_stats["s_std"].view(1, 4).expand(states.size())
-                ).cuda()
+                ).to(device)
             )
             states = (
                 states
                 + self.data_stats["s_mean"]
                 .view(1, 4)
                 .expand(states.size())
-                .cuda()
+                .to(device)
             )
 
         speed = states[:, 2:].norm(2, 1) * SCALE  # pixel/s
@@ -185,7 +189,7 @@ class PolicyCostContinuous(PolicyCost):
             .contiguous()
             .view(bsize * npred)
             .type(car_size.type())
-            .cuda()
+            .to(device)
         )
         max_y = (
             max_y.view(bsize, 1)
@@ -193,7 +197,7 @@ class PolicyCostContinuous(PolicyCost):
             .contiguous()
             .view(bsize * npred)
             .type(car_size.type())
-            .cuda()
+            .to(device)
         )
 
         min_x = torch.clamp(max_x - safe_distance, min=0)
@@ -205,7 +209,7 @@ class PolicyCostContinuous(PolicyCost):
             .expand(bsize, npred)
             .contiguous()
             .view(bsize * npred)
-            .cuda()
+            .to(device)
         )
         torch.set_default_tensor_type(torch.FloatTensor)
 
@@ -214,7 +218,7 @@ class PolicyCostContinuous(PolicyCost):
             x_filter.unsqueeze(0)
             .expand(bsize * npred, crop_h)
             .type(car_size.type())
-            .cuda()
+            .to(device)
         )
         x_filter = torch.min(
             x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size())
@@ -229,15 +233,15 @@ class PolicyCostContinuous(PolicyCost):
             y_filter.view(1, crop_w)
             .expand(bsize * npred, crop_w)
             .type(car_size.type())
-            .cuda()
+            .to(device)
         )
         y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
         y_filter = torch.max(y_filter, min_y.view(bsize * npred, 1))
         y_filter = (y_filter - min_y.view(bsize * npred, 1)) / (
             max_y.view(bsize * npred, 1) - min_y.view(bsize * npred, 1)
         )
-        x_filter = x_filter.type(car_size.type()).cuda()
-        y_filter = y_filter.type(car_size.type()).cuda()
+        x_filter = x_filter.type(car_size.type()).to(device)
+        y_filter = y_filter.type(car_size.type()).to(device)
         proximity_mask = torch.bmm(
             x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w)
         )

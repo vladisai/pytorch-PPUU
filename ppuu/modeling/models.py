@@ -157,8 +157,10 @@ class FwdCNN(nn.Module):
         pred_images, pred_states, pred_actions = [], [], []
 
         if Z is None:
-            Z = self.sample_z(npred * bsize).to(input_images.device)
+            Z = self.sample_z(npred * bsize)
             Z = Z.view(bsize, npred, -1)
+
+        Z = Z.to(input_images.device)
 
         for t in range(npred):
             if torch.is_tensor(actions_or_policy):

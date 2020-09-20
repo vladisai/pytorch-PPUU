@@ -36,6 +36,7 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
         self.first_log_dir = self.log_dir
         if version is not None:
             name = f"{name}_{version}"
+            version = f"{name}_{version}_{os.environ.get('SLURM_NODEID')}_{os.environ.get('SLURM_LOCALID')}"
             self.log_dir = f"{self.log_dir}_{version}"
         else:
             if os.path.exists(self.log_dir):
@@ -46,7 +47,7 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
                 name = f"{name}_{k}"
 
         super().__init__(
-            *args, name=name, save_dir=save_dir, version=name, **kwargs
+            *args, name=name, save_dir=save_dir, version=version, **kwargs
         )
 
     @pl.loggers.base.rank_zero_only

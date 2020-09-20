@@ -35,7 +35,7 @@ def get_executor(job_name, cpus_per_task=1, cluster=None, nodes=1, gpus=1):
         slurm_time="48:00:00",  # two days
         gpus_per_node=gpus,
         nodes=nodes,
-        slurm_constraint="pascal|turing",
+        slurm_constraint="turing",
         cpus_per_task=cpus_per_task,
         mem_gb=100,
         slurm_ntasks_per_node=gpus,

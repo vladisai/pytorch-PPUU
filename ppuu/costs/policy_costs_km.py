@@ -446,6 +446,7 @@ class PolicyCostKMTaper(PolicyCostKM):
     def compute_state_costs_for_training(
         self, pred_images, pred_states, pred_actions, car_sizes
     ):
+        device = pred_images.device
         proximity_mask = self.get_masks(
             pred_images[:, :, :3].contiguous().detach(),
             pred_states["km"],
@@ -457,7 +458,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         npred = pred_images.size(1)
         gamma_mask = (
             torch.tensor([0.99 ** t for t in range(npred + 1)])
-            .cuda()
+            .to(device)
             .unsqueeze(0)
         )
         proximity_cost = self.compute_proximity_cost_km(

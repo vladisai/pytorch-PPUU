@@ -42,13 +42,10 @@ def main(config):
 
     logger.log_hyperparams(module.hparams)
 
-    # period = max(1, config.training.n_epochs // 5)
-    period = min(10, config.training.n_epochs // 10)
-
     trainer = pl.Trainer(
         gradient_clip_val=5.0,
         max_epochs=config.training.n_epochs,
-        check_val_every_n_epoch=period,
+        check_val_every_n_epoch=config.training.validation_period,
         num_sanity_val_steps=0,
         fast_dev_run=config.training.fast_dev_run,
         checkpoint_callback=pl.callbacks.ModelCheckpoint(

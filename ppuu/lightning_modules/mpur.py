@@ -262,4 +262,3 @@ class MPURVanillaV2Module(MPURModule):
     @dataclass
     class ModelConfig(MPURContinuousModule.ModelConfig):
         forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/last.ckpt"
-
