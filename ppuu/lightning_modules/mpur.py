@@ -257,8 +257,8 @@ class MPURContinuousV2Module(MPURContinuousModule):
 
 # noqa: E501
 
-@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV2)
+@inject(cost_type=PolicyCost
 class MPURVanillaV2Module(MPURModule):
     @dataclass
-    class ModelConfig(MPURContinuousModule.ModelConfig):
+    class ModelConfig(MPURModule.ModelConfig):
         forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/last.ckpt"
