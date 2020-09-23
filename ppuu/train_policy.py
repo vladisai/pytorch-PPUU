@@ -64,6 +64,7 @@ def main(config):
         logger=logger,
         resume_from_checkpoint=config.training_config.resume_from_checkpoint,
         weights_save_path=logger.log_dir,
+        terminate_on_nan=True,
         track_grad_norm=2,
     )
 

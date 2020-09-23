@@ -99,7 +99,7 @@ class PolicyCostContinuous(PolicyCost):
         The idea is to get only edges of the cars so that later
         when we do summing the size of the cars doesn't affect our behavior.
         """
-        return images[:, :, 1]
+        return images[:, 1]
         device = images.device
         horizontal_filter = torch.tensor(
             [[[0.0], [0.0]], [[-1.0], [1.0]], [[0.0], [0.0]]], device=device,
@@ -128,8 +128,8 @@ class PolicyCostContinuous(PolicyCost):
         vertical_mask[:, :, :, (width // 2) :] = -1
         vertical_masked = F.relu(vertical_mask * vertical)
 
-        # result = vertical_masked[:][:] + horizontal_masked[:][:]
-        result = horizontal.abs() + vertical.abs()
+        result = vertical_masked[:][:] + horizontal_masked[:][:]
+        # result = horizontal.abs() + vertical.abs()
         return result
 
     def compute_proximity_cost(

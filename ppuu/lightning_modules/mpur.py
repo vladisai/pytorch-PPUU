@@ -167,10 +167,12 @@ class MPURModule(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = optim.Adam(
             self.policy_model.parameters(),
-            self.config.training_config.learning_rate,
+            self.config.training_config.learning_rate
+            * self.config.training_config.gpus
+            * self.config.training_config.num_nodes
+            * (6 / self.config.training_config.batch_size),
         )
-        scheduler = optim.lr_scheduler.StepLR(optimizer, 1, 0.90)
-        return [optimizer], [scheduler]
+        return optimizer
 
     def on_train_start(self):
         """
@@ -255,9 +257,11 @@ class MPURContinuousV2Module(MPURContinuousModule):
     # def _load_model_state(cls, checkpoint, *args, **kwargs):
     #     return super(MPURModule, cls)._load_model_state(checkpoint, *args, **kwargs)
 
+
 # noqa: E501
 
-@inject(cost_type=PolicyCost
+
+@inject(cost_type=PolicyCost, fm_type=ForwardModelV2)
 class MPURVanillaV2Module(MPURModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):

@@ -645,13 +645,13 @@ class I80(Simulator):
             # Sample an action based on the current state
             action = v.policy() if not v.is_autonomous else policy_action
 
-            # Perform such action
-            v.step(action)
-
             # Store state and action pair
             if (self.store or v.is_controlled) and v.valid:
                 v.store("state", state)
                 v.store("action", action)
+
+            # Perform such action
+            v.step(action)
 
             if v.is_controlled and v.valid:
                 v.count_collisions(state)

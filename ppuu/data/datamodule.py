@@ -31,6 +31,7 @@ class NGSIMDataModule(pl.LightningDataModule):
         random_actions=False,
         ncond=20,
         npred=30,
+        val_npred=30,
         workers=0,
     ):
         super().__init__()
@@ -43,6 +44,7 @@ class NGSIMDataModule(pl.LightningDataModule):
         self.random_actions = random_actions
         self.npred = npred
         self.ncond = ncond
+        self.val_npred = val_npred
 
     def setup(self, stage=None):
         self.data_store = DataStore(self.path)
@@ -61,7 +63,7 @@ class NGSIMDataModule(pl.LightningDataModule):
             self.data_store,
             "val",
             self.ncond,
-            self.npred,
+            self.val_npred,
             size=samples_in_validation,
             shift=self.shift,
             random_actions=self.random_actions,

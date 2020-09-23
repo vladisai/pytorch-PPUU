@@ -36,10 +36,12 @@ class ModelConfig(configs.ConfigBase):
 
     beta: float = 1e-06
 
+    huber_loss: bool = False
+
 
 @dataclass
 class TrainingConfig(configs.TrainingConfig):
-    decay: float = 0.97
+    decay: float = 1
     decay_period: int = 1
 
     n_cond: int = 20
@@ -100,9 +102,14 @@ class FM(pl.LightningModule):
 
     def shared_step(self, batch):
         predictions = self(batch)
-        states_loss = F.mse_loss(
-            batch["target_states"], predictions.pred_states
-        )
+        if self.config.model.huber_loss:
+            states_loss = F.smooth_l1_loss(
+                batch["target_states"], predictions.pred_states
+            )
+        else:
+            states_loss = F.mse_loss(
+                batch["target_states"], predictions.pred_states
+            )
         images_loss = F.mse_loss(
             batch["target_images"], predictions.pred_images
         )

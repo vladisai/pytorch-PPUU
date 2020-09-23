@@ -62,6 +62,7 @@ def main(config):
         weights_save_path=logger.first_log_dir,
         track_grad_norm=2,
         resume_from_checkpoint=config.training.resume_from_checkpoint,
+        terminate_on_nan=True,
     )
 
     model = module(config)
