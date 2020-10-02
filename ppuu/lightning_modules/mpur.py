@@ -265,4 +265,4 @@ class MPURContinuousV2Module(MPURContinuousModule):
 class MPURVanillaV2Module(MPURModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/last.ckpt"
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/reproduce_vanilla_fm_vae/seed=42_1/checkpoints/epoch=1583_success_rate=0.ckpt"

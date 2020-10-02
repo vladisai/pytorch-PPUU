@@ -45,7 +45,9 @@ class TrainingConfig(configs.TrainingConfig):
     decay_period: int = 1
 
     n_cond: int = 20
-    n_pred: int = 30
+    n_pred: int = 20
+
+    auto_enable_latent: bool = False
 
 
 class PlateauDetector(object):
@@ -97,6 +99,7 @@ class FM(pl.LightningModule):
             inputs=(batch["input_images"], batch["input_states"]),
             actions=batch["actions"],
             targets=(batch["target_images"], batch["target_states"]),
+            z_dropout=self.config.model.z_dropout,
         )
         return predictions
 
@@ -119,6 +122,11 @@ class FM(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         states_loss, images_loss, p_loss = self.shared_step(batch)
         loss = images_loss + states_loss + self.config.model.beta * p_loss
+
+        if torch.isnan(loss).any():
+            loss = torch.tensor(0.0, requires_grad=True) * 5
+            print('NaN loss!')
+
         logs = {
             "states_loss": states_loss,
             "images_loss": images_loss,
@@ -165,7 +173,10 @@ class FM(pl.LightningModule):
     @pl.loggers.base.rank_zero_only
     def _check_plateau(self, value):
         self.plateau_detector.update(value)
-        if self.plateau_detector.detected():
+        if (
+            self.config.training.auto_enable_latent
+            and self.plateau_detector.detected()
+        ):
             self.model.set_enable_latent(True)
             print("enabled the latent!")
         self.logger.experiment.log(

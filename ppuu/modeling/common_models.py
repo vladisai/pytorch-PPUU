@@ -43,7 +43,7 @@ class Encoder(nn.Module):
         for i, next_size in enumerate(feature_maps):
             encoder_layers += [
                 nn.Conv2d(current_size, next_size, 4, 2, 1),
-                nn.GroupNorm(next_size // GROUP_NORM_ELEMENTS, next_size),
+                # nn.GroupNorm(next_size // GROUP_NORM_ELEMENTS, next_size),
                 nn.Dropout2d(p=dropout, inplace=True),
                 nn.LeakyReLU(0.2, inplace=True),
             ]
@@ -123,7 +123,7 @@ class UNetwork(nn.Module):
         super().__init__()
         self.encoder = nn.Sequential(
             nn.Conv2d(n_feature, n_feature, 4, 2, 1),
-            nn.GroupNorm(n_feature // GROUP_NORM_ELEMENTS, n_feature),
+            # nn.GroupNorm(n_feature // GROUP_NORM_ELEMENTS, n_feature),
             nn.Dropout2d(p=dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(n_feature, n_feature, (4, 1), 2, 1),
@@ -131,7 +131,7 @@ class UNetwork(nn.Module):
 
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(n_feature, n_feature, (4, 1), 2, 1),
-            nn.GroupNorm(n_feature // GROUP_NORM_ELEMENTS, n_feature),
+            # nn.GroupNorm(n_feature // GROUP_NORM_ELEMENTS, n_feature),
             nn.Dropout2d(p=dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.ConvTranspose2d(n_feature, n_feature, (4, 3), 2, 0),
@@ -198,7 +198,7 @@ class Decoder(nn.Module):
             nn.ConvTranspose2d(
                 self.feature_maps[0], self.feature_maps[1], (4, 4), 2, 1
             ),
-            nn.GroupNorm(self.feature_maps[1] // GROUP_NORM_ELEMENTS, self.feature_maps[1]),
+            # nn.GroupNorm(self.feature_maps[1] // GROUP_NORM_ELEMENTS, self.feature_maps[1]),
             nn.Dropout2d(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.ConvTranspose2d(
@@ -211,7 +211,7 @@ class Decoder(nn.Module):
 
         self.h_reducer = nn.Sequential(
             nn.Conv2d(self.n_feature, self.n_feature, 4, 2, 1),
-            nn.GroupNorm(self.n_feature // GROUP_NORM_ELEMENTS, self.n_feature),
+            # nn.GroupNorm(self.n_feature // GROUP_NORM_ELEMENTS, self.n_feature),
             nn.Dropout2d(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(self.n_feature, self.n_feature, (4, 1), (2, 1), 0,),
