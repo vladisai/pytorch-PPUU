@@ -20,10 +20,10 @@ class ForwardModelKM(ForwardModel):
         device = states.device
 
         ss_std = (
-            1e-8 + stats["s_std"][0].view(1, 4).expand(states.size())
+            1e-8 + stats["s_std"][0].view(1, 5).expand(states.size())
         ).to(device)
         ss_mean = (
-            stats["s_mean"][0].view(1, 4).expand(states.size()).to(device)
+            stats["s_mean"][0].view(1, 5).expand(states.size()).to(device)
         )
         aa_std = (1e-8 + stats["a_std"][0].view(1, 2)).to(device)
         aa_mean = stats["a_mean"][0].view(1, 2).to(device)
@@ -34,23 +34,16 @@ class ForwardModelKM(ForwardModel):
         a = actions[:, 0]
         b = actions[:, 1]
 
+
         positions = states[:, :2]
-        speeds = states[:, 2:]
-        speeds_norm = speeds.norm(dim=1).view(speeds.shape[0], 1)
 
-        directions_with_negative = speeds / torch.clamp(
-            speeds_norm, min=1e-8, max=1e6
-        )
-        # directions = torch.stack(
-        #     [
-        #         torch.abs(directions_with_negative[:, 0]),
-        #         directions_with_negative[:, 1],
-        #     ],
-        #     axis=1,
-        # )
-        directions = directions_with_negative
+        speeds_norm = states[:, 4]
 
-        new_positions = positions + timestep * speeds
+        directions = states[:, 2:4]
+
+        directions = directions / directions.norm(dim=1)
+
+        new_positions = positions + timestep * directions * speeds_norm
 
         ortho_directions = torch.stack(
             [directions[:, 1], -directions[:, 0]], axis=1
@@ -62,18 +55,18 @@ class ForwardModelKM(ForwardModel):
             speeds_norm * timestep
         )  # + torch.tensor([1e-6, 0]).unsqueeze(0).to(directions.device)
 
+
         new_directions = new_directions_unnormed / (
             torch.clamp(
-                new_directions_unnormed.norm(dim=1).view(speeds.shape[0], 1),
+                new_directions_unnormed.norm(dim=1).view(positions.shape[0], 1),
                 min=1e-8,
                 max=1e6,
             )
-        )
+        ) * 0.999
 
         new_speeds_norm = speeds_norm + a.unsqueeze(1) * timestep
-        new_speeds = new_directions * new_speeds_norm
 
-        new_states = torch.cat([new_positions, new_speeds], 1)
+        new_states = torch.cat([new_positions, new_directions, new_speeds_norm], 1)
         new_states = new_states - ss_mean
         new_states = new_states / ss_std
 

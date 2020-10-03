@@ -314,7 +314,7 @@ class Car:
             self._direction + ortho_direction * b * self._speed * self._dt
         )
         self._direction = direction_vector / (
-            np.linalg.norm(direction_vector) + 1e-3
+            np.clip(np.linalg.norm(direction_vector), a_min=1e-3, a_max=None)
         )
 
         self._speed += a * self._dt

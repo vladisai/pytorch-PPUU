@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
+from tqdm import tqdm
 
 from ppuu.data import dataloader
 from ppuu import configs
@@ -33,7 +34,7 @@ MFM_PATH = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shif
 
 @dataclass
 class Config(configs.ConfigBase):
-    dataset: str = "full"
+    dataset: str = "full_5"
     model: bool = False
     mmodel: bool = False
     normalize: bool = True
@@ -89,7 +90,7 @@ def main(config):
         "test",
         20,
         30,
-        size=25,
+        size=250,
         shift=config.shift,
         random_actions=False,
         normalize=config.normalize,
@@ -127,11 +128,12 @@ def main(config):
         i_mse = 0.0
         mses = []
         mse_norm = 0.0
+        pos = 0.0
         cos = 0.0
         total = 0
         with_0 = 0
 
-        for b in loader:
+        for b in tqdm(loader):
             i += 1
             for k in b:
                 if k in [
@@ -155,19 +157,15 @@ def main(config):
             else:
                 pred = model.unfold(b["actions"], b)
                 predicted_states = pred["pred_states"]
-                pred_images = pred['pred_images']
+                pred_images = pred["pred_images"]
             if pred_images is not None:
-                i_mse += F.mse_loss(pred_images, b['target_images'])
+                i_mse += F.mse_loss(pred_images, b["target_images"])
 
             c_mse = F.mse_loss(predicted_states, b["target_states"])
-            predicted_norm = (
-                predicted_states[:, :, 2:].norm(dim=2).unsqueeze(-1)
-            )
-            predicted_directions = predicted_states[:, :, 2:] / predicted_norm
-            target_norm = (
-                b["target_states"][:, :, 2:].norm(dim=2).unsqueeze(-1)
-            )
-            target_directions = b["target_states"][:, :, 2:] / target_norm
+            predicted_norm = predicted_states[:, :, 4].unsqueeze(-1)
+            predicted_directions = predicted_states[:, :, 2:4]
+            target_norm = b["target_states"][:, :, 4].unsqueeze(-1)
+            target_directions = b["target_states"][:, :, 2:4]
             zz = False
             if not config.normalize and c_mse > 1e-2:
                 total += 1
@@ -186,6 +184,9 @@ def main(config):
                 cos += (
                     1 - cos_loss(predicted_directions, target_directions)
                 ).mean()
+                pos += F.mse_loss(
+                    predicted_states[:, :, 0:2], b["target_states"][:, :, 0:2],
+                ).mean()
                 cntr += 1
 
         print("states", mse / cntr)
@@ -193,6 +194,7 @@ def main(config):
             print("images", i_mse / cntr)
         print("speed norm", mse_norm / cntr)
         print("cos", cos / cntr)
+        print("pos", pos / cntr)
         mses = torch.stack(mses)
         print(
             f"std: {mses.std().item()}, "
