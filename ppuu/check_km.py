@@ -16,8 +16,9 @@ from tqdm import tqdm
 
 from ppuu.data import dataloader
 from ppuu import configs
-from ppuu.modeling import ForwardModelKM, ForwardModel, FwdCNN
-from ppuu.lightning_modules import FM
+from ppuu.wrappers import ForwardModel
+from ppuu.lightning_modules.fm import FM
+from ppuu.modeling.km import predict_states, predict_states_diff
 
 FM_PATH = "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/models/offroad/model=fwd-cnn-vae-fp-layers=3-bsize=64-ncond=20-npred=20-lrt=0.0001-nfeature=256-dropout=0.1-nz=32-beta=1e-06-zdropout=0.5-gclip=5.0-warmstart=1-seed=1.step400000.model"
 
@@ -42,18 +43,20 @@ class Config(configs.ConfigBase):
     ignore_z: bool = False
     shift: bool = False
     path: str = None
+    diff: bool = False
 
     def __post_init__(self):
         if self.dataset in configs.DATASET_PATHS_MAPPING:
             self.dataset = configs.DATASET_PATHS_MAPPING[self.dataset]
 
 
-def predict_all_states(states, actions, stats):
+
+def predict_all_states(predictor, states, actions, stats):
     last_state = states[:, -1]
     predicted_states = []
     for i in range(actions.shape[1]):
         next_action = actions[:, i]
-        predicted_state = ForwardModelKM.predict_states(
+        predicted_state = predictor(
             last_state, next_action, stats
         )
         last_state = predicted_state
@@ -72,11 +75,12 @@ def dummy_stats(stats):
 
 
 def main(config):
+    predictor = predict_states if not config.diff else predict_states_diff
     if config.single_check:
         b = torch.load("bad_batch.t")
         stats = b["stats"] if config.normalize else dummy_stats(b["stats"])
         predicted_states = predict_all_states(
-            b["input_states"], b["actions"], stats
+            predictor, b["input_states"], b["actions"], stats
         )
         res = F.mse_loss(predicted_states, b["target_states"], reduce=False)
         print(res, res.max())
@@ -94,6 +98,7 @@ def main(config):
         shift=config.shift,
         random_actions=False,
         normalize=config.normalize,
+        state_diffs=config.diff,
     )
     dataset.random.seed(24)
     loader = DataLoader(dataset, batch_size=1, num_workers=0,)
@@ -111,7 +116,12 @@ def main(config):
         model = model.model
 
     if config.path is not None:
-        model = FM.load_from_checkpoint(config.path)
+        m_config = FM.Config()
+        m_config.model.fm_type = 'km'
+        m_config.model.checkpoint = config.path
+        m_config.training.enable_latent = True
+        # m_config.training.diffs = True
+        model = FM(m_config)
         model = model.cuda()
         model = model.eval()
         model = model.model
@@ -151,7 +161,7 @@ def main(config):
                     b["stats"] if config.normalize else dummy_stats(b["stats"])
                 )
                 predicted_states = predict_all_states(
-                    b["input_states"], b["actions"], stats
+                    predictor, b["input_states"], b["actions"], stats
                 )
                 pred_images = None
             else:

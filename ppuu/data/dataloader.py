@@ -4,8 +4,10 @@ import re
 import logging
 import glob
 import pickle
+import math
 
 import torch
+import numpy
 
 
 class DataStore:
@@ -45,8 +47,8 @@ class DataStore:
                     print(f"[loading {f}]")
                     fd = pickle.load(open(f, "rb"))
                     Ta = fd["actions"].size(0)
-                    Tp = fd["pixel_proximity_cost"].size(0)
-                    Tl = fd["lane_cost"].size(0)
+                    # Tp = fd["pixel_proximity_cost"].size(0)
+                    # Tl = fd["lane_cost"].size(0)
                     # assert Ta == Tp == Tl  # TODO Check why there are more costs than actions
                     # if not(Ta == Tp == Tl): pdb.set_trace()
                     images.append(fd["images"])
@@ -94,8 +96,20 @@ class DataStore:
                 val=splits.get("valid_indx"),
                 test=splits.get("test_indx"),
             )
+        else:
+            print("[generating data splits]")
+            rgn = numpy.random.RandomState(0)
+            perm = rgn.permutation(self.n_episodes)
+            n_train = int(math.floor(self.n_episodes * 0.8))
+            n_valid = int(math.floor(self.n_episodes * 0.1))
+            self.splits = dict(
+                train=perm[0:n_train],
+                valid=perm[n_train : n_train + n_valid],
+                test=perm[n_train + n_valid :],
+            )
+            torch.save(self.splits, splits_path)
 
-        stats_path = data_dir + "/data_stats.pth"
+        stats_path = data_dir + "/data_stats_with_diff.pth"
         if os.path.isfile(stats_path):
             logging.info(f"Loading data stata {stats_path}")
             stats = torch.load(stats_path)
@@ -104,6 +118,41 @@ class DataStore:
             self.a_std = stats.get("a_std")
             self.s_mean = stats.get("s_mean")
             self.s_std = stats.get("s_std")
+            self.s_diff_mean = stats.get("s_diff_mean")
+            self.s_diff_std = stats.get("s_diff_std")
+        else:
+            print("[computing action stats]")
+            all_actions = []
+            for i in self.splits["train"]:
+                all_actions.append(self.actions[i])
+            all_actions = torch.cat(all_actions, 0)
+            self.a_mean = torch.mean(all_actions, 0)
+            self.a_std = torch.std(all_actions, 0)
+            print("[computing state stats]")
+            all_states = []
+            all_state_diffs = []
+            for i in self.splits["train"]:
+                all_states.append(self.states[i][:, 0])
+                c_diff = self.states[i][1:, 0] - self.states[i][:-1, 0]
+                c_diff[:, 2:] = self.states[i][1:, 0, 2:]
+                all_state_diffs.append(c_diff)
+            all_states = torch.cat(all_states, 0)
+            all_state_diffs = torch.cat(all_state_diffs, 0)
+            self.s_mean = torch.mean(all_states, 0)
+            self.s_std = torch.std(all_states, 0)
+            self.s_diff_mean = torch.mean(all_state_diffs, 0)
+            self.s_diff_std = torch.std(all_state_diffs, 0)
+            self.stats = {
+                "a_mean": self.a_mean,
+                "a_std": self.a_std,
+                "s_mean": self.s_mean,
+                "s_std": self.s_std,
+                "s_diff_mean": self.s_diff_mean,
+                "s_diff_std": self.s_diff_std,
+            }
+            torch.save(
+                self.stats, stats_path,
+            )
 
         car_sizes_path = data_dir + "/car_sizes.pth"
         self.car_sizes = torch.load(car_sizes_path)
@@ -132,6 +181,7 @@ class Dataset(torch.utils.data.Dataset):
         shift,
         random_actions,
         normalize=True,
+        state_diffs=False,
     ):
         self.split = split
         self.data_store = data_store
@@ -143,6 +193,7 @@ class Dataset(torch.utils.data.Dataset):
         self.normalize = normalize
         self.shift = shift
         self.random_actions = random_actions
+        self.state_diffs = state_diffs
 
     def sample_episode(self):
         return self.random.choice(self.data_store.splits[self.split])
@@ -161,30 +212,30 @@ class Dataset(torch.utils.data.Dataset):
                  n_cond                      n_pred
         <---------------------><---------------------------------->
         .                     ..                                  .
-        +---------------------+.                                  .  ^          ^
-        |i|i|i|i|i|i|i|i|i|i|i|.  3 × 117 × 24                    .  |          |
-        +---------------------+.                                  .  | inputs   |
-        +---------------------+.                                  .  |          |
-        |s|s|s|s|s|s|s|s|s|s|s|.  4                               .  |          |
-        +---------------------+.                                  .  v          |
-        .                   +-----------------------------------+ .  ^          |
-        .                2  |a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a| .  | actions  |
-        .                   +-----------------------------------+ .  v          |
-        .                     +-----------------------------------+  ^          | tensors
-        .       3 × 117 × 24  |i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|  |          |
-        .                     +-----------------------------------+  |          |
-        .                     +-----------------------------------+  |          |
-        .                  4  |s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|  | targets  |
-        .                     +-----------------------------------+  |          |
-        .                     +-----------------------------------+  |          |
-        .                  2  |c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|  |          |
-        .                     +-----------------------------------+  v          v
-        +---------------------------------------------------------+             ^
-        |                           car_id                        |             | string
-        +---------------------------------------------------------+             v
-        +---------------------------------------------------------+             ^
-        |                          car_size                       |  2          | tensor
-        +---------------------------------------------------------+             v
+        +---------------------+.                                  .  ^       ^
+        |i|i|i|i|i|i|i|i|i|i|i|.  3 × 117 × 24                    .  |       |
+        +---------------------+.                                  .  |inputs |
+        +---------------------+.                                  .  |       |
+        |s|s|s|s|s|s|s|s|s|s|s|.  4                               .  |       |
+        +---------------------+.                                  .  v       |
+        .                   +-----------------------------------+ .  ^       |
+        .                2  |a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a| .  |actions|
+        .                   +-----------------------------------+ .  v       |
+        .                     +-----------------------------------+  ^       | tensors
+        .       3 × 117 × 24  |i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|  |       |
+        .                     +-----------------------------------+  |       |
+        .                     +-----------------------------------+  |       |
+        .                  4  |s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|s|  |targets|
+        .                     +-----------------------------------+  |       |
+        .                     +-----------------------------------+  |       |
+        .                  2  |c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|  |       |
+        .                     +-----------------------------------+  v       v
+        +---------------------------------------------------------+          ^
+        |                           car_id                        |          | string
+        +---------------------------------------------------------+          v
+        +---------------------------------------------------------+          ^
+        |                          car_size                       |  2       | tensor
+        +---------------------------------------------------------+          v
         """
         T = self.n_cond + self.n_pred
         while True:
@@ -201,6 +252,10 @@ class Dataset(torch.utils.data.Dataset):
                 images = self.data_store.images[s][t : t + T]
                 actions = self.data_store.actions[s][t : t + T]
                 states = self.data_store.states[s][t : t + T, 0]
+                state_diffs = states[1:] - states[:-1]
+                state_diffs = torch.cat(
+                    [torch.zeros(1, 5), state_diffs], axis=0
+                )
                 costs = self.data_store.costs[s][t : t + T]
                 ids = self.data_store.ids[s]
                 ego_cars = self.data_store.ego_car_images[s]
@@ -216,6 +271,7 @@ class Dataset(torch.utils.data.Dataset):
             states = self.normalise_state_vector(states.clone())
             images = self.normalise_state_image(images.clone())
             ego_cars = self.normalise_state_image(ego_cars.clone())
+            state_diffs = self.normalize_state_diff_vector(state_diffs)
 
         t0 = self.n_cond
         t1 = T
@@ -223,8 +279,20 @@ class Dataset(torch.utils.data.Dataset):
         input_states = states[:t0].float().contiguous()
         target_images = images[t0:t1].float().contiguous()
         target_states = states[t0:t1].float().contiguous()
+        # target_state_diffs = (
+        #     state_diffs[(t0 - 1) : (t1 - 1)].float().contiguous()
+        # )
+        # input_state_diffs = state_diffs[: (t0 - 1)].float().contiguous()
+        input_state_diffs = state_diffs[:t0].float().contiguous()
+        target_state_diffs = state_diffs[t0:t1].float().contiguous()
         target_costs = costs[t0:t1].float().contiguous()
-        if self.shift:
+
+        if self.state_diffs:
+            input_states[:, :2] = input_state_diffs[:, :2]
+            target_states[:, :2] = target_state_diffs[:, :2]
+
+
+        if not self.shift:
             t0 -= 1
             t1 -= 1
 
@@ -237,10 +305,12 @@ class Dataset(torch.utils.data.Dataset):
         return dict(
             input_images=input_images,
             input_states=input_states,
+            input_state_diffs=input_state_diffs,
             ego_cars=ego_cars,
             actions=actions,
             target_images=target_images,
             target_states=target_states,
+            target_state_diffs=target_state_diffs,
             target_costs=target_costs,
             ids=ids,
             car_sizes=car_sizes,
@@ -266,6 +336,22 @@ class Dataset(torch.utils.data.Dataset):
             1e-8 + self.data_store.s_std.view(*shape).expand(states.size())
         ).to(states.device)
         return states
+
+    def normalize_state_diff_vector(self, state_diffs):
+        shape = (
+            (1, 1, 5) if state_diffs.dim() == 3 else (1, 5)
+        )  # dim = 3: state sequence, dim = 2: single state
+        state_diffs -= (
+            self.data_store.s_diff_mean.view(*shape)
+            .expand(state_diffs.size())
+            .to(state_diffs.device)
+        )
+        state_diffs /= (
+            1e-8 + self.data_store.s_diff_std.view(*shape).expand(
+                state_diffs.size()
+            )
+        ).to(state_diffs.device)
+        return state_diffs
 
     def normalise_action(self, actions):
         actions -= (
@@ -299,7 +385,7 @@ class EvaluationDataset(torch.utils.data.Dataset):
         if size_cap is not None:
             self.size = min(self.size, size_cap)
 
-        stats_path = os.path.join(data_dir, "data_stats.pth")
+        stats_path = os.path.join(data_dir, "data_stats_with_diff.pth")
         if os.path.isfile(stats_path):
             logging.info(f"Loading data stata {stats_path}")
             stats = torch.load(stats_path)
@@ -308,6 +394,8 @@ class EvaluationDataset(torch.utils.data.Dataset):
             self.a_std = stats.get("a_std")
             self.s_mean = stats.get("s_mean")
             self.s_std = stats.get("s_std")
+            self.s_diff_mean = stats.get("s_diff_mean")
+            self.s_diff_std = stats.get("s_diff_std")
 
         self.ids = []
         data_files = next(os.walk(data_dir))[1]

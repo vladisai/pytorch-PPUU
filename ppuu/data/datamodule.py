@@ -33,6 +33,7 @@ class NGSIMDataModule(pl.LightningDataModule):
         npred=30,
         val_npred=30,
         workers=0,
+        diffs=False,
     ):
         super().__init__()
         self.path = path
@@ -45,6 +46,7 @@ class NGSIMDataModule(pl.LightningDataModule):
         self.npred = npred
         self.ncond = ncond
         self.val_npred = val_npred
+        self.diffs = diffs
 
     def setup(self, stage=None):
         self.data_store = DataStore(self.path)
@@ -58,6 +60,7 @@ class NGSIMDataModule(pl.LightningDataModule):
             size=samples_in_epoch,
             shift=self.shift,
             random_actions=self.random_actions,
+            state_diffs=self.diffs,
         )
         self.val_dataset = Dataset(
             self.data_store,
@@ -67,6 +70,7 @@ class NGSIMDataModule(pl.LightningDataModule):
             size=samples_in_validation,
             shift=self.shift,
             random_actions=self.random_actions,
+            state_diffs=self.diffs,
         )
 
     def train_dataloader(self):

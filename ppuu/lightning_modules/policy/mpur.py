@@ -12,11 +12,11 @@ from ppuu.data import EvaluationDataset
 from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu import configs
 from ppuu.modeling import policy_models
-from ppuu.modeling.forward_models import ForwardModel
-from ppuu.modeling.forward_model_lightning import ForwardModelV2
+from ppuu.wrappers import ForwardModel
 from ppuu.eval import PolicyEvaluator
 from ppuu.data import Augmenter
 from ppuu.modeling.mixout import MixoutWrapper
+from ppuu.lightning_modules.fm import FM
 
 
 def inject(cost_type=PolicyCost, fm_type=ForwardModel):
@@ -134,34 +134,40 @@ class MPURModule(pl.LightningModule):
         logs["action_norm"] = (
             predictions["pred_actions"].norm(2, 2).pow(2).mean()
         )
-        res = pl.TrainResult(loss["policy_loss"])
-        res.log_dict(
-            logs, on_step=True, on_epoch=True, prog_bar=True, logger=True,
-        )
+        if torch.isnan(loss["policy_loss"]).any():
+            loss["policy_loss"] = (
+                torch.tensor(0.0, requires_grad=True).to(self.device) * 5
+            )
+            print("NaN loss!")
+
+        res = loss["policy_loss"]
+        for k in logs:
+            self.log(
+                "train_" + k, logs[k], on_step=True, logger=True,
+            )
         return res
 
     def validation_step(self, batch, batch_idx):
         predictions = self(batch)
         loss = self.policy_cost.calculate_cost(batch, predictions)
-        res = pl.EvalResult(loss["policy_loss"])
-        res.log_dict(
-            loss, on_step=True, on_epoch=True, prog_bar=True, logger=True,
-        )
+        res = loss["policy_loss"]
+        for k in loss:
+            self.log(
+                "val_" + k, loss[k], on_epoch=True, logger=True,
+            )
         return res
+
+    @property
+    def sample_step(self):
+        return (
+            self.trainer.global_step
+            * self.config.training_config.batch_size
+            * self.config.training_config.num_nodes
+            * self.config.training_config.gpus
+        )
 
     def validation_epoch_end(self, res):
-        res.dp_reduce()
-        if self.config.training_config.validation_eval:
-            eval_results = self.evaluator.evaluate(self)
-            # eval_results = {'stats': {'success_rate': 0.0}}
-            res.log_dict(
-                eval_results["stats"],
-                on_epoch=True,
-                prog_bar=True,
-                logger=True,
-            )
-
-        return res
+        self.log("sample_step", self.sample_step)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
@@ -171,7 +177,16 @@ class MPURModule(pl.LightningModule):
             * self.config.training_config.num_nodes
             * (6 / self.config.training_config.batch_size),
         )
-        return optimizer
+        if self.config.training_config.scheduler:
+            # we want to have 0.1 learning rate after 70% of training
+            scheduler = torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=int(self.config.training_config.n_epochs * 0.7),
+                gamma=0.1,
+            )
+            return [optimizer], [scheduler]
+        else:
+            return optimizer
 
     def on_train_start(self):
         """
@@ -201,10 +216,11 @@ class MPURModule(pl.LightningModule):
             # self.policy_model = MixoutDeterministicPolicy(
             #     self.policy_model, p=self.config.training_config.mixout_p
             # )
+            self.mixout_wrapper = MixoutWrapper(
+                self.config.training_config.mixout_p
+            )
             self.policy_model = self.policy_model.apply(
-                lambda x: MixoutWrapper(
-                    x, self.config.training_config.mixout_p
-                )
+                lambda x: self.mixout_wrapper(x)
             )
 
     def _setup_episode_evaluator(self):
@@ -246,11 +262,41 @@ class MPURContinuousModule(MPURModule):
     pass
 
 
+class ForwardModelV2(torch.nn.Module):
+    def __init__(self, file_path):
+        super().__init__()
+        module = FM.load_from_checkpoint(file_path)
+        module.model.enable_latent = True
+        self.module = module
+
+    def __getattr__(self, name):
+        """Delegate everything to forward_model"""
+        return getattr(self._modules["module"].model, name)
+
+
+class ForwardModelV3(torch.nn.Module):
+    """FM with no action and diff"""
+
+    def __init__(self, file_path):
+        super().__init__()
+        m_config = FM.Config()
+        m_config.model.fm_type = "km_no_action"
+        m_config.model.checkpoint = file_path
+        m_config.training.enable_latent = True
+        m_config.training.diffs = True
+        module = FM(m_config)
+        self.module = module
+
+    def __getattr__(self, name):
+        """Delegate everything to forward_model"""
+        return getattr(self._modules["module"].model, name)
+
+
 @inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV2)
 class MPURContinuousV2Module(MPURContinuousModule):
     @dataclass
     class ModelConfig(MPURContinuousModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/last.ckpt"  # noqa: E501
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/fm_km_5_states_resume_lower_lr/seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
 
     # @classmethod
     # def _load_model_state(cls, checkpoint, *args, **kwargs):
@@ -264,4 +310,18 @@ class MPURContinuousV2Module(MPURContinuousModule):
 class MPURVanillaV2Module(MPURModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/reproduce_vanilla_fm_vae/seed=42_1/checkpoints/epoch=1583_success_rate=0.ckpt"
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/fm_km_5_states_resume_lower_lr/seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
+
+
+@inject(cost_type=PolicyCost, fm_type=ForwardModelV3)
+class MPURVanillaV3Module(MPURModule):
+    @dataclass
+    class ModelConfig(MPURModule.ModelConfig):
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"
+
+
+@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV3)
+class MPURContinuousV3Module(MPURModule):
+    @dataclass
+    class ModelConfig(MPURModule.ModelConfig):
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"

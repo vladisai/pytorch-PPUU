@@ -1,6 +1,7 @@
 """Policy models"""
 
 from torch import nn
+import torch
 
 from ppuu.modeling.common_models import Encoder
 from ppuu.modeling.mixout import MixLinear
@@ -36,24 +37,30 @@ class MixoutDeterministicPolicy(nn.Module):
         normalize_outputs=False,
         n_samples=1,
     ):
+        bsize = state_images.size(0)
+        device = state_images.device
         if normalize_inputs:
             state_images = state_images.clone().float().div_(255.0)
-            states -= (
-                self.stats["s_mean"].cuda().view(1, 5).expand(states.size())
-            )
-            states /= (
-                self.stats["s_std"].cuda().view(1, 5).expand(states.size())
-            )
+            if self.diffs:
+                state_diffs = states.clone()
+                state_diffs = state_diffs[1:] - state_diffs[:-1]
+                state_diffs = torch.cat(
+                    [torch.zeros(1, 5).to(device), state_diffs], axis=0
+                )
+                state_diffs[:, 2:] = states[:, 2:]
+                states = state_diffs
+                mean, std = self.stats["s_diff_mean"], self.stats["s_diff_std"]
+            else:
+                mean, std = self.stats["s_mean"], self.stats["s_std"]
+            states -= mean.cuda().view(1, 5).expand(states.size())
+            states /= std.cuda().view(1, 5).expand(states.size())
             if state_images.dim() == 4:  # if processing single vehicle
                 state_images = state_images.cuda().unsqueeze(0)
                 states = states.cuda().unsqueeze(0)
 
-        bsize = state_images.size(0)
-        h = self.original_model.encoder(state_images, states).view(
-            bsize, self.original_model.hsize
-        )
-        h = self.original_model.proj(h)  # from hidden_size to n_hidden
-        a = self.fc(h).view(bsize, self.original_model.n_outputs)
+        h = self.encoder(state_images, states).view(bsize, self.hsize)
+        h = self.proj(h)  # from hidden_size to n_hidden
+        a = self.fc(h).view(bsize, self.n_outputs)
 
         if normalize_outputs:
             a = a.data
@@ -72,6 +79,7 @@ class DeterministicPolicy(nn.Module):
         h_height=14,
         h_width=3,
         n_hidden=256,
+        diffs=False,
     ):
         super().__init__()
         self.n_channels = 4
@@ -81,6 +89,7 @@ class DeterministicPolicy(nn.Module):
         self.h_height = h_height
         self.h_width = h_width
         self.n_hidden = n_hidden
+        self.diffs = diffs
         self.encoder = Encoder(
             a_size=0,
             n_inputs=self.n_cond,
@@ -114,19 +123,28 @@ class DeterministicPolicy(nn.Module):
         normalize_outputs=False,
         n_samples=1,
     ):
-        if normalize_inputs:
-            state_images = state_images.clone().float().div_(255.0)
-            states -= (
-                self.stats["s_mean"].cuda().view(1, 5).expand(states.size())
-            )
-            states /= (
-                self.stats["s_std"].cuda().view(1, 5).expand(states.size())
-            )
-            if state_images.dim() == 4:  # if processing single vehicle
-                state_images = state_images.cuda().unsqueeze(0)
-                states = states.cuda().unsqueeze(0)
+        if state_images.dim() == 4:  # if processing single vehicle
+            state_images = state_images.cuda().unsqueeze(0)
+            states = states.cuda().unsqueeze(0)
 
         bsize = state_images.size(0)
+        device = state_images.device
+        if normalize_inputs:
+            state_images = state_images.clone().float().div_(255.0)
+            if self.diffs:
+                state_diffs = states.clone()
+                state_diffs = state_diffs[:, 1:] - state_diffs[:, :-1]
+                state_diffs = torch.cat(
+                    [torch.zeros(bsize, 1, 5).to(device), state_diffs], axis=1
+                )
+                state_diffs[:, :, 2:] = states[:, :, 2:]
+                states = state_diffs
+                mean, std = self.stats["s_diff_mean"], self.stats["s_diff_std"]
+            else:
+                mean, std = self.stats["s_mean"], self.stats["s_std"]
+            states -= mean.cuda().view(1, 5).expand(states.size())
+            states /= std.cuda().view(1, 5).expand(states.size())
+
         h = self.encoder(state_images, states).view(bsize, self.hsize)
         h = self.proj(h)  # from hidden_size to n_hidden
         a = self.fc(h).view(bsize, self.n_outputs)

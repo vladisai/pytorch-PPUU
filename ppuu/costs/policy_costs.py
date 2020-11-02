@@ -144,13 +144,13 @@ class PolicyCost(PolicyCostBase):
         if unnormalize:
             states = states * (
                 1e-8
-                + self.data_stats["s_std"].view(1, 4).expand(states.size())
+                + self.data_stats["s_std"].view(1, 5).expand(states.size())
             ).to(images.device)
-            states = states + self.data_stats["s_mean"].view(1, 4).expand(
+            states = states + self.data_stats["s_mean"].view(1, 5).expand(
                 states.size()
             ).to(images.device)
 
-        speed = states[:, 2:].norm(2, 1) * SCALE  # pixel/s
+        speed = states[:, 4] * SCALE  # pixel/s
         width, length = car_size[:, 0], car_size[:, 1]  # feet
         width = width * SCALE * (0.3048 * 24 / 3.7)  # pixels
         length = length * SCALE * (0.3048 * 24 / 3.7)  # pixels
@@ -309,7 +309,11 @@ class PolicyCost(PolicyCostBase):
         self.forward_model.train()
         predictions = self.forward_model.unfold(
             actions.clone(),
-            dict(input_images=input_images, input_states=input_states,),
+            dict(
+                input_images=input_images,
+                input_states=input_states,
+                stats=batch["stats"],
+            ),
             Z=Z_rep.clone(),
         )
         self.forward_model.train(original_value)
@@ -376,17 +380,17 @@ class PolicyCost(PolicyCostBase):
                 (pred_costs_var - self.u_costs_mean) / self.u_costs_std
                 - self.config.u_hinge
             )
-            u_loss_states = torch.relu(
-                (pred_states_var - self.u_states_mean) / self.u_states_std
-                - self.config.u_hinge
-            )
+            # u_loss_states = torch.relu(
+            #     (pred_states_var - self.u_states_mean) / self.u_states_std
+            #     - self.config.u_hinge
+            # )
             u_loss_images = torch.relu(
                 (pred_images_var - self.u_images_mean) / self.u_images_std
                 - self.config.u_hinge
             )
             total_u_loss = (
                 u_loss_costs.mean()
-                + u_loss_states.mean()
+                # + u_loss_states.mean()
                 + u_loss_images.mean()
             )
         else:

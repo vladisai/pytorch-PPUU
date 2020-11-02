@@ -1,26 +1,16 @@
-from typing import NamedTuple, List, Union
+from typing import Union
 
 import torch
 import torch.nn as nn
 import random
 
-from ppuu.modeling.common_models import Encoder, UNetwork, Decoder
-
-
-###############
-# Main models
-###############
-
-
-class FMResult(NamedTuple):
-    pred_images: torch.Tensor
-    pred_states: torch.Tensor
-    z_list: List[torch.Tensor]
-    p_loss: torch.Tensor
+from ppuu.modeling.forward_models import FMResult, FwdCNN
+from ppuu.modeling.km import predict_states
+from ppuu.modeling.common_models import Encoder
 
 
 # forward model, deterministic (compatible with TEN3 model, use to initialize)
-class FwdCNN(nn.Module):
+class FwdCNNKMNoActionDiffs(FwdCNN):
     def __init__(
         self,
         layers,
@@ -33,83 +23,48 @@ class FwdCNN(nn.Module):
         n_actions,
         hidden_size,
         ncond,
-        predict_state,
+        state_predictor=predict_states,
     ):
-        super(FwdCNN, self).__init__()
-
-        self.layers = layers
-        self.nfeature = nfeature
-        self.dropout = dropout
-        self.h_height = h_height
-        self.h_width = h_width
-        self.height = height
-        self.width = width
-        self.n_actions = n_actions
-        self.hidden_size = hidden_size
-        self.ncond = ncond
-        self.predict_state = predict_state
-
-        self.encoder = Encoder(a_size=0, n_inputs=self.ncond)
-        self.decoder = Decoder(
-            layers=self.layers,
-            n_feature=self.nfeature,
-            dropout=self.dropout,
-            h_height=self.h_height,
-            h_width=self.h_width,
-            height=self.height,
-            width=self.width,
-            state_dimension=5 if self.predict_state else 0,
+        super(FwdCNNKMNoActionDiffs, self).__init__(
+            layers,
+            nfeature,
+            dropout,
+            h_height,
+            h_width,
+            height,
+            width,
+            5,  # n_actions. we use km predicted state instead of action
+            hidden_size,
+            ncond,
+            predict_state=False,
         )
-        self.a_encoder = nn.Sequential(
-            nn.Linear(self.n_actions, self.nfeature),
-            # nn.BatchNorm1d(self.nfeature, momentum=0.01),
-            nn.Dropout(p=self.dropout, inplace=True),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(self.nfeature, self.nfeature),
-            nn.Dropout(p=self.dropout, inplace=True),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(self.nfeature, self.hidden_size),
-        )
-        self.u_network = UNetwork(
-            n_feature=self.nfeature, layers=self.layers, dropout=self.dropout
-        )
+        self.actual_n_actions = 2
+        self.state_predictor = predict_states
 
-    # dummy function
-    def sample_z(self, bsize, method=None):
-        return torch.zeros(bsize, 32)
+    def forward_single_step(
+        self, input_images, input_states, action, stats, z
+    ):
+        pred_state = self.state_predictor(input_states[:, -1], action, stats)
 
-    def encode(self, input_images, input_states, action):
-        bsize = input_images.size(0)
-        h_x = self.encoder(input_images, input_states)
-        h_x = h_x.view(bsize, self.nfeature, self.h_height, self.h_width)
-        a_emb = self.a_encoder(action).view(h_x.size())
+        h = self.encode(input_images, input_states, pred_state)
 
-        h = h_x
-        h = h + a_emb
-        h = h + self.u_network(h)
-        return h
-
-    def forward_single_step(self, input_images, input_states, action, z):
-        h = self.encode(input_images, input_states, action)
-
-        pred_image, pred_state = self.decoder(h)
-        pred_state = pred_state + input_states[:, -1]
-
+        pred_image = self.decoder(h)
         pred_image = torch.sigmoid(
             pred_image + input_images[:, -1].unsqueeze(1)
         )
 
         return pred_image, pred_state
 
-    def forward(self, inputs, actions, target, sampling=None, z_dropout=None):
+    def forward(
+        self, inputs, actions, target, stats, sampling=None, z_dropout=None
+    ):
         npred = actions.size(1)
         input_images, input_states = inputs
         pred_images, pred_states = [], []
         ploss = torch.zeros(1).to(input_images.device)
         for t in range(npred):
-
             pred_image, pred_state = self.forward_single_step(
-                input_images, input_states, actions[:, t], None
+                input_images, input_states, actions[:, t], stats, None
             )
             input_images = torch.cat((input_images[:, 1:], pred_image), 1)
             input_states = torch.cat(
@@ -173,7 +128,7 @@ class FwdCNN(nn.Module):
 
             z_t = Z[:, t]
             pred_image, pred_state = self.forward_single_step(
-                input_images, input_states, actions, z_t
+                input_images, input_states, actions, batch["stats"], z_t
             )
             input_images = torch.cat((input_images[:, 1:], pred_image), 1)
             input_states = torch.cat(
@@ -205,7 +160,7 @@ class FwdCNN(nn.Module):
 
 
 # this version adds the actions *after* the z variables
-class FwdCNN_VAE(FwdCNN):
+class FwdCNNKMNoActionDiffs_VAE(FwdCNNKMNoActionDiffs):
     def __init__(
         self,
         layers,
@@ -218,12 +173,12 @@ class FwdCNN_VAE(FwdCNN):
         n_actions,
         hidden_size,
         ncond,
-        predict_state,
         nz,
         enable_kld,
         enable_latent,
+        state_predictor=predict_states,
     ):
-        super(FwdCNN_VAE, self).__init__(
+        super(FwdCNNKMNoActionDiffs_VAE, self).__init__(
             layers,
             nfeature,
             dropout,
@@ -234,23 +189,11 @@ class FwdCNN_VAE(FwdCNN):
             n_actions,
             hidden_size,
             ncond,
-            predict_state,
+            state_predictor,
         )
         self.nz = nz
         self.enable_kld = enable_kld
         self.enable_latent = enable_latent
-
-        #     print("[initializing encoder and decoder with: {}]".format(mfile))
-        #     self.mfile = mfile
-        #     pretrained_model = torch.load(mfile)
-        #     if type(pretrained_model) is dict:
-        #         pretrained_model = pretrained_model["model"]
-        #     self.encoder = pretrained_model.encoder
-        #     self.decoder = pretrained_model.decoder
-        #     self.a_encoder = pretrained_model.a_encoder
-        #     self.u_network = pretrained_model.u_network
-        #     self.encoder.n_inputs = opt.ncond
-        #     self.decoder.n_out = 1
 
         self.y_encoder = Encoder(a_size=0, n_inputs=1, states=False)
 
@@ -283,22 +226,26 @@ class FwdCNN_VAE(FwdCNN):
         z = torch.randn(bsize, self.nz)
         return z
 
-    def forward_single_step(self, input_images, input_states, action, z):
+    def forward_single_step(
+        self, input_images, input_states, action, stats, z
+    ):
         # encode the inputs (without the action)
         if not self.enable_latent:
             return super().forward_single_step(
-                input_images, input_states, action, z
+                input_images, input_states, action, stats, z
             )
+
+        pred_state = self.state_predictor(input_states[:, -1], action, stats)
+
         batch_size = input_images.size(0)
         z_exp = self.z_expander(z).view(
             batch_size, self.nfeature, self.h_height, self.h_width,
         )
-        h = self.encode(input_images, input_states, action) + z_exp
-        pred_image, pred_state = self.decoder(h)
+        h = self.encode(input_images, input_states, pred_state) + z_exp
+        pred_image = self.decoder(h)
         pred_image = torch.sigmoid(
             pred_image + input_images[:, -1].unsqueeze(1)
         )
-        pred_state = pred_state + input_states[:, -1]
 
         return pred_image, pred_state
 
@@ -307,6 +254,7 @@ class FwdCNN_VAE(FwdCNN):
         inputs,
         actions,
         targets,
+        stats,
         save_z=False,
         sampling=None,
         z_dropout=0.0,
@@ -314,11 +262,11 @@ class FwdCNN_VAE(FwdCNN):
     ):
         if not self.enable_latent:
             return super().forward(
-                inputs, actions, targets, sampling, z_dropout,
+                inputs, actions, targets, stats, sampling, z_dropout,
             )
         input_images, input_states = inputs
         bsize = input_images.size(0)
-        actions = actions.view(bsize, -1, self.n_actions)
+        actions = actions.view(bsize, -1, self.actual_n_actions)
         npred = actions.size(1)
         ploss = torch.zeros(1).to(input_images.device)
 
@@ -365,24 +313,27 @@ class FwdCNN_VAE(FwdCNN):
                         input_images.device
                     )
 
+            pred_state = self.state_predictor(
+                input_states[:, -1], actions[:, t], stats
+            )
+
             z_list.append(z)
             z_exp = self.z_expander(z).view(
                 bsize, self.nfeature, self.h_height, self.h_width
             )
             h_x = h_x.view(bsize, self.nfeature, self.h_height, self.h_width)
             h = h_x + z_exp
-            a_emb = self.a_encoder(actions[:, t]).view(h.size())
+            a_emb = self.a_encoder(pred_state).view(h.size())
             h = h + a_emb
             h = h + self.u_network(h)
 
-            pred_image, pred_state = self.decoder(h)
+            pred_image = self.decoder(h)
             # if sampling is not None:
             #     pred_image.detach()
             #     pred_state.detach()
             pred_image = torch.sigmoid(
                 pred_image + input_images[:, -1].unsqueeze(1)
             )
-            pred_state = pred_state + input_states[:, -1]
 
             input_images = torch.cat((input_images[:, 1:], pred_image), 1)
             input_states = torch.cat(

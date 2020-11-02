@@ -1,20 +1,22 @@
 """Train a policy / controller"""
 
 
-from ppuu.lightning_modules.mpur import MPURModule, inject
+from ppuu.lightning_modules.policy.mpur import MPURModule, inject
 from ppuu.costs.policy_costs_km import (
     PolicyCostKM,
     PolicyCostKMSplit,
     PolicyCostKMTaper,
 )
-from ppuu.modeling.forward_model_km import ForwardModelKM
+from ppuu.wrappers import ForwardModelKM
 
 
 @inject(cost_type=PolicyCostKM, fm_type=ForwardModelKM)
 class MPURKMModule(MPURModule):
     def forward(self, batch):
         self.forward_model.eval()
-        predictions = self.forward_model.unfold_km(self.policy_model, batch, augmenter=self.augmenter)
+        predictions = self.forward_model.unfold_km(
+            self.policy_model, batch, augmenter=self.augmenter
+        )
         return predictions
 
 

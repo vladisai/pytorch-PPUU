@@ -131,6 +131,9 @@ class Car:
         self.policy_network = policy_network
         self.is_controlled = False
         self.collisions_per_frame = 0
+        self.collisions_per_frame_alt = 0
+        self.collisions_per_frame_behind = 0
+        self.collisions_per_frame_ahead = 0
 
     @staticmethod
     def get_text(n, font):
@@ -661,7 +664,7 @@ class Car:
             return_reward
         ):  # if we're playing with model free RL, have fun with reward shaping
             arrived = self.arrived_to_dst
-            collision = self.collisions_per_frame > 0
+            collision = self.collisions_per_frame > 0 and self.collisions_per_frame_ahead > 0
             done = done or collision  # die if collide
             lambda_lane = 0.2
             max_rew = 1 + lambda_lane

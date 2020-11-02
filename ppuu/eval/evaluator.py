@@ -66,7 +66,16 @@ class PolicyEvaluator:
             mean_distance=results_per_episode_df["distance_travelled"].mean(),
             mean_time=results_per_episode_df["time_travelled"].mean(),
             success_rate=results_per_episode_df["road_completed"].mean(),
+            success_rate_alt=results_per_episode_df[
+                "road_completed_alt"
+            ].mean(),
             collision_rate=results_per_episode_df["has_collided"].mean(),
+            collision_ahead_rate=results_per_episode_df[
+                "has_collided_ahead"
+            ].mean(),
+            collision_behind_rate=results_per_episode_df[
+                "has_collided_behind"
+            ].mean(),
             off_screen_rate=results_per_episode_df["off_screen"].mean(),
             alternative_better=results_per_episode_df[
                 "alternative_better"
@@ -90,6 +99,8 @@ class PolicyEvaluator:
                 "has_collided",
                 "off_screen",
                 "road_completed",
+                "has_collided_ahead",
+                "has_collided_behind",
             ],
         )
         TimeCapsule = namedtuple("TimeCapsule", ["env", "inputs", "cost"])
@@ -101,6 +112,8 @@ class PolicyEvaluator:
             [],
         )
         has_collided = False
+        has_collided_ahead = False
+        has_collided_behind = False
         off_screen = False
         road_completed = False
         done = False
@@ -126,10 +139,21 @@ class PolicyEvaluator:
             inputs, cost, done, info = env.step(a[0])
             if info.collisions_per_frame > 0:
                 has_collided = True
-                done = True
+            if info.collisions_per_frame_ahead > 0:
+                has_collided_ahead = True
+
+            if info.collisions_per_frame_behind > 0:
+                has_collided_behind = True
 
             if cost["arrived_to_dst"]:
                 road_completed = True
+
+            done = (
+                done
+                or (has_collided and has_collided_ahead)
+                or road_completed
+                or off_screen
+            )
 
             # every second, we save a copy of the environment
             if t % 10 == 0:
@@ -164,6 +188,8 @@ class PolicyEvaluator:
             has_collided,
             off_screen,
             road_completed,
+            has_collided_ahead,
+            has_collided_behind,
         )
 
     def _build_episode_data(self, unfolding):
@@ -183,9 +209,25 @@ class PolicyEvaluator:
             distance_travelled=(
                 unfolding.states[-1][0] - unfolding.states[0][0]
             ).item(),
-            road_completed=unfolding.road_completed,
-            off_screen=unfolding.off_screen,
+            road_completed=(
+                unfolding.road_completed and not unfolding.has_collided
+            ),
+            road_completed_alt=(
+                unfolding.road_completed and not unfolding.has_collided_ahead
+            ),
+            off_screen=(
+                unfolding.off_screen
+                and not (
+                    (unfolding.road_completed and not unfolding.has_collided)
+                    or (
+                        unfolding.road_completed
+                        and not unfolding.has_collided_ahead
+                    )
+                )
+            ),
             has_collided=unfolding.has_collided,
+            has_collided_ahead=unfolding.has_collided_ahead,
+            has_collided_behind=unfolding.has_collided_behind,
         )
 
     def _process_one_episode(
@@ -317,7 +359,9 @@ class PolicyEvaluator:
                             f" {simulation_result['distance_travelled']:.0f}"
                         ),
                         f"success: {simulation_result['road_completed']:d}",
+                        f"success_alt: {simulation_result['road_completed_alt']:d}",
                         f"success rate: {stats['success_rate']:.2f}",
+                        f"success rate alt: {stats['success_rate_alt']:.2f}",
                     )
                 )
                 logging.info(log_string)
@@ -334,7 +378,8 @@ class PolicyEvaluator:
 
         if output_dir is not None:
             with open(
-                os.path.join(output_dir, "evaluation_results.json"), "w"
+                os.path.join(output_dir, "evaluation_results_symbolic.json"),
+                "w",
             ) as f:
                 json.dump(result, f, indent=4)
 

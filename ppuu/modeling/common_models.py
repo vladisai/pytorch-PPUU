@@ -221,25 +221,29 @@ class Decoder(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
         )
 
-        self.s_predictor = nn.Sequential(
-            nn.Linear(2 * self.n_feature, self.n_feature),
-            nn.Dropout(p=self.dropout, inplace=True),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(self.n_feature, self.n_feature),
-            nn.Dropout(p=self.dropout, inplace=True),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(self.n_feature, self.state_dimension),
-        )
+        if self.state_dimension > 0:
+            self.s_predictor = nn.Sequential(
+                nn.Linear(2 * self.n_feature, self.n_feature),
+                nn.Dropout(p=self.dropout, inplace=True),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Linear(self.n_feature, self.n_feature),
+                nn.Dropout(p=self.dropout, inplace=True),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Linear(self.n_feature, self.state_dimension),
+            )
 
     def forward(self, h):
         bsize = h.size(0)
         h = h.view(bsize, self.n_feature, self.h_height, self.h_width)
         h_reduced = self.h_reducer(h).view(bsize, -1)
-        pred_state = self.s_predictor(h_reduced)
         pred_image = self.f_decoder(h)
         pred_image = pred_image[:, :, : self.height, : self.width].clone()
         pred_image = pred_image.view(bsize, 1, 3, self.height, self.width)
-        return pred_image, pred_state
+        if self.state_dimension > 0:
+            pred_state = self.s_predictor(h_reduced)
+            return pred_image, pred_state
+        else:
+            return pred_image
 
 
 if __name__ == "__main__":

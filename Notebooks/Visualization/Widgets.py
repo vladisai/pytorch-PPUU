@@ -236,33 +236,34 @@ class PolicyComparison(widgets.VBox):
             experiments: array of strings. Names of experiments to be loaded.
         """
         marks = []
-        colors = bq.colorschemes.CATEGORY10
+        colors = bq.colorschemes.CATEGORY20
         for i, experiment in enumerate(experiments):
             result = DataReader.get_success_rates_for_experiment(experiment)
             x = np.array(result["checkpoints"])
-            means = np.array(result["means"])
-            stds = np.array(result["stds"])
+            mn = np.array(result["mn"])
+            mx = np.array(result["mx"])
             c = colors[i]
-            between_fill = Lines(
-                x=[x, x],
-                y=[means - stds, means + stds],
-                fill="between",
-                colors=[c, c],
-                opacities=[0.1, 0.1],
-                fill_colors=[c],
-                fill_opacities=[0.3],
-                scales=self.scales,
-            )
-            line = Lines(
-                x=x,
-                y=means,
-                scales=self.scales,
-                colors=[c],
-                display_legend=True,
-                labels=[experiment],
-            )
-            marks.append(between_fill)
-            marks.append(line)
+            # between_fill = Lines(
+            #     x=[x, x],
+            #     y=[mn, mx],
+            #     fill="between",
+            #     colors=[c, c],
+            #     opacities=[0.1, 0.1],
+            #     fill_colors=[c],
+            #     fill_opacities=[0.3],
+            #     scales=self.scales,
+            # )
+            # marks.append(between_fill)
+            for i in range(len(result['values'])):
+                line = Lines(
+                    x=result['values'][i][0],
+                    y=result['values'][i][1],
+                    scales=self.scales,
+                    colors=[c],
+                    display_legend=(i == 0),
+                    labels=[experiment],
+                )
+                marks.append(line)
 
         self.experiment_figure.marks = marks
         return

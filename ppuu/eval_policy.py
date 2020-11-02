@@ -12,7 +12,7 @@ import torch.multiprocessing
 
 from ppuu import configs
 from ppuu.data import dataloader
-from ppuu.lightning_modules import get_module
+from ppuu.lightning_modules.policy import get_module
 from ppuu.eval import PolicyEvaluator
 from ppuu import slurm
 
@@ -36,6 +36,7 @@ class EvalConfig(configs.ConfigBase):
     test_size_cap: int = None
     slurm: bool = False
     model_type: str = "vanilla"
+    diffs: bool = False
 
     def __post_init__(self):
         if self.num_processes == -1:
@@ -67,11 +68,13 @@ def main(config):
     mpur_module = Module.load_from_checkpoint(
         checkpoint_path=config.checkpoint_path
     )
+    mpur_module.policy_model.diffs = config.diffs
     alternative_module = None
     if config.alternative_checkpoint_path:
         alternative_module = Module.load_from_checkpoint(
             checkpoint_path=config.alternative_checkpoint_path
         )
+        alternative_module.policy_model.diffs = config.diffs
 
     test_dataset = dataloader.EvaluationDataset(
         config.dataset, "test", config.test_size_cap
@@ -89,6 +92,7 @@ def main(config):
         alternative_module=alternative_module,
     )
     print(result["stats"])
+    return result
 
 
 if __name__ == "__main__":

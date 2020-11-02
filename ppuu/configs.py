@@ -2,7 +2,11 @@ import argparse
 import dataclasses
 from dataclasses import dataclass, field
 from enum import Enum
+import math
+import os
 from typing import Tuple, Iterable, Union, NewType, Any
+
+import torch
 
 DataClass = NewType("DataClass", Any)
 DataClassType = NewType("DataClassType", Any)
@@ -16,7 +20,9 @@ class ConfigBase:
 
     @classmethod
     def parse_from_command_line(cls):
-        result = DataclassArgParser(cls).parse_args_into_dataclasses()
+        result = DataclassArgParser(
+            cls, fromfile_prefix_chars="@"
+        ).parse_args_into_dataclasses()
         if len(result) > 1:
             raise RuntimeError(
                 f"The following arguments were not recognized: {result[1:]}"
@@ -25,9 +31,9 @@ class ConfigBase:
 
     @classmethod
     def parse_from_dict(cls, inputs):
-        return DataclassArgParser(cls)._populate_dataclass_from_dict(
-            cls, inputs.copy()
-        )
+        return DataclassArgParser(
+            cls, fromfile_prefix_chars="@"
+        )._populate_dataclass_from_dict(cls, inputs.copy())
 
 
 @dataclass
@@ -40,10 +46,16 @@ DATASET_PATHS_MAPPING = {
     "full": (
         "/misc/vlgscratch4/LecunGroup/nvidia-collab/traffic-data_offroad/state-action-cost/data_i80_v0/"  # noqa: E501
     ),
-    "50": (
+    "50_old": (
         "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/traffic-data_offroad_50_test_train_same/state-action-cost/data_i80_v0/"  # noqa: E501
     ),
+    "50": (
+        "/home/us441/nvidia-collab/vlad/traffic-data-5-small/state-action-cost/data_i80_v0/"  # noqa: E501
+    ),
     "full_5": (
+        "/home/us441/nvidia-collab/vlad/traffic-data-5/state-action-cost/data_i80_v0/"  # noqa: E501
+    ),
+    "full_old": (
         "/home/us441/nvidia-collab/vlad/traffic-data_offroad/state-action-cost/data_i80_v0/"  # noqa: E501
     ),
 }
@@ -57,6 +69,7 @@ class TrainingConfig(ConfigBase):
 
     learning_rate: float = field(default=0.0001)
     n_epochs: int = field(default=101)
+    n_steps: float = field(default=0)
     epoch_size: int = field(default=500)
     batch_size: int = field(default=6)
     validation_size: int = field(default=25)
@@ -68,6 +81,7 @@ class TrainingConfig(ConfigBase):
     output_dir: str = field(default=None)
     experiment_name: str = field(default="train_mpur")
     slurm: bool = field(default=False)
+    slurm_constraint: str = field(default="turing")
     run_eval: bool = field(default=False)
     debug: bool = field(default=False)
     fast_dev_run: bool = field(default=False)
@@ -75,20 +89,45 @@ class TrainingConfig(ConfigBase):
     mixout_p: float = field(default=None)
     validation_eval: bool = field(default=True)
     noise_augmentation_std: float = field(default=0.07)
-    noise_augmentation_p: float = field(default=0.5)
+    noise_augmentation_p: float = field(default=0.0)
     gpus: int = field(default=1)
     num_nodes: int = field(default=1)
     distributed_backend: str = field(default="ddp")
     resume_from_checkpoint: str = field(default=None)
     version: str = field(default=None)
+    diffs: bool = field(default=False)
+    prince: bool = field(default=False)
+    scheduler: bool = False
 
     def __post_init__(self):
         self.set_dataset(self.dataset)
+
+    def auto_batch_size(self):
+        if self.batch_size == -1:
+            gpu_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+            self.batch_size = int((gpu_gb / 11) * 16)
+            print("auto batch size is set to", self.batch_size)
+        self.auto_n_epochs()
+
+    def auto_n_epochs(self):
+        if self.n_steps != 0:
+            self.n_epochs = math.ceil(
+                self.n_steps / self.batch_size / self.epoch_size
+            )
+            print("auto set n_epochs to", self.n_epochs)
 
     def set_dataset(self, dataset):
         self.dataset = dataset
         if self.dataset in DATASET_PATHS_MAPPING:
             self.dataset = DATASET_PATHS_MAPPING[self.dataset]
+
+    @property
+    def slurm_logs_path(self):
+        return os.path.join(
+            self.output_dir,
+            self.experiment_name,
+            f"seed={self.seed}_slurm_logs",
+        )
 
 
 @dataclass

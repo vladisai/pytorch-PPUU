@@ -3,6 +3,8 @@ import argparse
 import time
 import glob
 
+import submitit
+
 from ppuu import slurm
 from ppuu import eval_policy
 
@@ -30,10 +32,13 @@ def should_run(checkpoint, contains_filter):
     return res
 
 
-def submit(executor, path):
+def submit(executor, path, model_type):
     print("submitting", path)
     config = eval_policy.EvalConfig(
-        checkpoint_path=path, save_gradients=True, num_processes=10
+        checkpoint_path=path,
+        save_gradients=True,
+        num_processes=8,
+        model_type=model_type,
     )
     return executor.submit(eval_policy.main, config)
 
@@ -61,15 +66,19 @@ def main():
         help="don't evaluate existing checkpoints",
     )
     parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="don't run jobs",
+        "--debug", action="store_true", help="don't run jobs",
     )
     parser.add_argument(
         "--contains_filter",
         type=str,
         default="[]",
         help="run only experiments containing words from the filter list",
+    )
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="continuous_v3",
+        help="Policy model type",
     )
     parser.add_argument("--cluster", type=str, default="slurm")
     opt = parser.parse_args()
@@ -89,12 +98,19 @@ def main():
             if checkpoint not in already_run:
                 already_run.append(checkpoint)
                 if opt.debug:
-                    print('would run', checkpoint)
+                    print("would run", checkpoint)
                 if not opt.debug and (not first_run or not opt.new_only):
-                    job = submit(executor, checkpoint)
+                    job = submit(executor, checkpoint, opt.model_type)
                     if job is not None:
                         if opt.cluster in ["local", "debug"]:
-                            print(job.result())
+                            print(job)
+                            while True:
+                                try:
+                                    print(job)
+                                    print(job.result())
+                                    break
+                                except submitit.core.utils.UncompletedJobError as e:
+                                    print("waiting", str(e))
                         print("job id: ", job.job_id)
         print("done")
         if opt.check_interval == -1:

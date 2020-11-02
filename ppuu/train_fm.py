@@ -3,7 +3,7 @@ import os
 import pytorch_lightning as pl
 import torch.multiprocessing
 
-from ppuu import lightning_modules
+from ppuu.lightning_modules import fm
 from ppuu import slurm
 
 from train_utils import CustomLoggerWB
@@ -17,7 +17,8 @@ def main(config):
     except RuntimeError:
         pass
 
-    module = lightning_modules.get_module(config.model.model_type)
+    config.training.auto_batch_size()
+    module = fm.get_module(config.model.model_type)
     data_module = NGSIMDataModule(
         config.training.dataset,
         config.training.epoch_size,
@@ -28,6 +29,7 @@ def main(config):
         npred=config.training.n_pred,
         ncond=config.training.n_cond,
         workers=0,
+        diffs=config.training.diffs,
     )
 
     pl.seed_everything(config.training.seed)
@@ -40,8 +42,6 @@ def main(config):
         project="PPUU_fm",
     )
 
-    logger.log_hyperparams(module.hparams)
-
     trainer = pl.Trainer(
         gradient_clip_val=5.0,
         max_epochs=config.training.n_epochs,
@@ -52,8 +52,8 @@ def main(config):
             filepath=os.path.join(
                 logger.log_dir, "checkpoints", "{epoch}_{success_rate}"
             ),
-            save_top_k=-1,
-            save_last=True,
+            save_top_k=None,
+            monitor=None,
         ),
         logger=logger,
         gpus=config.training.gpus,
@@ -66,6 +66,7 @@ def main(config):
     )
 
     model = module(config)
+    logger.log_hyperparams(model.hparams)
     if config.training.resume_from_checkpoint is not None:
         model.model.set_enable_latent(True)
     trainer.fit(model, data_module)
@@ -73,15 +74,17 @@ def main(config):
 
 
 if __name__ == "__main__":
-    module = lightning_modules.get_module_from_command_line()
+    module = fm.get_module_from_command_line()
     config = module.Config.parse_from_command_line()
     use_slurm = slurm.parse_from_command_line()
     if use_slurm:
         executor = slurm.get_executor(
-            config.training.experiment_name,
+            job_name=config.training.experiment_name,
             cpus_per_task=4,
             nodes=config.training.num_nodes,
             gpus=config.training.gpus,
+            logs_path=config.training.slurm_logs_path,
+            prince=config.training.prince,
         )
         job = executor.submit(main, config)
         print(f"submitted to slurm with job id: {job.job_id}")

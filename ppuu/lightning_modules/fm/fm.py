@@ -1,3 +1,4 @@
+from typing import Union
 import dataclasses
 from dataclasses import dataclass
 from collections import deque
@@ -7,8 +8,9 @@ import pytorch_lightning as pl
 import torch
 from torch.nn import functional as F
 
-from ppuu.modeling import FwdCNN_VAE
+from ppuu.modeling import get_fm
 from ppuu import configs
+from ppuu.modeling.km import predict_states_diff, predict_states
 
 
 @dataclass
@@ -33,10 +35,16 @@ class ModelConfig(configs.ConfigBase):
     ncond: int = 20
 
     model_type: str = "fm"
+    fm_type: str = "km"
 
     beta: float = 1e-06
 
     huber_loss: bool = False
+
+    predict_state: bool = False
+
+    checkpoint: Union[str, None] = None
+
 
 @dataclass
 class TrainingConfig(configs.TrainingConfig):
@@ -47,6 +55,24 @@ class TrainingConfig(configs.TrainingConfig):
     n_pred: int = 20
 
     auto_enable_latent: bool = False
+
+    enable_latent: bool = False
+    batch_size: int = 64
+
+    epoch_size: int = 500
+    validation_steps: int = 10000
+    validation_period: int = 1
+    n_epochs: int = 1600
+    rebalance: bool = False
+
+    def auto_batch_size(self):
+        if self.batch_size == -1:
+            gpu_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+            self.batch_size = int((gpu_gb / 4) * 64)
+            print("auto batch size is set to", self.batch_size)
+            self.validation_size = int(self.validation_steps / self.batch_size)
+            print("auto validdation size is set to", self.validation_size)
+        self.auto_n_epochs()
 
 
 class PlateauDetector(object):
@@ -76,7 +102,7 @@ class FM(pl.LightningModule):
     ):
         super().__init__()
         self.set_hparams(hparams)
-        self.model = FwdCNN_VAE(
+        self.model = get_fm(self.config.model.fm_type)(
             layers=self.config.model.layers,
             nfeature=self.config.model.nfeature,
             dropout=self.config.model.dropout,
@@ -89,15 +115,25 @@ class FM(pl.LightningModule):
             ncond=self.config.model.ncond,
             nz=self.config.model.nz,
             enable_kld=True,
-            enable_latent=False,
+            enable_latent=self.config.training.enable_latent,
+            state_predictor=(
+                predict_states_diff
+                if self.config.training.diffs
+                else predict_states
+            ),
         )
         self.plateau_detector = PlateauDetector(1e-3, 5)
+
+        if self.config.model.checkpoint is not None:
+            checkpoint = torch.load(self.config.model.checkpoint)
+            self.load_state_dict(checkpoint["state_dict"])
 
     def forward(self, batch):
         predictions = self.model(
             inputs=(batch["input_images"], batch["input_states"]),
             actions=batch["actions"],
             targets=(batch["target_images"], batch["target_states"]),
+            stats=batch["stats"],
             z_dropout=self.config.model.z_dropout,
         )
         return predictions
@@ -112,19 +148,54 @@ class FM(pl.LightningModule):
             states_loss = F.mse_loss(
                 batch["target_states"], predictions.pred_states
             )
-        images_loss = F.mse_loss(
-            batch["target_images"], predictions.pred_images
+        images_loss = (
+            ((batch["target_images"] - predictions.pred_images) ** 2)
+            .view(*batch["actions"].shape[:2], -1)
+            .mean(dim=-1)
         )
+        if self.config.training.rebalance:
+            ranking = torch.clamp(
+                torch.exp(0.5 * batch["actions"].abs()[:, :, 1].pow(2)),
+                min=1,
+                max=10,
+            )
+            rebalanced_images_loss = (images_loss * ranking).mean()
+        else:
+            rebalanced_images_loss = None
+
+        images_loss = images_loss.mean()
+
         p_loss = predictions.p_loss
-        return states_loss, images_loss, p_loss
+        return states_loss, images_loss, rebalanced_images_loss, p_loss
+
+    @property
+    def sample_step(self):
+        return (
+            self.trainer.global_step
+            * self.config.training.batch_size
+            * self.config.training.num_nodes
+            * self.config.training.gpus
+        )
 
     def training_step(self, batch, batch_idx):
-        states_loss, images_loss, p_loss = self.shared_step(batch)
-        loss = images_loss + states_loss + self.config.model.beta * p_loss
+        (
+            states_loss,
+            images_loss,
+            rebalanced_images_loss,
+            p_loss,
+        ) = self.shared_step(batch)
+        if self.config.training.rebalance:
+            loss = (
+                rebalanced_images_loss
+                + states_loss
+                + self.config.model.beta * p_loss
+            )
+        else:
+            loss = images_loss + states_loss + self.config.model.beta * p_loss
 
         if torch.isnan(loss).any():
-            loss = torch.tensor(0.0, requires_grad=True) * 5
-            print('NaN loss!')
+            loss = torch.tensor(0.0, requires_grad=True).to(self.device) * 5
+            print("NaN loss!")
 
         logs = {
             "states_loss": states_loss,
@@ -132,19 +203,17 @@ class FM(pl.LightningModule):
             "p_loss": p_loss,
             "total_loss": loss,
         }
-        res = pl.TrainResult(loss)
+        if self.config.training.rebalance:
+            logs["rebalanced_images_loss"] = rebalanced_images_loss
+
+        res = logs['total_loss']
         for k in logs:
-            res.log(
-                k,
-                logs[k],
-                on_step=True,
-                on_epoch=True,
-                prog_bar=True,
-                logger=True,
-            )
+            self.log(k, logs[k], on_step=True, prog_bar=True, logger=True)
         return res
 
     def validation_step(self, batch, batch_idx):
+        shared_losses = self.shared_step(batch)
+
         predictions = self.model.unfold(batch["actions"], batch)
         states_loss = F.mse_loss(
             batch["target_states"], predictions["pred_states"]
@@ -154,19 +223,23 @@ class FM(pl.LightningModule):
         )
         loss = images_loss + states_loss
         logs = {
-            "val_states_loss": states_loss,
-            "val_images_loss": images_loss,
-            "val_total_loss": loss,
+            "val_unfold_states_loss": states_loss,
+            "val_unfold_images_loss": images_loss,
+            "val_unfold_total_loss": loss,
+            "val_states_loss": shared_losses[0],
+            "val_images_loss": shared_losses[1],
+            "val_rebalanced_images_loss": shared_losses[2],
+            "val_p_loss": shared_losses[3],
         }
-        res = pl.EvalResult(loss)
-        res.log_dict(
-            logs, on_step=False, on_epoch=True, prog_bar=True, logger=True,
-        )
+        res = loss
+        for k in logs:
+            self.log(k, logs[k], on_epoch=True, logger=True)
         return res
 
     def validation_epoch_end(self, res):
-        res.dp_reduce()
-        self._check_plateau(res["early_stop_on"].detach())
+        avg_loss = torch.stack([x['val_unfold_total_loss'] for x in res]).mean()
+        self.log("sample_step", self.sample_step)
+        self._check_plateau(avg_loss)
         return res
 
     @pl.loggers.base.rank_zero_only
@@ -197,7 +270,11 @@ class FM(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
-            self.model.parameters(), self.config.training.learning_rate,
+            self.model.parameters(),
+            self.config.training.learning_rate
+            * self.config.training.gpus
+            * self.config.training.num_nodes
+            * (64 / self.config.training.batch_size),
         )
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer,

@@ -12,6 +12,8 @@ class PolicyCostContinuous(PolicyCost):
     @dataclass
     class Config(PolicyCost.Config):
         lambda_p: float = field(default=4.0)
+        skip_contours: bool = False
+        safe_factor: float = 1.5
 
     def compute_lane_cost(self, images, car_size):
         SCALE = 0.25
@@ -99,7 +101,8 @@ class PolicyCostContinuous(PolicyCost):
         The idea is to get only edges of the cars so that later
         when we do summing the size of the cars doesn't affect our behavior.
         """
-        return images[:, 1]
+        if self.config.skip_contours:
+            return images[:, 1]
         device = images.device
         horizontal_filter = torch.tensor(
             [[[0.0], [0.0]], [[-1.0], [1.0]], [[0.0], [0.0]]], device=device,
@@ -141,39 +144,30 @@ class PolicyCostContinuous(PolicyCost):
         unnormalize=False,
         clip=False,
     ):
-
         device = images.device
 
         SCALE = 0.25
-        safe_factor = 1.5
         bsize, npred, nchannels, crop_h, crop_w = images.size()
 
         images = images.view(bsize * npred, nchannels, crop_h, crop_w)
         states = states.view(bsize * npred, 5).clone()
 
         if unnormalize:
-            states = (
-                states
-                * (
-                    1e-8
-                    + self.data_stats["s_std"].view(1, 4).expand(states.size())
-                ).to(device)
-            )
-            states = (
-                states
-                + self.data_stats["s_mean"]
-                .view(1, 5)
-                .expand(states.size())
-                .to(device)
-            )
+            states = states * (
+                1e-8
+                + self.data_stats["s_std"].view(1, 5).expand(states.size())
+            ).to(device)
+            states = states + self.data_stats["s_mean"].view(1, 5).expand(
+                states.size()
+            ).to(device)
 
-        speed = states[:, 2:].norm(2, 1) * SCALE  # pixel/s
+        speed = states[:, 4] * SCALE  # pixel/s
         width, length = car_size[:, 0], car_size[:, 1]  # feet
         width = width * SCALE * (0.3048 * 24 / 3.7)  # pixels
         length = length * SCALE * (0.3048 * 24 / 3.7)  # pixels
 
         safe_distance = (
-            torch.abs(speed) * safe_factor + (1 * 24 / 3.7) * SCALE
+            torch.abs(speed) * self.config.safe_factor + (1 * 24 / 3.7) * SCALE
         )  # plus one metre (TODO change)
 
         # Compute x/y minimum distance to other vehicles (pixel version)

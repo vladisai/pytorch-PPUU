@@ -183,41 +183,48 @@ class I80Car(Car):
 
     def count_collisions(self, state):
         self.collisions_per_frame = 0
-        # alpha = 1 * self.SCALE  # 1 m overlap collision
-        # for cars in state:
-        #     if cars:
-        #         behind, ahead = cars
-        #         if behind:
-        #             d = self - behind
-        #             if (
-        #                 d[0] < -alpha
-        #                 and abs(d[1]) + alpha
-        #                 < (self._width + behind._width) / 2
-        #             ):
-        #                 self.collisions_per_frame += 1
-        #                 print(
-        #                     f"Collision {self.collisions_per_frame}/6,"
-        #                     f" behind, vehicle {behind.id}"
-        #                 )
-        #         if ahead:
-        #             d = ahead - self
-        #             if (
-        #                 d[0] < -alpha
-        #                 and abs(d[1]) + alpha
-        #                 < (self._width + ahead._width) / 2
-        #             ):
-        #                 self.collisions_per_frame += 1
-        #                 print(
-        #                     f"Collision {self.collisions_per_frame}/6,"
-        #                     f" ahead, vehicle {ahead.id}"
-        #                 )
+        self.collisions_per_frame_alt = 0
+        self.collisions_per_frame_behind = 0
+        self.collisions_per_frame_ahead = 0
+        alpha = 1 * self.SCALE  # 1 m overlap collision
+        for cars in state:
+            if cars:
+                behind, ahead = cars
+                if behind:
+                    d = self - behind
+                    if (
+                        d[0] < -alpha
+                        and abs(d[1]) + alpha
+                        < (self._width + behind._width) / 2
+                    ):
+                        self.collisions_per_frame_alt += 1
+                        self.collisions_per_frame_behind += 1
+                        # print(
+                        #     f"Collision {self.collisions_per_frame}/6,"
+                        #     f" behind, vehicle {behind.id}"
+                        # )
+                if ahead:
+                    d = ahead - self
+                    if (
+                        d[0] < -alpha
+                        and abs(d[1]) + alpha
+                        < (self._width + ahead._width) / 2
+                    ):
+                        self.collisions_per_frame_alt += 1
+                        self.collisions_per_frame_ahead += 1
+                        # print(
+                        #     f"Collision {self.collisions_per_frame}/6,"
+                        #     f" ahead, vehicle {ahead.id}"
+                        # )
 
         beta = 0.99
         if self._states_image and self._states_image[-1][2] > beta:
             self.collisions_per_frame += 1
-            # print(f'Collision registered for vehicle {self}')
-            # print(f'Accident! Check vehicle {self}.'
-            # f'Proximity of {self._states_image[-1][2]}.')
+            # print(f"Collision registered for vehicle {self}")
+            # print(
+            #     f"Accident! Check vehicle {self}."
+            #     f"Proximity of {self._states_image[-1][2]}."
+            # )
 
 
 class I80(Simulator):
@@ -655,7 +662,10 @@ class I80(Simulator):
 
             if v.is_controlled and v.valid:
                 v.count_collisions(state)
-                if v.collisions_per_frame > 0:
+                if (
+                    v.collisions_per_frame > 0
+                    and v.collisions_per_frame_alt > 0
+                ):
                     self.collision = True
 
             # # Create set of off track vehicles
@@ -688,7 +698,7 @@ class I80(Simulator):
         self.frame += int(self.delta_t * 10)
 
         # Run out of frames?
-        self.done = self.frame >= self.max_frame or self.user_is_done
+        self.done = (self.frame >= self.max_frame) or self.user_is_done
 
         if self.controlled_car and self.controlled_car["locked"]:
             return_ = self.controlled_car["locked"].get_last(

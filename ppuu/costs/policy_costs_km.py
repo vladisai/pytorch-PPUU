@@ -47,13 +47,13 @@ class PolicyCostKM(PolicyCostContinuous):
         if unnormalize:
             states = states * (
                 1e-8
-                + self.data_stats["s_std"].view(1, 4).expand(states.size())
+                + self.data_stats["s_std"].view(1, 5).expand(states.size())
             ).to(device)
-            states = states + self.data_stats["s_mean"].view(1, 4).expand(
+            states = states + self.data_stats["s_mean"].view(1, 5).expand(
                 states.size()
             ).to(device)
 
-        states = states.view(bsize, npred, 4)
+        states = states.view(bsize, npred, 5)
 
         LANE_WIDTH_METRES = 3.7
         LANE_WIDTH_PIXELS = 24  # pixels / 3.7 m, lane width
@@ -66,11 +66,10 @@ class PolicyCostKM(PolicyCostContinuous):
 
         car_size = car_size.to(device)
         positions = states[:, :, :2]
-        speeds = states[:, :, 2:]
-        speeds_norm = speeds.norm(1, 2) / PIXELS_IN_METRE
+        speeds_norm = states[:, :, 4] / PIXELS_IN_METRE
         # speeds_o = torch.ones_like(speeds).cuda()
         # directions = torch.atan2(speeds_o[:, :, 1], speeds_o[:, :, 0])
-        directions = torch.atan2(speeds[:, :, 1], speeds[:, :, 0])
+        directions = states[:, :, 2:4]
 
         positions_adjusted = positions - positions.detach()
         # here we flip directions because they're flipped otherwise
@@ -87,7 +86,9 @@ class PolicyCostKM(PolicyCostContinuous):
 
         y_d = width / 2 + LANE_WIDTH_METRES
         x_s = (
-            1.5 * torch.clamp(speeds_norm.detach(), min=10) + length * 1.5 + 1
+            self.config.safe_factor * torch.clamp(speeds_norm.detach(), min=10)
+            + length * 1.5
+            + 1
         )
 
         x_s = x_s.view(REPEAT_SHAPE)
@@ -293,9 +294,9 @@ class PolicyCostKMTaper(PolicyCostKM):
         if unnormalize:
             states = states * (
                 1e-8
-                + self.data_stats["s_std"].view(1, 4).expand(states.size())
+                + self.data_stats["s_std"].view(1, 5).expand(states.size())
             ).to(device)
-            states = states + self.data_stats["s_mean"].view(1, 4).expand(
+            states = states + self.data_stats["s_mean"].view(1, 5).expand(
                 states.size()
             ).to(device)
 
@@ -307,7 +308,7 @@ class PolicyCostKMTaper(PolicyCostKM):
                 actions.size()
             ).to(device)
 
-        states = states.view(bsize, npred, 4)
+        states = states.view(bsize, npred, 5)
         actions = actions.view(bsize, npred, 2)
         clipped_actions = actions[:, 1:, :]
         last_action = actions[:, -1, :].unsqueeze(1)
@@ -333,18 +334,18 @@ class PolicyCostKMTaper(PolicyCostKM):
         length = length.view(bsize, 1)
 
         positions = states[:, :, :2]
-        speeds = states[:, :, 2:]
-        speeds_norm = speeds.norm(1, 2) / PIXELS_IN_METRE
-        speeds_norm_pixels = speeds.norm(1, 2)
-
+        speeds_norm = states[:, :, 4] / PIXELS_IN_METRE
+        speeds_norm_pixels = states[:, :, 4]
 
         alphas = torch.atan(speeds_norm_pixels * actions[:, :, 1] * TIMESTEP)
         gammas = (np.pi - alphas) / 2
-        radii = -1 * speeds_norm * TIMESTEP / (2 * torch.cos(gammas) + 1e-7) # in meters
+        radii = (
+            -1 * speeds_norm * TIMESTEP / (2 * torch.cos(gammas) + 1e-7)
+        )  # in meters
 
         # speeds_o = torch.ones_like(speeds).cuda()
         # directions = torch.atan2(speeds_o[:, :, 1], speeds_o[:, :, 0])
-        directions = torch.atan2(speeds[:, :, 1], speeds[:, :, 0])
+        directions = states[:, :, 2:4]
 
         positions_adjusted = positions - positions.detach()
         # here we flip directions because they're flipped otherwise
@@ -441,7 +442,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         # x_major[:, :, (x_major.shape[2] // 2 + 10) :, :] = (
         #     x_major[:, :, (x_major.shape[2] // 2 + 10) :, :].clone() ** 2
         # )
-        return x_major * r_y_prime # , x_major, r_y_prime
+        return x_major * r_y_prime  # , x_major, r_y_prime
 
     def compute_state_costs_for_training(
         self, pred_images, pred_states, pred_actions, car_sizes

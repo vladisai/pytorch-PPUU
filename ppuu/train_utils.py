@@ -1,5 +1,6 @@
 import json
 import os
+import yaml
 from collections import defaultdict
 
 import pytorch_lightning as pl
@@ -8,7 +9,7 @@ from ppuu import slurm
 from ppuu import eval_policy
 
 
-def empty_list(_):
+def empty_list():
     return []
 
 
@@ -45,6 +46,8 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
                 self.log_dir = f"{self.log_dir}_{k}"
                 name = f"{name}_{k}"
 
+        os.makedirs(self.log_dir, exist_ok=True)
+
         super().__init__(
             *args, name=name, save_dir=save_dir, version=version, **kwargs
         )
@@ -55,8 +58,14 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
         self.logs.append(metrics)
 
     @pl.loggers.base.rank_zero_only
-    def log_custom(self, key, value):
+    def log_custom(self, key, value, step):
         self.custom_logs[key].append(value)
+        if type(value) == tuple:
+            self.experiment.log(
+                {f"custom/{key}/{value[1]}": value[0], "global_step": step}
+            )
+        else:
+            self.experiment.log({f"custom/{key}": value, "global_step": step})
 
     @pl.loggers.base.rank_zero_only
     def save(self):
@@ -66,6 +75,14 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
         dict_to_save = dict(custom=self.custom_logs, logs=self.logs)
         with open(logs_json_save_path, "w") as f:
             json.dump(dict_to_save, f, indent=4)
+
+    @pl.loggers.base.rank_zero_only
+    def log_hyperparams(self, hparams):
+        super().log_hyperparams(hparams)
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.config_path = os.path.join(self.log_dir, "config.yaml")
+        with open(self.config_path, "w") as yaml_file:
+            yaml.dump(dict(hparams), yaml_file, default_flow_style=False)
 
 
 class CustomLogger(pl.loggers.TensorBoardLogger):

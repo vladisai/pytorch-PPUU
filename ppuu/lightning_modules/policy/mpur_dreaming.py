@@ -5,7 +5,11 @@ import torch
 import torch.optim as optim
 
 from ppuu.costs.policy_costs_continuous import PolicyCostContinuous
-from ppuu.lightning_modules.mpur import MPURModule, inject
+from ppuu.lightning_modules.policy.mpur import (
+    MPURModule,
+    inject,
+    ForwardModelV2,
+)
 
 
 @inject(cost_type=PolicyCostContinuous)
@@ -13,19 +17,27 @@ class MPURDreamingModule(MPURModule):
     @dataclass
     class TrainingConfig(MPURModule.TrainingConfig):
         lrt_z: float = 0.1
-        n_z_updates: int = 10
+        n_z_updates: int = 2
         adversarial_frequency: int = 10
         n_adversarial_policy_updates: int = 1
+        init_z_with_zero: bool = False
 
     def __init__(self, hparams=None):
         super().__init__(hparams)
         self.adversarial_z = None
 
     def get_adversarial_z(self, batch):
-        z = self.forward_model.sample_z(
-            self.config.model_config.n_pred
-            * self.config.training_config.batch_size
-        )
+        if self.config.training_config.init_z_with_zero:
+            z = torch.zeros(
+                self.config.model_config.n_pred
+                * self.config.training_config.batch_size,
+                32,
+            ).to(self.device)
+        else:
+            z = self.forward_model.sample_z(
+                self.config.model_config.n_pred
+                * self.config.training_config.batch_size
+            ).to(self.device)
         z = z.view(
             self.config.training_config.batch_size,
             self.config.model_config.n_pred,
@@ -47,19 +59,41 @@ class MPURDreamingModule(MPURModule):
             cost.backward()
             optimizer_z.step()
 
-        self.logger.log_custom("z_difference", (z - original_z).norm().item())
-        self.logger.log_custom("z_norm", (z).norm().item())
-        self.logger.log_custom("z_original_norm", (original_z).norm().item())
+        mean_norm = (
+            lambda x: x.reshape(-1, 32)
+            .norm(dim=1)
+            .pow(2)
+            .div(32)
+            .mean()
+            .item()
+        )
+
+        mean_difference = mean_norm(z - original_z)
+        mean_z_norm = mean_norm(z)
+        mean_orig_norm = mean_norm(original_z)
+        self.logger.log_custom(
+            "z_difference", mean_difference, self.global_step
+        )
+        self.logger.log_custom("z_norm", mean_z_norm, self.global_step)
+        self.logger.log_custom(
+            "z_original_norm", mean_orig_norm, self.global_step
+        )
         return z
 
     def log_z(self, cost, components, t):
         if hasattr(self.logger, "log_custom"):
-            self.logger.log_custom("z_cost", (cost.item(), t))
             self.logger.log_custom(
-                "z_cost_proximity", (components["proximity_loss"].item(), t)
+                "z_cost", (cost.item(), t), self.global_step
             )
             self.logger.log_custom(
-                "z_cost_uncertainty", (components["u_loss"].item(), t)
+                "z_cost_proximity",
+                (components["proximity_loss"].item(), t),
+                self.global_step,
+            )
+            self.logger.log_custom(
+                "z_cost_uncertainty",
+                (components["u_loss"].item(), t),
+                self.global_step,
             )
 
     def get_z_optimizer(self, Z):
@@ -144,12 +178,32 @@ class MPURDreamingLBFGSModule(MPURDreamingModule):
             return cost
 
         optimizer_z.step(lbfgs_closure)
-        self.logger.log_custom("z_difference", (z - original_z).norm().item())
-        self.logger.log_custom("z_norm", (z).norm().item())
-        self.logger.log_custom("z_original_norm", (original_z).norm().item())
+        self.logger.log_custom(
+            "z_difference", (z - original_z).norm().item(), self.global_step
+        )
+        self.logger.log_custom("z_norm", (z).norm().item(), self.global_step)
+        self.logger.log_custom(
+            "z_original_norm", (original_z).norm().item(), self.global_step
+        )
         return z
 
     def get_z_optimizer(self, Z):
         return torch.optim.LBFGS(
             [Z], max_iter=self.config.training_config.n_z_updates
         )
+
+
+@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV2)
+class MPURDreamingV2Module(MPURDreamingModule):
+    @dataclass
+    class TrainingConfig(MPURDreamingModule.TrainingConfig):
+        def auto_batch_size(self):
+            if self.batch_size == -1:
+                gpu_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+                self.batch_size = int((gpu_gb / 8) * 6)
+                print("auto batch size is set to", self.batch_size)
+            self.auto_n_epochs()
+
+    @dataclass
+    class ModelConfig(MPURModule.ModelConfig):
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/fm_km_5_states_resume_lower_lr/seed=42/checkpoints/epoch=23_success_rate=0.ckpt"

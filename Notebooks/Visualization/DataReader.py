@@ -34,6 +34,10 @@ class DataReader:
     #         x = json.load(f)
     #     return x
 
+    checkpoint_re = re.compile(
+        "epoch=(?P<epoch>\d+)(_sample_step=(?P<sample_step>\d+).ckpt)?"
+    )
+
     @staticmethod
     def tensor_to_image(tensor):
         image = ToPILImage()(tensor)
@@ -124,7 +128,7 @@ class DataReader:
 
     @staticmethod
     def get_experiments_path():
-        return "/home/us441/nvidia-collab/vlad/results/refactored_test"
+        return "/home/us441/nvidia-collab/vlad/results/policy"
 
     @staticmethod
     def get_experiment_path(experiment):
@@ -162,11 +166,20 @@ class DataReader:
 
     @staticmethod
     def get_evaluation_result_path(experiment, version, checkpoint):
-        return os.path.join(
+        p1 = os.path.join(
             DataReader.get_version_checkpoints_path(experiment, version),
             checkpoint,
             "evaluation_results.json",
         )
+        p2 = os.path.join(
+            DataReader.get_version_checkpoints_path(experiment, version),
+            checkpoint,
+            "evaluation_results_symbolic.json",
+        )
+        if os.path.exists(p2):
+            return p2
+        else:
+            return p1
 
     @staticmethod
     def get_evaluation_result(experiment, version, checkpoint):
@@ -202,6 +215,12 @@ class DataReader:
                 if os.path.exists(
                     os.path.join(
                         version_checkpoints_path, d, "evaluation_results.json"
+                    )
+                ) or os.path.exists(
+                    os.path.join(
+                        version_checkpoints_path,
+                        d,
+                        "evaluation_results_symbolic.json",
                     )
                 ):
                     checkpoints.append(d)
@@ -286,8 +305,12 @@ class DataReader:
         for checkpoint in checkpoints:
             if checkpoint.startswith("last"):
                 continue
-            checkpoint_int = int(re.findall(r"\d+", checkpoint)[0])
-            result[checkpoint_int] = DataReader.get_success_rate(
+            x = DataReader.checkpoint_re.match(checkpoint)
+            if x.group("sample_step") is not None:
+                step_number = int(x.group("sample_step"))
+            else:
+                step_number = 500 * 6 * int(x.group("epoch"))
+            result[step_number] = DataReader.get_success_rate(
                 experiment, version, checkpoint
             )
         return result
@@ -301,17 +324,25 @@ class DataReader:
                              and checkpoints is the number of checkpoints.
         """
         results = {}
+        results_lines = {}
+        results_lines_checkpoints = {}
         for version in DataReader.find_experiment_versions(experiment):
             success_rates = DataReader.get_version_success_rates(
                 experiment, version
             )
-            for checkpoint, success_rate in success_rates.items():
-                results.setdefault(checkpoint, []).append(success_rate)
+            for step, success_rate in success_rates.items():
+                results.setdefault(step, []).append(success_rate)
+                results_lines.setdefault(version, []).append(
+                    (step, success_rate)
+                )
+
+        print(results_lines)
 
         keys = sorted(results.keys())
-        means = [float(np.mean(results[x])) for x in keys]
-        stds = [float(np.std(results[x])) for x in keys]
-        result = dict(checkpoints=keys, means=means, stds=stds,)
+        mx = [float(np.min(results[x])) for x in keys]
+        mn = [float(np.max(results[x])) for x in keys]
+        values = [list(zip(*sorted(v))) for _, v in results_lines.items()]
+        result = dict(checkpoints=keys, mx=mx, mn=mn, values=values,)
         return result
 
     @staticmethod
