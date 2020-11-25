@@ -12,11 +12,13 @@ from ppuu.lightning_modules.policy.mpur_dreaming import (
     MPURDreamingModule,
     MPURDreamingLBFGSModule,
     MPURDreamingV2Module,
+    MPURDreamingV3Module,
 )
 from ppuu.lightning_modules.policy.mpur_km import (
     MPURKMModule,
     MPURKMSplitModule,
     MPURKMTaperModule,
+    MPURKMTaperV3Module,
 )
 
 
@@ -27,12 +29,14 @@ MODULES_DICT = dict(
     km=MPURKMModule,
     km_split=MPURKMSplitModule,
     km_taper=MPURKMTaperModule,
+    km_taper_v3=MPURKMTaperV3Module,
     continuous=MPURContinuousModule,
     continuous_v2=MPURContinuousV2Module,
     vanilla_v2=MPURVanillaV2Module,
     dreaming_v2=MPURDreamingV2Module,
     vanilla_v3=MPURVanillaV3Module,
     continuous_v3=MPURContinuousV3Module,
+    dreaming_v3=MPURDreamingV3Module,
 )
 
 

@@ -27,7 +27,9 @@ def main(config):
         config.training_config.n_epochs = 10
         config.cost_config.uncertainty_n_batches = 10
 
-    module = lightning_modules.policy.get_module(config.model_config.model_type)
+    module = lightning_modules.policy.get_module(
+        config.model_config.model_type
+    )
     datamodule = NGSIMDataModule(
         config.training_config.dataset,
         config.training_config.epoch_size,
@@ -49,7 +51,9 @@ def main(config):
 
     n_checkpoints = 5
     if config.training_config.n_steps is not None:
-        n_checkpoints = max(1, int(config.training_config.n_steps / 1e5))
+        n_checkpoints = max(
+            n_checkpoints, int(config.training_config.n_steps / 1e5)
+        )
 
     period = max(1, config.training_config.n_epochs // n_checkpoints)
 
@@ -62,7 +66,7 @@ def main(config):
         num_sanity_val_steps=0,
         fast_dev_run=config.training_config.fast_dev_run,
         distributed_backend=config.training_config.distributed_backend,
-        callbacks=[LearningRateMonitor(logging_interval='step')],
+        callbacks=[LearningRateMonitor(logging_interval="step")],
         checkpoint_callback=pl.callbacks.ModelCheckpoint(
             filepath=os.path.join(
                 logger.log_dir, "checkpoints", "{epoch}_{sample_step}"
@@ -74,7 +78,7 @@ def main(config):
         resume_from_checkpoint=config.training_config.resume_from_checkpoint,
         weights_save_path=logger.log_dir,
         terminate_on_nan=True,
-        track_grad_norm=2,
+        track_grad_norm=False,
     )
 
     model = module(config)

@@ -237,7 +237,7 @@ class FM(pl.LightningModule):
         return res
 
     def validation_epoch_end(self, res):
-        avg_loss = torch.stack([x['val_unfold_total_loss'] for x in res]).mean()
+        avg_loss = torch.stack(res).mean()
         self.log("sample_step", self.sample_step)
         self._check_plateau(avg_loss)
         return res

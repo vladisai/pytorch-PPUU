@@ -54,6 +54,7 @@ class PolicyEvaluator:
                     delta_t=0.1,
                     store_simulator_video=False,
                     show_frame_count=False,
+                    dataset_path=dataset.data_dir,
                 ),
             )
         self.env = gym.make(i80_env_id)

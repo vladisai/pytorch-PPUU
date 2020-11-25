@@ -31,9 +31,15 @@ class ConfigBase:
 
     @classmethod
     def parse_from_dict(cls, inputs):
-        return DataclassArgParser(
-            cls, fromfile_prefix_chars="@"
-        )._populate_dataclass_from_dict(cls, inputs.copy())
+        return DataclassArgParser(cls)._populate_dataclass_from_dict(
+            cls, inputs.copy()
+        )
+
+    @classmethod
+    def parse_from_flat_dict(cls, inputs):
+        return DataclassArgParser(cls)._populate_dataclass_from_flat_dict(
+            cls, inputs.copy()
+        )
 
 
 @dataclass
@@ -69,9 +75,9 @@ class TrainingConfig(ConfigBase):
 
     learning_rate: float = field(default=0.0001)
     n_epochs: int = field(default=101)
-    n_steps: float = field(default=0)
+    n_steps: float = field(default=5e5)
     epoch_size: int = field(default=500)
-    batch_size: int = field(default=6)
+    batch_size: int = field(default=-1)
     validation_size: int = field(default=25)
     validation_period: int = field(default=1)
     dataset: str = field(default="full_5")
@@ -105,7 +111,7 @@ class TrainingConfig(ConfigBase):
     def auto_batch_size(self):
         if self.batch_size == -1:
             gpu_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-            self.batch_size = int((gpu_gb / 11) * 16)
+            self.batch_size = int((gpu_gb / 11) * 10)
             print("auto batch size is set to", self.batch_size)
         self.auto_n_epochs()
 
@@ -251,6 +257,25 @@ class DataclassArgParser(argparse.ArgumentParser):
 
     @staticmethod
     def _populate_dataclass_from_dict(dtype: DataClassType, d: dict):
+        d = d.copy()
+        keys = {f.name for f in dataclasses.fields(dtype)}
+        inputs = {k: v for k, v in d.items() if k in keys}
+        for k in keys:
+            if k in d:
+                del d[k]
+        sub_dataclasses = {
+            f.name: f.type
+            for f in dataclasses.fields(dtype)
+            if dataclasses.is_dataclass(f.type)
+        }
+        for k, s in sub_dataclasses.items():
+            inputs[k] = DataclassArgParser._populate_dataclass_from_dict(s, inputs[k])
+        obj = dtype(**inputs)
+        return obj
+
+    @staticmethod
+    def _populate_dataclass_from_flat_dict(dtype: DataClassType, d: dict):
+        d = d.copy()
         keys = {f.name for f in dataclasses.fields(dtype)}
         inputs = {k: v for k, v in d.items() if k in keys}
         for k in keys:

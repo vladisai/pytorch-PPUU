@@ -77,6 +77,8 @@ class MPURModule(pl.LightningModule):
         h_width: int = 3
         hidden_size: int = n_feature * h_height * h_width
 
+        turn_power: int = 1
+
     TrainingConfig = configs.TrainingConfig
 
     def __init__(self, hparams=None):
@@ -84,8 +86,9 @@ class MPURModule(pl.LightningModule):
         self.set_hparams(hparams)
 
         self.forward_model = self.ForwardModelType(
-            self.config.model_config.forward_model_path
+            self.config.model_config.forward_model_path, self.config.training_config.diffs
         )
+
         self.policy_model = policy_models.DeterministicPolicy(
             n_cond=self.config.model_config.n_cond,
             n_feature=self.config.model_config.n_feature,
@@ -93,6 +96,8 @@ class MPURModule(pl.LightningModule):
             h_height=self.config.model_config.h_height,
             h_width=self.config.model_config.h_width,
             n_hidden=self.config.model_config.n_hidden,
+            diffs=self.config.training_config.diffs,
+            turn_power=self.config.model_config.turn_power,
         )
         self.policy_model.train()
 
@@ -109,6 +114,7 @@ class MPURModule(pl.LightningModule):
             self.config.training_config.noise_augmentation_std,
             self.config.training_config.noise_augmentation_p,
         )
+        self.nan_ctr = 0
 
     def set_hparams(self, hparams=None):
         if hparams is None:
@@ -134,16 +140,14 @@ class MPURModule(pl.LightningModule):
         logs["action_norm"] = (
             predictions["pred_actions"].norm(2, 2).pow(2).mean()
         )
-        if torch.isnan(loss["policy_loss"]).any():
-            loss["policy_loss"] = (
-                torch.tensor(0.0, requires_grad=True).to(self.device) * 5
-            )
-            print("NaN loss!")
-
         res = loss["policy_loss"]
         for k in logs:
             self.log(
-                "train_" + k, logs[k], on_step=True, logger=True,
+                "train_" + k,
+                logs[k],
+                on_step=True,
+                logger=True,
+                prog_bar=True,
             )
         return res
 
@@ -277,13 +281,13 @@ class ForwardModelV2(torch.nn.Module):
 class ForwardModelV3(torch.nn.Module):
     """FM with no action and diff"""
 
-    def __init__(self, file_path):
+    def __init__(self, file_path, diffs):
         super().__init__()
         m_config = FM.Config()
         m_config.model.fm_type = "km_no_action"
         m_config.model.checkpoint = file_path
         m_config.training.enable_latent = True
-        m_config.training.diffs = True
+        m_config.training.diffs = diffs
         module = FM(m_config)
         self.module = module
 

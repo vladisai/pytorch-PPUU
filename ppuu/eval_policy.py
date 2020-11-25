@@ -35,7 +35,7 @@ class EvalConfig(configs.ConfigBase):
     output_dir: str = None
     test_size_cap: int = None
     slurm: bool = False
-    model_type: str = "vanilla"
+    model_type: str = None
     diffs: bool = False
 
     def __post_init__(self):
@@ -64,10 +64,19 @@ class EvalConfig(configs.ConfigBase):
 def main(config):
     torch.multiprocessing.set_sharing_strategy("file_system")
     torch.multiprocessing.set_start_method("spawn")
+
+    checkpoint = torch.load(config.checkpoint_path)
+
+    if config.model_type is None:
+        config.model_type = checkpoint['hyper_parameters']['model_config']['model_type']
+
     Module = get_module(config.model_type)
-    mpur_module = Module.load_from_checkpoint(
-        checkpoint_path=config.checkpoint_path
-    )
+
+    mpur_module = Module(checkpoint['hyper_parameters'])
+    mpur_module.cuda()
+    mpur_module._setup_mixout()
+    mpur_module.load_state_dict(checkpoint['state_dict'], strict=False)
+
     mpur_module.policy_model.diffs = config.diffs
     alternative_module = None
     if config.alternative_checkpoint_path:

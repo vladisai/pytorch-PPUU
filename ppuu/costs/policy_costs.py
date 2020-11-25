@@ -501,7 +501,7 @@ class PolicyCost(PolicyCostBase):
         return self.compute_state_costs(images, states, car_sizes)
 
     def compute_state_costs_for_training(
-        self, images, states, actions, car_sizes
+        self, _inputs, images, states, actions, car_sizes
     ):
         return self.compute_state_costs(images, states, car_sizes)
 
@@ -539,6 +539,7 @@ class PolicyCost(PolicyCostBase):
         )
         loss_a = (predictions["pred_actions"]).norm(2, 2).pow(2).mean()
         state_losses = self.compute_state_costs_for_training(
+            inputs,
             predictions["pred_images"],
             predictions["pred_states"],
             predictions["pred_actions"],

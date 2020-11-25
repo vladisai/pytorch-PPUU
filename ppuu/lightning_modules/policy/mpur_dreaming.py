@@ -9,6 +9,7 @@ from ppuu.lightning_modules.policy.mpur import (
     MPURModule,
     inject,
     ForwardModelV2,
+    ForwardModelV3,
 )
 
 
@@ -17,7 +18,7 @@ class MPURDreamingModule(MPURModule):
     @dataclass
     class TrainingConfig(MPURModule.TrainingConfig):
         lrt_z: float = 0.1
-        n_z_updates: int = 2
+        n_z_updates: int = 1
         adversarial_frequency: int = 10
         n_adversarial_policy_updates: int = 1
         init_z_with_zero: bool = False
@@ -46,6 +47,7 @@ class MPURDreamingModule(MPURModule):
         original_z = z.clone()
         z.requires_grad = True
         optimizer_z = self.get_z_optimizer(z)
+        self.policy_model.eval()
 
         for i in range(self.config.training_config.n_z_updates):
             predictions = self.forward_model.unfold(
@@ -67,6 +69,7 @@ class MPURDreamingModule(MPURModule):
             .mean()
             .item()
         )
+        self.policy_model.train()
 
         mean_difference = mean_norm(z - original_z)
         mean_z_norm = mean_norm(z)
@@ -108,11 +111,6 @@ class MPURDreamingModule(MPURModule):
         )
         return predictions
 
-    def optimizer_step(
-        self, epoch, batch_idx, optimizer, optimizer_idx, *args, **kwargs
-    ):
-        optimizer.step()
-
     def training_step(self, batch, batch_idx, optimizer_idx=0):
         if batch_idx % self.config.training_config.adversarial_frequency == 0:
             predictions = self.forward_adversarial(batch)
@@ -125,6 +123,7 @@ class MPURDreamingModule(MPURModule):
             if optimizer_idx != 0:
                 # We don't use extra optimizers unless we're doing adversarial
                 # z.
+                print('zero')
                 return {"loss": torch.tensor(0.0, requires_grad=True)}
             predictions = self(batch)
             cost, components = self.policy_cost.calculate_z_cost(
@@ -132,11 +131,11 @@ class MPURDreamingModule(MPURModule):
             )
             self.log_z(cost, components, "normal")
         loss = self.policy_cost.calculate_cost(batch, predictions)
-        return {
-            "loss": loss["policy_loss"],
-            "log": loss,
-            "progress_bar": loss,
-        }
+        for k in loss:
+            self.log(
+                "train_" + k, loss[k], on_step=True, logger=True, prog_bar=True,
+            )
+        return loss["policy_loss"]
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
@@ -200,10 +199,17 @@ class MPURDreamingV2Module(MPURDreamingModule):
         def auto_batch_size(self):
             if self.batch_size == -1:
                 gpu_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-                self.batch_size = int((gpu_gb / 8) * 6)
+                self.batch_size = int((gpu_gb / 5) * 6)
                 print("auto batch size is set to", self.batch_size)
             self.auto_n_epochs()
 
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/refactored_debug/fm_km_5_states_resume_lower_lr/seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/fm_km_5_states_resume_lower_lr/seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
+
+
+@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV3)
+class MPURDreamingV3Module(MPURDreamingV2Module):
+    @dataclass
+    class ModelConfig(MPURModule.ModelConfig):
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"

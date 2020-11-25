@@ -99,8 +99,8 @@ class ForwardModel(torch.nn.Module):
             Z=Z,
         )
 
-class ForwardModelKM(ForwardModel):
 
+class ForwardModelKM(ForwardModel):
     def unfold_km(
         self,
         actions_or_policy: Union[torch.nn.Module, torch.Tensor],

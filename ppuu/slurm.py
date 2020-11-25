@@ -59,7 +59,7 @@ def get_executor(
         executor.update_parameters(
             name=job_name,
             # slurm_time="00:10:00", # two days
-            slurm_time="12:00:00",  # two days
+            slurm_time="48:00:00",  # two days
             gpus_per_node=gpus,
             nodes=nodes,
             cpus_per_task=cpus_per_task,

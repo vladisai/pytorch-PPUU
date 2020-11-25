@@ -368,6 +368,7 @@ class Dataset(torch.utils.data.Dataset):
 class EvaluationDataset(torch.utils.data.Dataset):
     def __init__(self, dataset, split="test", size_cap=None):
         data_dir = dataset
+        self.data_dir = data_dir
         splits_path = os.path.join(data_dir, "splits.pth")
         if os.path.exists(splits_path):
             logging.info(f"Loading splits {splits_path}")
@@ -408,6 +409,7 @@ class EvaluationDataset(torch.utils.data.Dataset):
     @classmethod
     def from_data_store(cls, data_store, split="test", size_cap=None):
         self = cls.__new__(cls)
+        self.data_dir = data_store.data_dir
         self.splits = data_store.splits
         self.car_sizes = data_store.car_sizes
         self.split = split

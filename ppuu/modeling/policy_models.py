@@ -80,6 +80,7 @@ class DeterministicPolicy(nn.Module):
         h_width=3,
         n_hidden=256,
         diffs=False,
+        turn_power=3,
     ):
         super().__init__()
         self.n_channels = 4
@@ -90,6 +91,7 @@ class DeterministicPolicy(nn.Module):
         self.h_width = h_width
         self.n_hidden = n_hidden
         self.diffs = diffs
+        self.turn_power = turn_power
         self.encoder = Encoder(
             a_size=0,
             n_inputs=self.n_cond,
@@ -147,7 +149,10 @@ class DeterministicPolicy(nn.Module):
 
         h = self.encoder(state_images, states).view(bsize, self.hsize)
         h = self.proj(h)  # from hidden_size to n_hidden
-        a = self.fc(h).view(bsize, self.n_outputs)
+        a_t = self.fc(h).view(bsize, self.n_outputs)
+        a = a_t.clone()
+        # Making the area around 0 smoother, we use e.g. x^3 as a smoother version of x.
+        a[..., 1] = a_t[..., 1].pow(self.turn_power)
 
         if normalize_outputs:
             a = a.data

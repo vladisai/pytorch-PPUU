@@ -13,12 +13,18 @@ def predict_states(states, actions, stats, timestep=0.1):
     actions = actions.clone()
     device = states.device
 
-    ss_std = (1e-8 + stats["s_std"][0].view(1, 5).expand(states.size())).to(
+    if len(stats["s_diff_std"].shape) > 1:
+        n_stats = {}
+        for k in stats:
+            n_stats[k] = stats[k][0]
+        stats = n_stats
+
+    ss_std = (1e-8 + stats["s_std"].view(1, 5).expand(states.size())).to(
         device
     )
-    ss_mean = stats["s_mean"][0].view(1, 5).expand(states.size()).to(device)
-    aa_std = (1e-8 + stats["a_std"][0].view(1, 2)).to(device)
-    aa_mean = stats["a_mean"][0].view(1, 2).to(device)
+    ss_mean = stats["s_mean"].view(1, 5).expand(states.size()).to(device)
+    aa_std = (1e-8 + stats["a_std"].view(1, 2)).to(device)
+    aa_mean = stats["a_mean"].view(1, 2).to(device)
 
     actions = actions * aa_std + aa_mean
     states = states * ss_std + ss_mean
@@ -74,14 +80,20 @@ def predict_states_diff(states, actions, stats, timestep=0.1):
     actions = actions.clone()
     device = states.device
 
-    ss_std = (stats["s_diff_std"][0].view(1, 5).expand(states.size())).to(
+    if len(stats["s_diff_std"].shape) > 1:
+        n_stats = {}
+        for k in stats:
+            n_stats[k] = stats[k][0]
+        stats = n_stats
+
+    ss_std = (1e-8 + stats["s_diff_std"].view(1, 5).expand(states.size())).to(
         device
     )
     ss_mean = (
-        stats["s_diff_mean"][0].view(1, 5).expand(states.size()).to(device)
+        stats["s_diff_mean"].view(1, 5).expand(states.size()).to(device)
     )
-    aa_std = (1e-8 + stats["a_std"][0].view(1, 2)).to(device)
-    aa_mean = stats["a_mean"][0].view(1, 2).to(device)
+    aa_std = (1e-8 + stats["a_std"].view(1, 2)).to(device)
+    aa_mean = stats["a_mean"].view(1, 2).to(device)
 
     actions = actions * aa_std + aa_mean
     states = states * ss_std + ss_mean
