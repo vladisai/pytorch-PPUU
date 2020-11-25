@@ -34,9 +34,7 @@ def inject(cost_type=PolicyCost, fm_type=ForwardModel):
     """
 
     def wrapper(cls_):
-        h = hashlib.md5(
-            (cost_type.__qualname__ + fm_type.__qualname__).encode()
-        ).hexdigest()[:7]
+        h = hashlib.md5((cost_type.__qualname__ + fm_type.__qualname__).encode()).hexdigest()[:7]
         suffix = f"{cls_.__name__}_{cost_type.__name__}_{fm_type.__name__}_{h}"
         config_name = f"config_{suffix}"
 
@@ -111,8 +109,7 @@ class MPURModule(pl.LightningModule):
                     p.requires_grad = False
 
         self.augmenter = Augmenter(
-            self.config.training_config.noise_augmentation_std,
-            self.config.training_config.noise_augmentation_p,
+            self.config.training_config.noise_augmentation_std, self.config.training_config.noise_augmentation_p,
         )
         self.nan_ctr = 0
 
@@ -128,26 +125,18 @@ class MPURModule(pl.LightningModule):
 
     def forward(self, batch):
         self.forward_model.eval()
-        predictions = self.forward_model.unfold(
-            self.policy_model, batch, augmenter=self.augmenter
-        )
+        predictions = self.forward_model.unfold(self.policy_model, batch, augmenter=self.augmenter)
         return predictions
 
     def training_step(self, batch, batch_idx):
         predictions = self(batch)
         loss = self.policy_cost.calculate_cost(batch, predictions)
         logs = loss.copy()
-        logs["action_norm"] = (
-            predictions["pred_actions"].norm(2, 2).pow(2).mean()
-        )
+        logs["action_norm"] = predictions["pred_actions"].norm(2, 2).pow(2).mean()
         res = loss["policy_loss"]
         for k in logs:
             self.log(
-                "train_" + k,
-                logs[k],
-                on_step=True,
-                logger=True,
-                prog_bar=True,
+                "train_" + k, logs[k], on_step=True, logger=True, prog_bar=True,
             )
         return res
 
@@ -184,9 +173,7 @@ class MPURModule(pl.LightningModule):
         if self.config.training_config.scheduler:
             # we want to have 0.1 learning rate after 70% of training
             scheduler = torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=int(self.config.training_config.n_epochs * 0.7),
-                gamma=0.1,
+                optimizer, step_size=int(self.config.training_config.n_epochs * 0.7), gamma=0.1,
             )
             return [optimizer], [scheduler]
         else:
@@ -209,9 +196,7 @@ class MPURModule(pl.LightningModule):
 
     def _setup_policy_cost(self):
         self.policy_cost = self.CostType(
-            self.config.cost_config,
-            self.forward_model,
-            self.trainer.datamodule.data_store.stats,
+            self.config.cost_config, self.forward_model, self.trainer.datamodule.data_store.stats,
         )
         self.policy_cost.estimate_uncertainty_stats(self.train_dataloader())
 
@@ -220,23 +205,15 @@ class MPURModule(pl.LightningModule):
             # self.policy_model = MixoutDeterministicPolicy(
             #     self.policy_model, p=self.config.training_config.mixout_p
             # )
-            self.mixout_wrapper = MixoutWrapper(
-                self.config.training_config.mixout_p
-            )
-            self.policy_model = self.policy_model.apply(
-                lambda x: self.mixout_wrapper(x)
-            )
+            self.mixout_wrapper = MixoutWrapper(self.config.training_config.mixout_p)
+            self.policy_model = self.policy_model.apply(lambda x: self.mixout_wrapper(x))
 
     def _setup_episode_evaluator(self):
         self.eval_dataset = EvaluationDataset.from_data_store(
             self.trainer.datamodule.data_store, split="val", size_cap=25
         )
         self.evaluator = PolicyEvaluator(
-            self.eval_dataset,
-            num_processes=5,
-            build_gradients=False,
-            return_episode_data=False,
-            enable_logging=False,
+            self.eval_dataset, num_processes=5, build_gradients=False, return_episode_data=False, enable_logging=False,
         )
 
     # @classmethod
@@ -301,13 +278,6 @@ class MPURContinuousV2Module(MPURContinuousModule):
     @dataclass
     class ModelConfig(MPURContinuousModule.ModelConfig):
         forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/fm_km_5_states_resume_lower_lr/seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
-
-    # @classmethod
-    # def _load_model_state(cls, checkpoint, *args, **kwargs):
-    #     return super(MPURModule, cls)._load_model_state(checkpoint, *args, **kwargs)
-
-
-# noqa: E501
 
 
 @inject(cost_type=PolicyCost, fm_type=ForwardModelV2)
