@@ -3,6 +3,7 @@ import dataclasses
 from dataclasses import dataclass
 import hashlib
 
+import wandb
 
 import torch
 import torch.optim as optim
@@ -87,6 +88,10 @@ class MPURModule(pl.LightningModule):
             self.config.model_config.forward_model_path, self.config.training_config.diffs
         )
 
+        # exclude fm from the graph
+        for p in self.forward_model.parameters():
+            p.requires_grad = False
+
         self.policy_model = policy_models.DeterministicPolicy(
             n_cond=self.config.model_config.n_cond,
             n_feature=self.config.model_config.n_feature,
@@ -129,6 +134,7 @@ class MPURModule(pl.LightningModule):
         return predictions
 
     def training_step(self, batch, batch_idx):
+        opt = self.optimizers()
         predictions = self(batch)
         loss = self.policy_cost.calculate_cost(batch, predictions)
         logs = loss.copy()
@@ -136,9 +142,36 @@ class MPURModule(pl.LightningModule):
         res = loss["policy_loss"]
         for k in logs:
             self.log(
-                "train_" + k, logs[k], on_step=True, logger=True, prog_bar=True,
+                "train/" + k, logs[k], on_step=True, logger=True, prog_bar=True,
             )
+
+        # We retain the gradient of actions to later log it to wandb.
+        predictions["pred_actions"].retain_grad()
+        self.manual_backward(res, opt)
+        self.log_action_grads(predictions["pred_actions"].grad)
+        self.manual_optimizer_step(opt)
+
         return res
+
+    def log_action_grads(self, grad):
+        # Mean across all timesteps
+        self.log("grads/all/action", grad.norm(2, dim=-1).mean(), on_step=False, on_epoch=True, logger=True)
+        self.log("grads/all/action_acceleration", grad[..., 0].abs().mean(), on_step=False, on_epoch=True, logger=True)
+        self.log("grads/all/action_turn", grad[..., 1].abs().mean(), on_step=False, on_epoch=True, logger=True)
+        # The first timestep
+        self.log("grads/0/action", grad[..., 0, :].norm(2, dim=-1).mean(), on_step=False, on_epoch=True, logger=True)
+        self.log("grads/0/action_acceleration", grad[..., 0, 0].abs().mean(), on_step=False, on_epoch=True, logger=True)
+        self.log("grads/0/action_turn", grad[..., 0, 1].abs().mean(), on_step=False, on_epoch=True, logger=True)
+
+        # breakpoint()
+        # self.wandb_log_grads_plot(grad.norm(dim=-1).mean(dim=0), "all")
+        # self.wandb_log_grads_plot(grad[..., 0].abs().mean(dim=0), "acceleration")
+        # self.wandb_log_grads_plot(grad[..., 1].abs().mean(dim=0), "turning")
+
+    def wandb_log_grads_plot(self, vals, title):
+        data = [[x, y] for (x, y) in enumerate(vals)]
+        table = wandb.Table(data=data, columns=["x", "y"])
+        self.logger.experiment.log({f"grads/plots/{title}": wandb.plot.line(table, "x", "y", title=title)})
 
     def validation_step(self, batch, batch_idx):
         predictions = self(batch)
@@ -146,7 +179,7 @@ class MPURModule(pl.LightningModule):
         res = loss["policy_loss"]
         for k in loss:
             self.log(
-                "val_" + k, loss[k], on_epoch=True, logger=True,
+                "val/" + k, loss[k], on_epoch=True, logger=True,
             )
         return res
 

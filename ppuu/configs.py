@@ -44,8 +44,8 @@ class ConfigBase:
 
 @dataclass
 class ModelConfig(ConfigBase):
-    model_type: str = field(default="vanilla")
-    checkpoint: Union[str, None] = field(default=None)
+    model_type: str = "vanilla"
+    checkpoint: Union[str, None] = None
 
 
 DATASET_PATHS_MAPPING = {
@@ -73,36 +73,36 @@ class TrainingConfig(ConfigBase):
     scripts.  Does not contain model configurations.
     """
 
-    learning_rate: float = field(default=0.0001)
-    n_epochs: int = field(default=101)
-    n_steps: float = field(default=5e5)
-    epoch_size: int = field(default=500)
-    batch_size: int = field(default=-1)
-    validation_size: int = field(default=25)
-    validation_period: int = field(default=1)
-    dataset: str = field(default="full_5")
-    data_shift: bool = field(default=False)
-    random_actions: bool = field(default=False)
-    seed: int = field(default=42)
-    output_dir: str = field(default=None)
-    experiment_name: str = field(default="train_mpur")
-    slurm: bool = field(default=False)
-    slurm_constraint: str = field(default="turing")
-    run_eval: bool = field(default=False)
-    debug: bool = field(default=False)
-    fast_dev_run: bool = field(default=False)
-    freeze_encoder: bool = field(default=False)
-    mixout_p: float = field(default=None)
-    validation_eval: bool = field(default=True)
-    noise_augmentation_std: float = field(default=0.07)
-    noise_augmentation_p: float = field(default=0.0)
-    gpus: int = field(default=1)
-    num_nodes: int = field(default=1)
-    distributed_backend: str = field(default="ddp")
-    resume_from_checkpoint: str = field(default=None)
-    version: str = field(default=None)
-    diffs: bool = field(default=False)
-    prince: bool = field(default=False)
+    learning_rate: float = 0.0001
+    n_epochs: int = 101
+    n_steps: float = 5e5
+    epoch_size: int = 500
+    batch_size: int = -1
+    validation_size: int = 25
+    validation_period: int = 1
+    dataset: str = "full_5"
+    data_shift: bool = False
+    random_actions: bool = False
+    seed: int = 42
+    output_dir: str = None
+    experiment_name: str = "train_mpur"
+    slurm: bool = False
+    slurm_constraint: str = "turing"
+    run_eval: bool = False
+    debug: bool = False
+    fast_dev_run: bool = False
+    freeze_encoder: bool = False
+    mixout_p: float = None
+    validation_eval: bool = True
+    noise_augmentation_std: float = 0.07
+    noise_augmentation_p: float = 0.0
+    gpus: int = 1
+    num_nodes: int = 1
+    distributed_backend: str = "ddp"
+    resume_from_checkpoint: str = None
+    version: str = None
+    diffs: bool = False
+    prince: bool = False
     scheduler: bool = False
 
     def __post_init__(self):

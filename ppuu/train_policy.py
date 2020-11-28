@@ -71,14 +71,13 @@ def main(config):
             filepath=os.path.join(
                 logger.log_dir, "checkpoints", "{epoch}_{sample_step}"
             ),
-            save_top_k=None,
+            save_top_k=-1,
             monitor=None,
         ),
         logger=logger,
         resume_from_checkpoint=config.training_config.resume_from_checkpoint,
         weights_save_path=logger.log_dir,
-        terminate_on_nan=True,
-        track_grad_norm=False,
+        automatic_optimization=False,
     )
 
     model = module(config)
