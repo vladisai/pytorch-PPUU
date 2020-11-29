@@ -75,8 +75,8 @@ def run_trial(config, run):
             ),
             logger=logger,
             weights_save_path=logger.log_dir,
-            terminate_on_nan=True,
-            track_grad_norm=2,
+            track_grad_norm=False,
+            automatic_optimization=False,
         )
         model = Module(config)
 

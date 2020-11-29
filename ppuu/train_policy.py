@@ -60,7 +60,7 @@ def main(config):
     trainer = pl.Trainer(
         gpus=config.training_config.gpus,
         num_nodes=config.training_config.num_nodes,
-        gradient_clip_val=50.0,
+        gradient_clip_val=0.5,
         max_epochs=config.training_config.n_epochs,
         check_val_every_n_epoch=period,
         num_sanity_val_steps=0,
