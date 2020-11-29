@@ -28,20 +28,20 @@ class MPURDreamingModule(MPURModule):
         self.adversarial_z = None
 
     def get_adversarial_z(self, batch):
-        if self.config.training_config.init_z_with_zero:
+        if self.config.training.init_z_with_zero:
             z = torch.zeros(
-                self.config.model_config.n_pred
-                * self.config.training_config.batch_size,
+                self.config.model.n_pred
+                * self.config.training.batch_size,
                 32,
             ).to(self.device)
         else:
             z = self.forward_model.sample_z(
-                self.config.model_config.n_pred
-                * self.config.training_config.batch_size
+                self.config.model.n_pred
+                * self.config.training.batch_size
             ).to(self.device)
         z = z.view(
-            self.config.training_config.batch_size,
-            self.config.model_config.n_pred,
+            self.config.training.batch_size,
+            self.config.model.n_pred,
             -1,
         ).detach()
         original_z = z.clone()
@@ -49,7 +49,7 @@ class MPURDreamingModule(MPURModule):
         optimizer_z = self.get_z_optimizer(z)
         self.policy_model.eval()
 
-        for i in range(self.config.training_config.n_z_updates):
+        for i in range(self.config.training.n_z_updates):
             predictions = self.forward_model.unfold(
                 self.policy_model, batch, z
             )
@@ -100,7 +100,7 @@ class MPURDreamingModule(MPURModule):
             )
 
     def get_z_optimizer(self, Z):
-        return torch.optim.Adam([Z], self.config.training_config.lrt_z)
+        return torch.optim.Adam([Z], self.config.training.lrt_z)
 
     def forward_adversarial(self, batch):
         self.forward_model.eval()
@@ -112,7 +112,7 @@ class MPURDreamingModule(MPURModule):
         return predictions
 
     def training_step(self, batch, batch_idx, optimizer_idx=0):
-        if batch_idx % self.config.training_config.adversarial_frequency == 0:
+        if batch_idx % self.config.training.adversarial_frequency == 0:
             predictions = self.forward_adversarial(batch)
             cost, components = self.policy_cost.calculate_z_cost(
                 batch, predictions
@@ -140,23 +140,23 @@ class MPURDreamingModule(MPURModule):
     def configure_optimizers(self):
         optimizer = optim.Adam(
             self.policy_model.parameters(),
-            self.config.training_config.learning_rate,
+            self.config.training.learning_rate,
         )
         return [
             optimizer
-        ] * self.config.training_config.n_adversarial_policy_updates
+        ] * self.config.training.n_adversarial_policy_updates
 
 
 @inject(cost_type=PolicyCostContinuous)
 class MPURDreamingLBFGSModule(MPURDreamingModule):
     def get_adversarial_z(self, batch):
         z = self.forward_model.sample_z(
-            self.config.model_config.n_pred
-            * self.config.training_config.batch_size
+            self.config.model.n_pred
+            * self.config.training.batch_size
         )
         z = z.view(
-            self.config.training_config.batch_size,
-            self.config.model_config.n_pred,
+            self.config.training.batch_size,
+            self.config.model.n_pred,
             -1,
         ).detach()
         original_z = z.clone()
@@ -188,7 +188,7 @@ class MPURDreamingLBFGSModule(MPURDreamingModule):
 
     def get_z_optimizer(self, Z):
         return torch.optim.LBFGS(
-            [Z], max_iter=self.config.training_config.n_z_updates
+            [Z], max_iter=self.config.training.n_z_updates
         )
 
 

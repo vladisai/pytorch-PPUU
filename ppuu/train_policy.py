@@ -19,53 +19,53 @@ def main(config):
     except RuntimeError:
         pass
 
-    config.training_config.auto_batch_size()
+    config.training.auto_batch_size()
 
-    if config.training_config.debug or config.training_config.fast_dev_run:
-        config.training_config.set_dataset("50")
-        config.training_config.epoch_size = 10
-        config.training_config.n_epochs = 10
-        config.cost_config.uncertainty_n_batches = 10
+    if config.training.debug or config.training.fast_dev_run:
+        config.training.set_dataset("50")
+        config.training.epoch_size = 10
+        config.training.n_epochs = 10
+        config.cost.uncertainty_n_batches = 10
 
     module = lightning_modules.policy.get_module(
-        config.model_config.model_type
+        config.model.model_type
     )
     datamodule = NGSIMDataModule(
-        config.training_config.dataset,
-        config.training_config.epoch_size,
-        config.training_config.validation_size,
-        config.training_config.batch_size,
+        config.training.dataset,
+        config.training.epoch_size,
+        config.training.validation_size,
+        config.training.batch_size,
         workers=0,
-        diffs=config.training_config.diffs,
+        diffs=config.training.diffs,
     )
 
-    pl.seed_everything(config.training_config.seed)
+    pl.seed_everything(config.training.seed)
 
     logger = CustomLoggerWB(
-        save_dir=config.training_config.output_dir,
-        experiment_name=config.training_config.experiment_name,
-        seed=f"seed={config.training_config.seed}",
-        version=config.training_config.version,
+        save_dir=config.training.output_dir,
+        experiment_name=config.training.experiment_name,
+        seed=f"seed={config.training.seed}",
+        version=config.training.version,
         project="PPUU_policy",
     )
 
     n_checkpoints = 5
-    if config.training_config.n_steps is not None:
+    if config.training.n_steps is not None:
         n_checkpoints = max(
-            n_checkpoints, int(config.training_config.n_steps / 1e5)
+            n_checkpoints, int(config.training.n_steps / 1e5)
         )
 
-    period = max(1, config.training_config.n_epochs // n_checkpoints)
+    period = max(1, config.training.n_epochs // n_checkpoints)
 
     trainer = pl.Trainer(
-        gpus=config.training_config.gpus,
-        num_nodes=config.training_config.num_nodes,
+        gpus=config.training.gpus,
+        num_nodes=config.training.num_nodes,
         gradient_clip_val=0.5,
-        max_epochs=config.training_config.n_epochs,
+        max_epochs=config.training.n_epochs,
         check_val_every_n_epoch=period,
         num_sanity_val_steps=0,
-        fast_dev_run=config.training_config.fast_dev_run,
-        distributed_backend=config.training_config.distributed_backend,
+        fast_dev_run=config.training.fast_dev_run,
+        distributed_backend=config.training.distributed_backend,
         callbacks=[LearningRateMonitor(logging_interval="step")],
         checkpoint_callback=pl.callbacks.ModelCheckpoint(
             filepath=os.path.join(
@@ -75,7 +75,7 @@ def main(config):
             monitor=None,
         ),
         logger=logger,
-        resume_from_checkpoint=config.training_config.resume_from_checkpoint,
+        resume_from_checkpoint=config.training.resume_from_checkpoint,
         weights_save_path=logger.log_dir,
         automatic_optimization=False,
     )
@@ -91,13 +91,13 @@ if __name__ == "__main__":
     use_slurm = slurm.parse_from_command_line()
     if use_slurm:
         executor = slurm.get_executor(
-            job_name=config.training_config.experiment_name,
+            job_name=config.training.experiment_name,
             cpus_per_task=4,
-            nodes=config.training_config.num_nodes,
-            gpus=config.training_config.gpus,
-            constraint=config.training_config.slurm_constraint,
-            logs_path=config.training_config.slurm_logs_path,
-            prince=config.training_config.prince,
+            nodes=config.training.num_nodes,
+            gpus=config.training.gpus,
+            constraint=config.training.slurm_constraint,
+            logs_path=config.training.slurm_logs_path,
+            prince=config.training.prince,
         )
         job = executor.submit(main, config)
         print(f"submitted to slurm with job id: {job.job_id}")

@@ -45,9 +45,9 @@ def inject(cost_type=PolicyCost, fm_type=ForwardModel):
 
             @dataclass
             class Config(configs.ConfigBase):
-                model_config: cls_.ModelConfig = cls_.ModelConfig()
-                cost_config: cost_type.Config = cost_type.Config()
-                training_config: cls_.TrainingConfig = cls_.TrainingConfig()
+                model: cls_.ModelConfig = cls_.ModelConfig()
+                cost: cost_type.Config = cost_type.Config()
+                training: cls_.TrainingConfig = cls_.TrainingConfig()
 
         Cls.Config.__qualname__ = config_name
         Cls.Config.__name__ = config_name
