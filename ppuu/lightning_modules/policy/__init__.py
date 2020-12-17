@@ -16,7 +16,6 @@ from ppuu.lightning_modules.policy.mpur_dreaming import (
 )
 from ppuu.lightning_modules.policy.mpur_km import (
     MPURKMModule,
-    MPURKMSplitModule,
     MPURKMTaperModule,
     MPURKMTaperV3Module,
 )
@@ -27,7 +26,6 @@ MODULES_DICT = dict(
     dreaming=MPURDreamingModule,
     dreaming_lbfgs=MPURDreamingLBFGSModule,
     km=MPURKMModule,
-    km_split=MPURKMSplitModule,
     km_taper=MPURKMTaperModule,
     km_taper_v3=MPURKMTaperV3Module,
     continuous=MPURContinuousModule,

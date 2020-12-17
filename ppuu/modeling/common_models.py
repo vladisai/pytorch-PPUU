@@ -192,7 +192,7 @@ class Decoder(nn.Module):
         assert self.layers == 3
         assert self.n_feature % 4 == 0
         self.feature_maps = [
-            self.n_feature,
+            int(self.n_feature),
             int(self.n_feature / 2),
             int(self.n_feature / 4),
         ]

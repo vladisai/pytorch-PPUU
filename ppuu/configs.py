@@ -1,10 +1,12 @@
 import argparse
 import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 import math
 import os
-from typing import Tuple, Iterable, Union, NewType, Any
+from typing import Tuple, Iterable, Union, NewType, Any, Optional
+
+from omegaconf import OmegaConf, MISSING
 
 import torch
 
@@ -20,51 +22,28 @@ class ConfigBase:
 
     @classmethod
     def parse_from_command_line(cls):
-        result = DataclassArgParser(
-            cls, fromfile_prefix_chars="@"
-        ).parse_args_into_dataclasses()
+        return omegaconf_parse(cls)
+
+    @classmethod
+    def parse_from_command_line_deprecated(cls):
+        result = DataclassArgParser(cls, fromfile_prefix_chars="@").parse_args_into_dataclasses()
         if len(result) > 1:
-            raise RuntimeError(
-                f"The following arguments were not recognized: {result[1:]}"
-            )
+            raise RuntimeError(f"The following arguments were not recognized: {result[1:]}")
         return result[0]
 
     @classmethod
     def parse_from_dict(cls, inputs):
-        return DataclassArgParser(cls)._populate_dataclass_from_dict(
-            cls, inputs.copy()
-        )
+        return DataclassArgParser(cls)._populate_dataclass_from_dict(cls, inputs.copy())
 
     @classmethod
     def parse_from_flat_dict(cls, inputs):
-        return DataclassArgParser(cls)._populate_dataclass_from_flat_dict(
-            cls, inputs.copy()
-        )
+        return DataclassArgParser(cls)._populate_dataclass_from_flat_dict(cls, inputs.copy())
 
 
 @dataclass
 class ModelConfig(ConfigBase):
     model_type: str = "vanilla"
     checkpoint: Union[str, None] = None
-
-
-DATASET_PATHS_MAPPING = {
-    "full": (
-        "/misc/vlgscratch4/LecunGroup/nvidia-collab/traffic-data_offroad/state-action-cost/data_i80_v0/"  # noqa: E501
-    ),
-    "50_old": (
-        "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/traffic-data_offroad_50_test_train_same/state-action-cost/data_i80_v0/"  # noqa: E501
-    ),
-    "50": (
-        "/home/us441/nvidia-collab/vlad/traffic-data-5-small/state-action-cost/data_i80_v0/"  # noqa: E501
-    ),
-    "full_5": (
-        "/home/us441/nvidia-collab/vlad/traffic-data-5/state-action-cost/data_i80_v0/"  # noqa: E501
-    ),
-    "full_old": (
-        "/home/us441/nvidia-collab/vlad/traffic-data_offroad/state-action-cost/data_i80_v0/"  # noqa: E501
-    ),
-}
 
 
 @dataclass
@@ -80,33 +59,31 @@ class TrainingConfig(ConfigBase):
     batch_size: int = -1
     validation_size: int = 25
     validation_period: int = 1
-    dataset: str = "full_5"
+    dataset: str = MISSING
     data_shift: bool = False
     random_actions: bool = False
     seed: int = 42
-    output_dir: str = None
-    experiment_name: str = "train_mpur"
+    output_dir: Optional[str] = None
+    experiment_name: Optional[str] = None
     slurm: bool = False
     slurm_constraint: str = "turing"
     run_eval: bool = False
     debug: bool = False
     fast_dev_run: bool = False
     freeze_encoder: bool = False
-    mixout_p: float = None
+    mixout_p: Optional[float] = None
     validation_eval: bool = True
     noise_augmentation_std: float = 0.07
     noise_augmentation_p: float = 0.0
+    wandb_offline: bool = False
     gpus: int = 1
     num_nodes: int = 1
     distributed_backend: str = "ddp"
-    resume_from_checkpoint: str = None
-    version: str = None
+    resume_from_checkpoint: Optional[str] = None
+    version: Optional[str] = None
     diffs: bool = False
     prince: bool = False
-    scheduler: bool = False
-
-    def __post_init__(self):
-        self.set_dataset(self.dataset)
+    scheduler: Optional[str] = None
 
     def auto_batch_size(self):
         if self.batch_size == -1:
@@ -117,23 +94,12 @@ class TrainingConfig(ConfigBase):
 
     def auto_n_epochs(self):
         if self.n_steps != 0:
-            self.n_epochs = math.ceil(
-                self.n_steps / self.batch_size / self.epoch_size
-            )
+            self.n_epochs = math.ceil(self.n_steps / self.batch_size / self.epoch_size)
             print("auto set n_epochs to", self.n_epochs)
-
-    def set_dataset(self, dataset):
-        self.dataset = dataset
-        if self.dataset in DATASET_PATHS_MAPPING:
-            self.dataset = DATASET_PATHS_MAPPING[self.dataset]
 
     @property
     def slurm_logs_path(self):
-        return os.path.join(
-            self.output_dir,
-            self.experiment_name,
-            f"seed={self.seed}_slurm_logs",
-        )
+        return os.path.join(self.output_dir, self.experiment_name, f"seed={self.seed}_slurm_logs",)
 
 
 @dataclass
@@ -155,9 +121,7 @@ class DataclassArgParser(argparse.ArgumentParser):
     """
 
     def __init__(
-        self,
-        dataclass_types: Union[DataClassType, Iterable[DataClassType]],
-        **kwargs,
+        self, dataclass_types: Union[DataClassType, Iterable[DataClassType]], **kwargs,
     ):
         """
         Args:
@@ -189,9 +153,7 @@ class DataclassArgParser(argparse.ArgumentParser):
                 if f.default is not dataclasses.MISSING:
                     kwargs["default"] = f.default
             elif f.type is bool:
-                kwargs["action"] = (
-                    "store_false" if f.default is True else "store_true"
-                )
+                kwargs["action"] = "store_false" if f.default is True else "store_true"
                 if f.default is True:
                     field_name = f"--no-{f.name}"
                     kwargs["dest"] = f.name
@@ -238,18 +200,12 @@ class DataclassArgParser(argparse.ArgumentParser):
         return outputs
 
     @staticmethod
-    def _populate_dataclass(
-        dtype: DataClassType, namespace: argparse.Namespace
-    ):
+    def _populate_dataclass(dtype: DataClassType, namespace: argparse.Namespace):
         keys = {f.name for f in dataclasses.fields(dtype)}
         inputs = {k: v for k, v in vars(namespace).items() if k in keys}
         for k in keys:
             delattr(namespace, k)
-        sub_dataclasses = {
-            f.name: f.type
-            for f in dataclasses.fields(dtype)
-            if dataclasses.is_dataclass(f.type)
-        }
+        sub_dataclasses = {f.name: f.type for f in dataclasses.fields(dtype) if dataclasses.is_dataclass(f.type)}
         for k, s in sub_dataclasses.items():
             inputs[k] = DataclassArgParser._populate_dataclass(s, namespace)
         obj = dtype(**inputs)
@@ -257,17 +213,13 @@ class DataclassArgParser(argparse.ArgumentParser):
 
     @staticmethod
     def _populate_dataclass_from_dict(dtype: DataClassType, d: dict):
-        d = d.copy()
+        d = DataclassArgParser.legacy_transform_dict(d.copy())
         keys = {f.name for f in dataclasses.fields(dtype)}
         inputs = {k: v for k, v in d.items() if k in keys}
         for k in keys:
             if k in d:
                 del d[k]
-        sub_dataclasses = {
-            f.name: f.type
-            for f in dataclasses.fields(dtype)
-            if dataclasses.is_dataclass(f.type)
-        }
+        sub_dataclasses = {f.name: f.type for f in dataclasses.fields(dtype) if dataclasses.is_dataclass(f.type)}
         for k, s in sub_dataclasses.items():
             inputs[k] = DataclassArgParser._populate_dataclass_from_dict(s, inputs[k])
         obj = dtype(**inputs)
@@ -275,18 +227,49 @@ class DataclassArgParser(argparse.ArgumentParser):
 
     @staticmethod
     def _populate_dataclass_from_flat_dict(dtype: DataClassType, d: dict):
-        d = d.copy()
+        d = DataclassArgParser.legacy_transform_dict(d.copy())
         keys = {f.name for f in dataclasses.fields(dtype)}
         inputs = {k: v for k, v in d.items() if k in keys}
         for k in keys:
             if k in d:
                 del d[k]
-        sub_dataclasses = {
-            f.name: f.type
-            for f in dataclasses.fields(dtype)
-            if dataclasses.is_dataclass(f.type)
-        }
+        sub_dataclasses = {f.name: f.type for f in dataclasses.fields(dtype) if dataclasses.is_dataclass(f.type)}
         for k, s in sub_dataclasses.items():
             inputs[k] = DataclassArgParser._populate_dataclass_from_dict(s, d)
         obj = dtype(**inputs)
         return obj
+
+    @staticmethod
+    def legacy_transform_dict(d: dict):
+        """Transforms the dictionary to an older version of the dataclasses"""
+        key_mapping = {
+            "training_config": "training",
+            "model_config": "model",
+            "cost_config": "cost",
+        }
+        nd = {}
+        for k in d:
+            if k in key_mapping:
+                nd[key_mapping[k]] = d[k]
+            else:
+                nd[k] = d[k]
+        return nd
+
+
+def omegaconf_parse(cls):
+    parser = argparse.ArgumentParser(fromfile_prefix_chars="@")
+    parser.add_argument(
+        "--configs", nargs="*", default=[], help="Configs to load",
+    )
+    parser.add_argument(
+        "--values", nargs="*", default=[], help="Dot values to change configs",
+    )
+    args, _unknown = parser.parse_known_args()
+
+    configs = [OmegaConf.structured(cls)]
+    for path in args.configs:
+        configs.append(OmegaConf.load(path))
+    configs.append(OmegaConf.from_dotlist(args.values))
+    omega_config = OmegaConf.merge(*configs)
+    res = cls.parse_from_dict(OmegaConf.to_container(omega_config))
+    return res

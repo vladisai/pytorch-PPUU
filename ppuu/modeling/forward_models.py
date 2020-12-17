@@ -48,6 +48,7 @@ class FwdCNN(nn.Module):
         self.hidden_size = hidden_size
         self.ncond = ncond
         self.predict_state = predict_state
+        self.normalizer = None
 
         self.encoder = Encoder(a_size=0, n_inputs=self.ncond)
         self.decoder = Decoder(
@@ -101,7 +102,7 @@ class FwdCNN(nn.Module):
 
         return pred_image, pred_state
 
-    def forward(self, inputs, actions, target, sampling=None, z_dropout=None):
+    def forward(self, inputs, actions, _target, sampling=None, z_dropout=None):
         npred = actions.size(1)
         input_images, input_states = inputs
         pred_images, pred_states = [], []
@@ -128,6 +129,7 @@ class FwdCNN(nn.Module):
         batch,
         Z=None,
         augmenter=None,
+        npred=None,
     ):
         input_images = batch["input_images"].clone()
         input_states = batch["input_states"].clone()
@@ -141,7 +143,8 @@ class FwdCNN(nn.Module):
             # need a version of the state with ego car on the 4th channel.
             ego_car_required = True
             input_ego_car_orig = batch["ego_cars"]
-            npred = batch["target_images"].size(1)
+            if npred is None:
+                npred = batch["target_images"].size(1)
 
             ego_car_new_shape = [*input_images.shape]
             ego_car_new_shape[2] = 1

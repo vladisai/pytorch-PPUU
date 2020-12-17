@@ -34,6 +34,7 @@ class PolicyEvaluator:
         return_episode_data: bool = False,
         enable_logging: bool = True,
         rollback_seconds: int = 3,
+        visualizer=None,
     ):
         self.dataset = dataset
         self.build_gradients = build_gradients
@@ -41,6 +42,8 @@ class PolicyEvaluator:
         self.num_processes = num_processes
         self.enable_logging = enable_logging
         self.rollback_seconds = rollback_seconds
+        self.visualizer = visualizer
+        assert self.visualizer is None or self.num_processes == 0, "can't use visualizer with multiprocessing"
 
         i80_env_id = "I-80-v1"
         if i80_env_id not in [e.id for e in gym.envs.registry.all()]:
@@ -60,34 +63,22 @@ class PolicyEvaluator:
         self.env = gym.make(i80_env_id)
 
     def get_performance_stats(self, results_per_episode):
-        results_per_episode_df = pd.DataFrame.from_dict(
-            results_per_episode, orient="index"
-        )
+        results_per_episode_df = pd.DataFrame.from_dict(results_per_episode, orient="index")
         return dict(
             mean_distance=results_per_episode_df["distance_travelled"].mean(),
             mean_time=results_per_episode_df["time_travelled"].mean(),
             success_rate=results_per_episode_df["road_completed"].mean(),
-            success_rate_alt=results_per_episode_df[
-                "road_completed_alt"
-            ].mean(),
+            success_rate_alt=results_per_episode_df["road_completed_alt"].mean(),
             collision_rate=results_per_episode_df["has_collided"].mean(),
-            collision_ahead_rate=results_per_episode_df[
-                "has_collided_ahead"
-            ].mean(),
-            collision_behind_rate=results_per_episode_df[
-                "has_collided_behind"
-            ].mean(),
+            collision_ahead_rate=results_per_episode_df["has_collided_ahead"].mean(),
+            collision_behind_rate=results_per_episode_df["has_collided_behind"].mean(),
             off_screen_rate=results_per_episode_df["off_screen"].mean(),
-            alternative_better=results_per_episode_df[
-                "alternative_better"
-            ].mean(),
-            alternative_distance_diff=results_per_episode_df[
-                "alternative_distance_diff"
-            ].mean(),
+            alternative_better=results_per_episode_df["alternative_better"].mean(),
+            alternative_distance_diff=results_per_episode_df["alternative_distance_diff"].mean(),
             succeeded=int(results_per_episode_df["road_completed"].sum()),
         )
 
-    def unfold(self, env, inputs, policy):
+    def unfold(self, env, inputs, policy, car_size):
         Unfolding = namedtuple(
             "Unfolding",
             [
@@ -123,6 +114,9 @@ class PolicyEvaluator:
 
         t = 0
 
+        if hasattr(policy, "reset"):
+            policy.reset()
+
         while not done:
             input_images = inputs["context"].contiguous()
             input_states = inputs["state"].contiguous()
@@ -130,7 +124,7 @@ class PolicyEvaluator:
             a = policy(
                 input_images.cuda(),
                 input_states.cuda(),
-                sample=True,
+                car_size=car_size,
                 normalize_inputs=True,
                 normalize_outputs=True,
             )
@@ -149,32 +143,24 @@ class PolicyEvaluator:
             if cost["arrived_to_dst"]:
                 road_completed = True
 
-            done = (
-                done
-                or (has_collided and has_collided_ahead)
-                or road_completed
-                or off_screen
-            )
+            done = done or (has_collided and has_collided_ahead) or road_completed or off_screen
+
+            if self.visualizer is not None:
+                self.visualizer.update(inputs['context'][-1].contiguous())
+                self.visualizer.update_c(policy.cost.overlay[0].contiguous())
 
             # every second, we save a copy of the environment
             if t % 10 == 0:
                 # need to remove lane surfaces because they're unpickleable
                 env._lane_surfaces = dict()
-                env_copies.append(
-                    TimeCapsule(copy.deepcopy(env), inputs, cost)
-                )
+                env_copies.append(TimeCapsule(copy.deepcopy(env), inputs, cost))
             t += 1
 
             off_screen = info.off_screen
             images.append(input_images[-1])
             states.append(input_states[-1])
             costs.append(cost)
-            actions.append(
-                (
-                    (torch.tensor(a[0]) - self.dataset.stats["a_mean"])
-                    / self.dataset.stats["a_std"]
-                )
-            )
+            actions.append(((torch.tensor(a[0]) - self.dataset.stats["a_mean"]) / self.dataset.stats["a_std"]))
 
         images = torch.stack(images)
         states = torch.stack(states)
@@ -198,32 +184,21 @@ class PolicyEvaluator:
             action_sequence=unfolding.actions,
             state_sequence=unfolding.states,
             cost_sequence=unfolding.costs,
-            images=(unfolding.images[:, :3] + unfolding.images[:, 3:]).clamp(
-                max=255
-            ),
+            images=(unfolding.images[:, :3] + unfolding.images[:, 3:]).clamp(max=255),
             gradients=None,
         )
 
     def _build_result(self, unfolding):
         return dict(
             time_travelled=len(unfolding.images),
-            distance_travelled=(
-                unfolding.states[-1][0] - unfolding.states[0][0]
-            ).item(),
-            road_completed=(
-                unfolding.road_completed and not unfolding.has_collided
-            ),
-            road_completed_alt=(
-                unfolding.road_completed and not unfolding.has_collided_ahead
-            ),
+            distance_travelled=(unfolding.states[-1][0] - unfolding.states[0][0]).item(),
+            road_completed=(unfolding.road_completed and not unfolding.has_collided),
+            road_completed_alt=(unfolding.road_completed and not unfolding.has_collided_ahead),
             off_screen=(
                 unfolding.off_screen
                 and not (
                     (unfolding.road_completed and not unfolding.has_collided)
-                    or (
-                        unfolding.road_completed
-                        and not unfolding.has_collided_ahead
-                    )
+                    or (unfolding.road_completed and not unfolding.has_collided_ahead)
                 )
             ),
             has_collided=unfolding.has_collided,
@@ -232,24 +207,14 @@ class PolicyEvaluator:
         )
 
     def _process_one_episode(
-        self,
-        policy_model,
-        policy_cost,
-        car_info,
-        index,
-        output_dir,
-        alternative_policy=None,
+        self, policy_model, policy_cost, car_info, index, output_dir, alternative_policy=None,
     ):
-        inputs = self.env.reset(
-            time_slot=car_info["time_slot"], vehicle_id=car_info["car_id"]
-        )
-        unfolding = self.unfold(self.env, inputs, policy_model)
+        inputs = self.env.reset(time_slot=car_info["time_slot"], vehicle_id=car_info["car_id"])
+        unfolding = self.unfold(self.env, inputs, policy_model, car_info["car_size"])
         alternative_unfolding = None
         if unfolding.has_collided and alternative_policy is not None:
             alternative_unfolding = self.unfold(
-                unfolding.env_copies[0].env,
-                unfolding.env_copies[0].inputs,
-                alternative_policy,
+                unfolding.env_copies[0].env, unfolding.env_copies[0].inputs, alternative_policy, car_info["car_size"]
             )
 
         result = self._build_result(unfolding)
@@ -258,16 +223,9 @@ class PolicyEvaluator:
 
         if alternative_unfolding is not None:
             result["alternative"] = self._build_result(alternative_unfolding)
-            result["alternative_better"] = int(
-                not unfolding.road_completed
-                and alternative_unfolding.road_completed
-            )
-            alternative_distance = (
-                alternative_unfolding.states[-1][0] - unfolding.states[0][0]
-            ).item()
-            result["alternative_distance_diff"] = (
-                alternative_distance - result["distance_travelled"]
-            )
+            result["alternative_better"] = int(not unfolding.road_completed and alternative_unfolding.road_completed)
+            alternative_distance = (alternative_unfolding.states[-1][0] - unfolding.states[0][0]).item()
+            result["alternative_distance_diff"] = alternative_distance - result["distance_travelled"]
             episode_data["alternative"] = self._build_episode_data(unfolding)
         else:
             result["alternative_better"] = math.nan
@@ -279,9 +237,7 @@ class PolicyEvaluator:
                 dict(
                     input_images=unfolding.images[:, :3].contiguous(),
                     input_states=unfolding.states,
-                    car_sizes=torch.tensor(
-                        car_info["car_size"], dtype=torch.float32
-                    ),
+                    car_sizes=torch.tensor(car_info["car_size"], dtype=torch.float32),
                 ),
             )[0]
 
@@ -304,9 +260,7 @@ class PolicyEvaluator:
         alternative_module: Optional[torch.nn.Module] = None,
     ):
         if output_dir is not None:
-            os.makedirs(
-                os.path.join(output_dir, "episode_data"), exist_ok=True
-            )
+            os.makedirs(os.path.join(output_dir, "episode_data"), exist_ok=True)
 
         time_started = time.time()
         if self.num_processes > 0:
@@ -317,27 +271,31 @@ class PolicyEvaluator:
 
         # We create a copy of the cost module, but don't pass in the forward
         # model because we don't need it unless we calculate uncertainty.
-        policy_cost = module.CostType(
-            module.config.cost_config, None, self.dataset.stats,
-        )
-        module.policy_model.cuda()
-        module.policy_model.stats = self.dataset.stats
-        if alternative_module:
-            alternative_module.policy_model.cuda()
-            alternative_module.policy_model.stats = self.dataset.stats
+        if self.build_gradients:
+            policy_cost = module.CostType(module.config.cost, None, self.dataset.stats,)
+        else:
+            policy_cost = None
+
+        if hasattr(module, "policy_model"):
+            module.policy_model.cuda()
+            # module.policy_model.stats = self.dataset.stats
+            if alternative_module is not None:
+                alternative_module.policy_model.cuda()
+                # alternative_module.policy_model.stats = self.dataset.stats
+            policy_model = module.policy_model
+        else:
+            policy_model = module
 
         for j, data in enumerate(self.dataset):
             async_results.append(
                 executor.submit(
                     self._process_one_episode,
-                    module.policy_model,
+                    policy_model,
                     policy_cost,
                     data,
                     j,
                     output_dir,
-                    alternative_policy=alternative_module.policy_model
-                    if alternative_module is not None
-                    else None,
+                    alternative_policy=alternative_module.policy_model if alternative_module is not None else None,
                 )
             )
 
@@ -355,10 +313,7 @@ class PolicyEvaluator:
                     (
                         f"ep: {j + 1:3d}/{len(self.dataset)}",
                         f"time: {simulation_result['time_travelled']}",
-                        (
-                            f"distance:"
-                            f" {simulation_result['distance_travelled']:.0f}"
-                        ),
+                        (f"distance:" f" {simulation_result['distance_travelled']:.0f}"),
                         f"success: {simulation_result['road_completed']:d}",
                         f"success_alt: {simulation_result['road_completed_alt']:d}",
                         f"success rate: {stats['success_rate']:.2f}",
@@ -378,10 +333,7 @@ class PolicyEvaluator:
         result["stats"]["steps evaluated per second"] = eval_speed
 
         if output_dir is not None:
-            with open(
-                os.path.join(output_dir, "evaluation_results_symbolic.json"),
-                "w",
-            ) as f:
+            with open(os.path.join(output_dir, "evaluation_results_symbolic.json"), "w",) as f:
                 json.dump(result, f, indent=4)
 
         return result

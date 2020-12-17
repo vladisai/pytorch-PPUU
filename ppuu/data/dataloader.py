@@ -55,13 +55,7 @@ class DataStore:
                     actions.append(fd["actions"])
                     costs.append(
                         torch.cat(
-                            (
-                                fd.get("pixel_proximity_cost")[:Ta].view(
-                                    -1, 1
-                                ),
-                                fd.get("lane_cost")[:Ta].view(-1, 1),
-                            ),
-                            1,
+                            (fd.get("pixel_proximity_cost")[:Ta].view(-1, 1), fd.get("lane_cost")[:Ta].view(-1, 1),), 1,
                         ),
                     )
                     states.append(fd["states"])
@@ -92,9 +86,7 @@ class DataStore:
             logging.info(f"Loading splits {splits_path}")
             splits = torch.load(splits_path)
             self.splits = dict(
-                train=splits.get("train_indx"),
-                val=splits.get("valid_indx"),
-                test=splits.get("test_indx"),
+                train=splits.get("train_indx"), val=splits.get("valid_indx"), test=splits.get("test_indx"),
             )
         else:
             print("[generating data splits]")
@@ -103,23 +95,20 @@ class DataStore:
             n_train = int(math.floor(self.n_episodes * 0.8))
             n_valid = int(math.floor(self.n_episodes * 0.1))
             self.splits = dict(
-                train=perm[0:n_train],
-                valid=perm[n_train : n_train + n_valid],
-                test=perm[n_train + n_valid :],
+                train=perm[0:n_train], valid=perm[n_train : n_train + n_valid], test=perm[n_train + n_valid :],
             )
             torch.save(self.splits, splits_path)
 
         stats_path = data_dir + "/data_stats_with_diff.pth"
         if os.path.isfile(stats_path):
             logging.info(f"Loading data stata {stats_path}")
-            stats = torch.load(stats_path)
-            self.stats = stats
-            self.a_mean = stats.get("a_mean")
-            self.a_std = stats.get("a_std")
-            self.s_mean = stats.get("s_mean")
-            self.s_std = stats.get("s_std")
-            self.s_diff_mean = stats.get("s_diff_mean")
-            self.s_diff_std = stats.get("s_diff_std")
+            self.stats = torch.load(stats_path)
+            self.a_mean = self.stats.get("a_mean")
+            self.a_std = self.stats.get("a_std")
+            self.s_mean = self.stats.get("s_mean")
+            self.s_std = self.stats.get("s_std")
+            self.s_diff_mean = self.stats.get("s_diff_mean")
+            self.s_diff_std = self.stats.get("s_diff_std")
         else:
             print("[computing action stats]")
             all_actions = []
@@ -172,16 +161,7 @@ class DataStore:
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(
-        self,
-        data_store,
-        split,
-        n_cond,
-        n_pred,
-        size,
-        shift,
-        random_actions,
-        normalize=True,
-        state_diffs=False,
+        self, data_store, split, n_cond, n_pred, size, shift, random_actions, normalize=True, state_diffs=False,
     ):
         self.split = split
         self.data_store = data_store
@@ -243,19 +223,14 @@ class Dataset(torch.utils.data.Dataset):
             # s = indx[0]
             # min is important since sometimes numbers do not align causing
             # issues in stack operation below
-            episode_length = min(
-                self.data_store.images[s].size(0),
-                self.data_store.states[s].size(0),
-            )
+            episode_length = min(self.data_store.images[s].size(0), self.data_store.states[s].size(0),)
             if episode_length >= T:
                 t = self.random.randint(0, episode_length - T)
                 images = self.data_store.images[s][t : t + T]
                 actions = self.data_store.actions[s][t : t + T]
                 states = self.data_store.states[s][t : t + T, 0]
                 state_diffs = states[1:] - states[:-1]
-                state_diffs = torch.cat(
-                    [torch.zeros(1, 5), state_diffs], axis=0
-                )
+                state_diffs = torch.cat([torch.zeros(1, 5), state_diffs], axis=0)
                 costs = self.data_store.costs[s][t : t + T]
                 ids = self.data_store.ids[s]
                 ego_cars = self.data_store.ego_car_images[s]
@@ -291,7 +266,6 @@ class Dataset(torch.utils.data.Dataset):
             input_states[:, :2] = input_state_diffs[:, :2]
             target_states[:, :2] = target_state_diffs[:, :2]
 
-
         if not self.shift:
             t0 -= 1
             t1 -= 1
@@ -324,44 +298,22 @@ class Dataset(torch.utils.data.Dataset):
         return images.float().div_(255.0)
 
     def normalise_state_vector(self, states):
-        shape = (
-            (1, 1, 5) if states.dim() == 3 else (1, 5)
-        )  # dim = 3: state sequence, dim = 2: single state
-        states -= (
-            self.data_store.s_mean.view(*shape)
-            .expand(states.size())
-            .to(states.device)
-        )
-        states /= (
-            1e-8 + self.data_store.s_std.view(*shape).expand(states.size())
-        ).to(states.device)
+        shape = (1, 1, 5) if states.dim() == 3 else (1, 5)  # dim = 3: state sequence, dim = 2: single state
+        states -= self.data_store.s_mean.view(*shape).expand(states.size()).to(states.device)
+        states /= (1e-8 + self.data_store.s_std.view(*shape).expand(states.size())).to(states.device)
         return states
 
     def normalize_state_diff_vector(self, state_diffs):
-        shape = (
-            (1, 1, 5) if state_diffs.dim() == 3 else (1, 5)
-        )  # dim = 3: state sequence, dim = 2: single state
-        state_diffs -= (
-            self.data_store.s_diff_mean.view(*shape)
-            .expand(state_diffs.size())
-            .to(state_diffs.device)
+        shape = (1, 1, 5) if state_diffs.dim() == 3 else (1, 5)  # dim = 3: state sequence, dim = 2: single state
+        state_diffs -= self.data_store.s_diff_mean.view(*shape).expand(state_diffs.size()).to(state_diffs.device)
+        state_diffs /= (1e-8 + self.data_store.s_diff_std.view(*shape).expand(state_diffs.size())).to(
+            state_diffs.device
         )
-        state_diffs /= (
-            1e-8 + self.data_store.s_diff_std.view(*shape).expand(
-                state_diffs.size()
-            )
-        ).to(state_diffs.device)
         return state_diffs
 
     def normalise_action(self, actions):
-        actions -= (
-            self.data_store.a_mean.view(1, 2)
-            .expand(actions.size())
-            .to(actions.device)
-        )
-        actions /= (
-            1e-8 + self.data_store.a_std.view(1, 2).expand(actions.size())
-        ).to(actions.device)
+        actions -= self.data_store.a_mean.view(1, 2).expand(actions.size()).to(actions.device)
+        actions /= (1e-8 + self.data_store.a_std.view(1, 2).expand(actions.size())).to(actions.device)
         return actions
 
 
@@ -374,9 +326,7 @@ class EvaluationDataset(torch.utils.data.Dataset):
             logging.info(f"Loading splits {splits_path}")
             splits = torch.load(splits_path)
             self.splits = dict(
-                train=splits.get("train_indx"),
-                val=splits.get("valid_indx"),
-                test=splits.get("test_indx"),
+                train=splits.get("train_indx"), val=splits.get("valid_indx"), test=splits.get("test_indx"),
             )
 
         car_sizes_path = os.path.join(data_dir, "car_sizes.pth")
@@ -442,13 +392,51 @@ class EvaluationDataset(torch.utils.data.Dataset):
         }
         time_slot = data_files_mapping[time_slot_str]
         car_size = self.car_sizes[time_slot_str][car_id]
-        result = dict(
-            time_slot=time_slot,
-            time_slot_str=time_slot_str,
-            car_id=car_id,
-            car_size=car_size,
-        )
+        result = dict(time_slot=time_slot, time_slot_str=time_slot_str, car_id=car_id, car_size=car_size,)
         return result
+
+
+class Normalizer:
+    def __init__(self, stats):
+        self.data_stats = stats
+
+    @property
+    def stats(self):
+        return self.data_stats
+
+    @property
+    def stats_cuda(self):
+        return {k: v.cuda().unsqueeze(0) for k, v in self.data_stats.items()}
+
+    def normalize_states(self, states):
+        device = states.device
+        states = states - self.data_stats["s_mean"].view(1, 5).expand(states.size()).to(device)
+        states = states / (1e-8 + self.data_stats["s_std"].view(1, 5).expand(states.size())).to(device)
+        return states
+
+    def unnormalize_states(self, states):
+        device = states.device
+        states = states * (1e-8 + self.data_stats["s_std"].view(1, 5).expand(states.size())).to(device)
+        states = states + self.data_stats["s_mean"].view(1, 5).expand(states.size()).to(device)
+        return states
+
+    def normalize_actions(self, actions):
+        device = actions.device
+        actions = actions - self.data_stats["a_mean"].view(1, 5).expand(actions.size()).to(device)
+        actions = actions / (1e-8 + self.data_stats["a_std"].view(1, 5).expand(actions.size())).to(device)
+        return actions
+
+    def unnormalize_actions(self, actions):
+        device = actions.device
+        actions = actions * (1e-8 + self.data_stats["a_std"].view(1, 2).expand(actions.size())).to(device)
+        actions = actions + self.data_stats["a_mean"].view(1, 2).expand(actions.size()).to(device)
+        return actions
+
+    def normalize_images(self, images):
+        return images.clone().float().div_(255.0)
+
+    def unnormalize_images(self, images):
+        return images.clone().mul_(255.0).uint8()
 
 
 if __name__ == "__main__":

@@ -42,9 +42,9 @@ class FwdCNNKMNoAction(FwdCNN):
         self.state_predictor = state_predictor
 
     def forward_single_step(
-        self, input_images, input_state, action, stats, z
+        self, input_images, input_state, action, z
     ):
-        pred_state = self.state_predictor(input_states[:, -1], action, stats)
+        pred_state = self.state_predictor(input_states[:, -1], action)
 
         h = self.encode(input_images, input_states, pred_state)
 
@@ -56,7 +56,7 @@ class FwdCNNKMNoAction(FwdCNN):
         return pred_image, pred_state
 
     def forward(
-        self, inputs, actions, target, stats, sampling=None, z_dropout=None
+        self, inputs, actions, target, sampling=None, z_dropout=None
     ):
         npred = actions.size(1)
         input_images, input_states = inputs
@@ -64,7 +64,7 @@ class FwdCNNKMNoAction(FwdCNN):
         ploss = torch.zeros(1).to(input_images.device)
         for t in range(npred):
             pred_image, pred_state = self.forward_single_step(
-                input_images, input_states, actions[:, t], stats, None
+                input_images, input_states, actions[:, t], None
             )
             input_images = torch.cat((input_images[:, 1:], pred_image), 1)
             input_states = torch.cat(
@@ -83,6 +83,7 @@ class FwdCNNKMNoAction(FwdCNN):
         batch,
         Z=None,
         augmenter=None,
+        npred=None,
     ):
         input_images = batch["input_images"].clone()
         input_states = batch["input_states"].clone()
@@ -96,7 +97,8 @@ class FwdCNNKMNoAction(FwdCNN):
             # need a version of the state with ego car on the 4th channel.
             ego_car_required = True
             input_ego_car_orig = batch["ego_cars"]
-            npred = batch["target_images"].size(1)
+            if npred is None:
+                npred = batch["target_images"].size(1)
 
             ego_car_new_shape = [*input_images.shape]
             ego_car_new_shape[2] = 1
@@ -128,7 +130,7 @@ class FwdCNNKMNoAction(FwdCNN):
 
             z_t = Z[:, t]
             pred_image, pred_state = self.forward_single_step(
-                input_images, input_states, actions, batch["stats"], z_t
+                input_images, input_states, actions, z_t
             )
             input_images = torch.cat((input_images[:, 1:], pred_image), 1)
             input_states = torch.cat(
@@ -227,15 +229,15 @@ class FwdCNNKMNoAction_VAE(FwdCNNKMNoAction):
         return z
 
     def forward_single_step(
-        self, input_images, input_states, action, stats, z
+        self, input_images, input_states, action, z
     ):
         # encode the inputs (without the action)
         if not self.enable_latent:
             return super().forward_single_step(
-                input_images, input_states, action, stats, z
+                input_images, input_states, action, z
             )
 
-        pred_state = self.state_predictor(input_states[:, -1], action, stats)
+        pred_state = self.state_predictor(input_states[:, -1], action)
 
         batch_size = input_images.size(0)
         z_exp = self.z_expander(z).view(
@@ -254,7 +256,6 @@ class FwdCNNKMNoAction_VAE(FwdCNNKMNoAction):
         inputs,
         actions,
         targets,
-        stats,
         save_z=False,
         sampling=None,
         z_dropout=0.0,
@@ -262,7 +263,7 @@ class FwdCNNKMNoAction_VAE(FwdCNNKMNoAction):
     ):
         if not self.enable_latent:
             return super().forward(
-                inputs, actions, targets, stats, sampling, z_dropout,
+                inputs, actions, targets, sampling, z_dropout,
             )
         input_images, input_states = inputs
         bsize = input_images.size(0)
@@ -314,7 +315,7 @@ class FwdCNNKMNoAction_VAE(FwdCNNKMNoAction):
                     )
 
             pred_state = self.state_predictor(
-                input_states[:, -1], actions[:, t], stats
+                input_states[:, -1], actions[:, t]
             )
 
             z_list.append(z)

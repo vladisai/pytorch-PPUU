@@ -32,10 +32,10 @@ class PolicyCost(PolicyCostBase):
         uncertainty_n_models: int = field(default=10)
         uncertainty_n_batches: int = field(default=100)
 
-    def __init__(self, config, forward_model, data_stats):
+    def __init__(self, config, forward_model, normalizer):
         self.config = config
         self.forward_model = forward_model
-        self.data_stats = data_stats
+        self.normalizer = normalizer
 
     def compute_lane_cost(self, images, car_size):
         SCALE = 0.25
@@ -142,13 +142,7 @@ class PolicyCost(PolicyCostBase):
         states = states.view(bsize * npred, 5).clone()
 
         if unnormalize:
-            states = states * (
-                1e-8
-                + self.data_stats["s_std"].view(1, 5).expand(states.size())
-            ).to(images.device)
-            states = states + self.data_stats["s_mean"].view(1, 5).expand(
-                states.size()
-            ).to(images.device)
+            states = self.normalizer.unnormalize_states(states)
 
         speed = states[:, 4] * SCALE  # pixel/s
         width, length = car_size[:, 0], car_size[:, 1]  # feet
@@ -243,7 +237,7 @@ class PolicyCost(PolicyCostBase):
             torch.set_grad_enabled(False)
         input_images = batch["input_images"]
         input_states = batch["input_states"]
-        actions = batch["actions"]
+        actions = batch["actions"][..., :self.config.uncertainty_n_pred, :]
         car_sizes = batch["car_sizes"]
 
         bsize, ncond, channels, height, width = input_images.shape
@@ -312,7 +306,6 @@ class PolicyCost(PolicyCostBase):
             dict(
                 input_images=input_images,
                 input_states=input_states,
-                stats=batch["stats"],
             ),
             Z=Z_rep.clone(),
         )
@@ -528,15 +521,18 @@ class PolicyCost(PolicyCostBase):
 
     def calculate_cost(self, inputs, predictions):
         u_loss = self.calculate_uncertainty_cost(inputs, predictions)
-        loss_j = (
-            (
-                predictions["pred_actions"][:, 1:]
-                - predictions["pred_actions"][:, :-1]
+        if predictions["pred_actions"].shape[1] > 1:
+            loss_j = (
+                (
+                    predictions["pred_actions"][:, 1:]
+                    - predictions["pred_actions"][:, :-1]
+                )
+                .norm(2, 2)
+                .pow(2)
+                .mean()
             )
-            .norm(2, 2)
-            .pow(2)
-            .mean()
-        )
+        else:
+            loss_j = 0.0
         loss_a = (predictions["pred_actions"]).norm(2, 2).pow(2).mean()
         state_losses = self.compute_state_costs_for_training(
             inputs,
@@ -589,12 +585,7 @@ class PolicyCost(PolicyCostBase):
         car_sizes = batch["car_sizes"].clone()
 
         input_images = input_images.clone().float().div_(255.0)
-        input_states -= (
-            self.data_stats["s_mean"].view(1, 5).expand(input_states.size())
-        )
-        input_states /= (
-            self.data_stats["s_std"].view(1, 5).expand(input_states.size())
-        )
+        input_states = self.normalizer.normalize_states(input_states)
         if input_images.dim() == 4:  # if processing single vehicle
             input_images = input_images.to(device).unsqueeze(0)
             input_states = input_states.to(device).unsqueeze(0)

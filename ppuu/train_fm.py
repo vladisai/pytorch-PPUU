@@ -6,7 +6,7 @@ import torch.multiprocessing
 from ppuu.lightning_modules import fm
 from ppuu import slurm
 
-from train_utils import CustomLoggerWB
+from ppuu.train_utils import CustomLoggerWB
 from ppuu.data import NGSIMDataModule
 
 
@@ -40,6 +40,7 @@ def main(config):
         seed=f"seed={config.training.seed}",
         version=config.training.version,
         project="PPUU_fm",
+        offline=config.training.wandb_offline,
     )
 
     trainer = pl.Trainer(
@@ -48,12 +49,14 @@ def main(config):
         check_val_every_n_epoch=config.training.validation_period,
         num_sanity_val_steps=0,
         fast_dev_run=config.training.fast_dev_run,
-        checkpoint_callback=pl.callbacks.ModelCheckpoint(
-            filepath=os.path.join(
-                logger.log_dir, "checkpoints", "{epoch}_{success_rate}"
-            ),
-            save_top_k=None,
-            monitor=None,
+        checkpoint_callback=(
+            pl.callbacks.ModelCheckpoint(
+                filepath=os.path.join(logger.log_dir, "checkpoints", "{epoch}_{success_rate}"),
+                save_top_k=None,
+                monitor=None,
+            )
+            if logger.log_dir is not None
+            else None
         ),
         logger=logger,
         gpus=config.training.gpus,

@@ -110,8 +110,7 @@ class PolicyCostContinuous(PolicyCost):
         states = states.view(bsize * npred, 5).clone()
 
         if unnormalize:
-            states = states * (1e-8 + self.data_stats["s_std"].view(1, 5).expand(states.size())).to(device)
-            states = states + self.data_stats["s_mean"].view(1, 5).expand(states.size()).to(device)
+            states = self.normalizer.unnormalize_states(states)
 
         speed = states[:, 4] * SCALE  # pixel/s
         width, length = car_size[:, 0], car_size[:, 1]  # feet

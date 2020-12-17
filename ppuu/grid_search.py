@@ -7,7 +7,6 @@ from pytorch_lightning import Callback
 import optuna
 from optuna.integration import PyTorchLightningPruningCallback
 
-from ppuu.lightning_modules import MPURKMSplitModule as Module
 from ppuu.train_policy import CustomLogger
 
 if pkg_resources.parse_version(pl.__version__) < pkg_resources.parse_version(

@@ -23,49 +23,46 @@ EPOCHS = 21
 
 
 def run_trial(config, run):
-    config.training_config.n_epochs = -1
-    config.training_config.batch_size = -1
-    config.training_config.n_steps = 2e5
-    config.training_config.epoch_size = 500
-    config.training_config.validation_size = 10
-    config.training_config.validation_eval = False
-    config.cost_config.uncertainty_n_batches = 100
-    config.model_config.forward_model_path = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_64/seed=42/checkpoints/last.ckpt"
+    config.training.n_epochs = -1
+    config.training.batch_size = -1
+    config.training.n_steps = 2e5
+    config.training.epoch_size = 500
+    config.training.validation_size = 10
+    config.training.validation_eval = False
+    config.training.experiment_name = f"grid_search_{time.time()}"
+    config.cost.uncertainty_n_batches = 100
+    config.model.forward_model_path = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_64/seed=42/checkpoints/last.ckpt"
 
-    config.training_config.auto_batch_size()
+    config.training.auto_batch_size()
 
-    # config.training_config.dataset = configs.DATASET_PATHS_MAPPING["50"]
-    # config.training_config.n_epochs = 1
-    # config.training_config.epoch_size = 2
-
-    exp_name = f"grid_search_{time.time()}"
+    print("config", config)
 
     for seed in [np.random.randint(1000)]:
-        config.training_config.seed = seed
+        config.training.seed = seed
         logger = CustomLoggerWB(
-            save_dir=config.training_config.output_dir,
-            experiment_name=exp_name,
-            seed=str(config.training_config.seed),
+            save_dir=config.training.output_dir,
+            experiment_name=config.training.experiment_name,
+            seed=str(config.training.seed),
             experiment=run,
         )
 
         n_checkpoints = 5
-        if config.training_config.n_steps is not None:
+        if config.training.n_steps is not None:
             n_checkpoints = max(
-                n_checkpoints, int(config.training_config.n_steps / 1e5)
+                n_checkpoints, int(config.training.n_steps / 1e5)
             )
 
-        period = max(1, config.training_config.n_epochs // n_checkpoints)
+        period = max(1, config.training.n_epochs // n_checkpoints)
 
         trainer = pl.Trainer(
-            gpus=config.training_config.gpus,
-            num_nodes=config.training_config.num_nodes,
+            gpus=config.training.gpus,
+            num_nodes=config.training.num_nodes,
             gradient_clip_val=5.0,
-            max_epochs=config.training_config.n_epochs,
+            max_epochs=config.training.n_epochs,
             check_val_every_n_epoch=period,
             num_sanity_val_steps=0,
-            fast_dev_run=config.training_config.fast_dev_run,
-            distributed_backend=config.training_config.distributed_backend,
+            fast_dev_run=config.training.fast_dev_run,
+            distributed_backend=config.training.distributed_backend,
             checkpoint_callback=pl.callbacks.ModelCheckpoint(
                 filepath=os.path.join(
                     logger.log_dir, "checkpoints", "{epoch}_{sample_step}"
@@ -81,14 +78,14 @@ def run_trial(config, run):
         model = Module(config)
 
         datamodule = NGSIMDataModule(
-            config.training_config.dataset,
-            config.training_config.epoch_size,
-            config.training_config.validation_size,
-            config.training_config.batch_size,
+            config.training.dataset,
+            config.training.epoch_size,
+            config.training.validation_size,
+            config.training.batch_size,
             diffs=False,
         )
 
-        pl.seed_everything(config.training_config.seed)
+        pl.seed_everything(config.training.seed)
 
         trainer.fit(model, datamodule)
 
@@ -136,11 +133,10 @@ if __name__ == "__main__":
     print(c_dict)
 
     config = Module.Config.parse_from_flat_dict(c_dict)
-    if config.training_config.output_dir is None:
-        config.training_config.output_dir = (
+    if config.training.output_dir is None:
+        config.training.output_dir = (
             "/home/us441/nvidia-collab/vlad/results/policy/grid_km"
         )
-    print("config", config)
 
     success_rate = run_trial(config, run)
 

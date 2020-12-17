@@ -44,7 +44,6 @@ def get_executor(
     if not prince:
         executor.update_parameters(
             name=job_name,
-            # slurm_time="00:10:00", # two days
             slurm_time="48:00:00",  # two days
             gpus_per_node=gpus,
             nodes=nodes,
@@ -58,7 +57,6 @@ def get_executor(
     else:
         executor.update_parameters(
             name=job_name,
-            # slurm_time="00:10:00", # two days
             slurm_time="48:00:00",  # two days
             gpus_per_node=gpus,
             nodes=nodes,

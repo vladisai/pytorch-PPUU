@@ -9,6 +9,8 @@ import torch
 import torch.optim as optim
 import pytorch_lightning as pl
 
+from omegaconf import MISSING
+
 from ppuu.data import EvaluationDataset
 from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu import configs
@@ -18,6 +20,8 @@ from ppuu.eval import PolicyEvaluator
 from ppuu.data import Augmenter
 from ppuu.modeling.mixout import MixoutWrapper
 from ppuu.lightning_modules.fm import FM
+
+from ppuu.data.dataloader import Normalizer
 
 
 def inject(cost_type=PolicyCost, fm_type=ForwardModel):
@@ -61,7 +65,7 @@ def inject(cost_type=PolicyCost, fm_type=ForwardModel):
 class MPURModule(pl.LightningModule):
     @dataclass
     class ModelConfig(configs.ModelConfig):
-        forward_model_path: str = "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/models/offroad/model=fwd-cnn-vae-fp-layers=3-bsize=64-ncond=20-npred=20-lrt=0.0001-nfeature=256-dropout=0.1-nz=32-beta=1e-06-zdropout=0.5-gclip=5.0-warmstart=1-seed=1.step400000.model"  # noqa: E501
+        forward_model_path: str = MISSING  # noqa: E501
 
         n_cond: int = 20
         n_pred: int = 30
@@ -78,43 +82,44 @@ class MPURModule(pl.LightningModule):
 
         turn_power: int = 1
 
-    TrainingConfig = configs.TrainingConfig
+    @dataclass
+    class TrainingConfig(configs.TrainingConfig):
+        pass
 
     def __init__(self, hparams=None):
         super().__init__()
         self.set_hparams(hparams)
 
-        self.forward_model = self.ForwardModelType(
-            self.config.model_config.forward_model_path, self.config.training_config.diffs
-        )
+        self.forward_model = self.ForwardModelType(self.config.model.forward_model_path, self.config.training.diffs)
 
         # exclude fm from the graph
         for p in self.forward_model.parameters():
             p.requires_grad = False
 
         self.policy_model = policy_models.DeterministicPolicy(
-            n_cond=self.config.model_config.n_cond,
-            n_feature=self.config.model_config.n_feature,
-            n_actions=self.config.model_config.n_actions,
-            h_height=self.config.model_config.h_height,
-            h_width=self.config.model_config.h_width,
-            n_hidden=self.config.model_config.n_hidden,
-            diffs=self.config.training_config.diffs,
-            turn_power=self.config.model_config.turn_power,
+            n_cond=self.config.model.n_cond,
+            n_feature=self.config.model.n_feature,
+            n_actions=self.config.model.n_actions,
+            h_height=self.config.model.h_height,
+            h_width=self.config.model.h_width,
+            n_hidden=self.config.model.n_hidden,
+            diffs=self.config.training.diffs,
+            turn_power=self.config.model.turn_power,
         )
+
         self.policy_model.train()
 
-        if self.config.model_config.checkpoint is not None:
-            checkpoint = torch.load(self.config.model_config.checkpoint)
+        if self.config.model.checkpoint is not None:
+            checkpoint = torch.load(self.config.model.checkpoint)
             self.load_state_dict(checkpoint["state_dict"])
 
-        if self.config.training_config.freeze_encoder:
+        if self.config.training.freeze_encoder:
             for name, p in self.policy_model.named_parameters():
                 if "fc" not in name:
                     p.requires_grad = False
 
         self.augmenter = Augmenter(
-            self.config.training_config.noise_augmentation_std, self.config.training_config.noise_augmentation_p,
+            self.config.training.noise_augmentation_std, self.config.training.noise_augmentation_p,
         )
         self.nan_ctr = 0
 
@@ -130,7 +135,9 @@ class MPURModule(pl.LightningModule):
 
     def forward(self, batch):
         self.forward_model.eval()
-        predictions = self.forward_model.unfold(self.policy_model, batch, augmenter=self.augmenter)
+        predictions = self.forward_model.unfold(
+            self.policy_model, batch, augmenter=self.augmenter, npred=self.config.model.n_pred
+        )
         return predictions
 
     def training_step(self, batch, batch_idx):
@@ -149,7 +156,7 @@ class MPURModule(pl.LightningModule):
         predictions["pred_actions"].retain_grad()
         self.manual_backward(res, opt)
         self.log_action_grads(predictions["pred_actions"].grad)
-        self.manual_optimizer_step(opt)
+        opt.step()
 
         return res
 
@@ -187,9 +194,9 @@ class MPURModule(pl.LightningModule):
     def sample_step(self):
         return (
             self.trainer.global_step
-            * self.config.training_config.batch_size
-            * self.config.training_config.num_nodes
-            * self.config.training_config.gpus
+            * self.config.training.batch_size
+            * self.config.training.num_nodes
+            * self.config.training.gpus
         )
 
     def validation_epoch_end(self, res):
@@ -198,16 +205,22 @@ class MPURModule(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = optim.Adam(
             self.policy_model.parameters(),
-            self.config.training_config.learning_rate
-            * self.config.training_config.gpus
-            * self.config.training_config.num_nodes
-            * (6 / self.config.training_config.batch_size),
+            self.config.training.learning_rate
+            * self.config.training.gpus
+            * self.config.training.num_nodes
+            * (6 / self.config.training.batch_size),
         )
-        if self.config.training_config.scheduler:
-            # we want to have 0.1 learning rate after 70% of training
-            scheduler = torch.optim.lr_scheduler.StepLR(
-                optimizer, step_size=int(self.config.training_config.n_epochs * 0.7), gamma=0.1,
-            )
+        if self.config.training.scheduler is not None:
+            if self.config.training.scheduler == "step":
+                # we want to have 0.1 learning rate after 70% of training
+                scheduler = torch.optim.lr_scheduler.StepLR(
+                    optimizer, step_size=int(self.config.training.n_epochs * 0.7), gamma=0.1,
+                )
+            elif self.config.training.scheduler == "cosine":
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                    optimizer, T_0=int(self.config.training.n_epochs / 5)
+                )
+
             return [optimizer], [scheduler]
         else:
             return optimizer
@@ -217,10 +230,17 @@ class MPURModule(pl.LightningModule):
         The setup below happens after everything was moved
         to the correct device, and after the data was loaded.
         """
+        self._setup_normalizer()
         self._setup_forward_model()
         self._setup_mixout()
         self._setup_policy_cost()
         self._setup_episode_evaluator()
+
+    def _setup_normalizer(self):
+        self.normalizer = Normalizer(self.trainer.datamodule.data_store.stats)
+        self.policy_model.normalizer = self.normalizer
+        if hasattr(self.forward_model, 'state_predictor'):
+            self.forward_model.state_predictor.normalizer = self.normalizer
 
     def _setup_forward_model(self):
         self.forward_model.eval()
@@ -228,17 +248,15 @@ class MPURModule(pl.LightningModule):
         self.forward_model.to(self.device)
 
     def _setup_policy_cost(self):
-        self.policy_cost = self.CostType(
-            self.config.cost_config, self.forward_model, self.trainer.datamodule.data_store.stats,
-        )
+        self.policy_cost = self.CostType(self.config.cost, self.forward_model, self.normalizer)
         self.policy_cost.estimate_uncertainty_stats(self.train_dataloader())
 
     def _setup_mixout(self):
-        if self.config.training_config.mixout_p is not None:
+        if self.config.training.mixout_p is not None:
             # self.policy_model = MixoutDeterministicPolicy(
-            #     self.policy_model, p=self.config.training_config.mixout_p
+            #     self.policy_model, p=self.config.training.mixout_p
             # )
-            self.mixout_wrapper = MixoutWrapper(self.config.training_config.mixout_p)
+            self.mixout_wrapper = MixoutWrapper(self.config.training.mixout_p)
             self.policy_model = self.policy_model.apply(lambda x: self.mixout_wrapper(x))
 
     def _setup_episode_evaluator(self):
@@ -310,25 +328,25 @@ class ForwardModelV3(torch.nn.Module):
 class MPURContinuousV2Module(MPURContinuousModule):
     @dataclass
     class ModelConfig(MPURContinuousModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/fm_km_5_states_resume_lower_lr/seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
+        model_type: str = "continuous_v2"
 
 
 @inject(cost_type=PolicyCost, fm_type=ForwardModelV2)
 class MPURVanillaV2Module(MPURModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/fm_km_5_states_resume_lower_lr/seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
+        model_type: str = "vanilla_v2"
 
 
 @inject(cost_type=PolicyCost, fm_type=ForwardModelV3)
 class MPURVanillaV3Module(MPURModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"
+        model_type: str = "vanilla_v3"
 
 
 @inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV3)
 class MPURContinuousV3Module(MPURModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"
+        model_type: str = "continuous_v3"

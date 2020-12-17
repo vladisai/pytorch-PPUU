@@ -1,12 +1,27 @@
 import os
 import argparse
 import time
+from dataclasses import dataclass
 import glob
 
 import submitit
 
 from ppuu import slurm
 from ppuu import eval_policy
+
+from ppuu import configs
+from omegaconf import MISSING
+
+
+@dataclass
+class EvalWatchdogConfig(configs.ConfigBase):
+    dataset: str = MISSING
+    contains_filter: str = "[]"
+    debug: bool = False
+    new_only: bool = False
+    cluster: str = "slurm"
+    dir: str = "."
+    check_interval: int = -1
 
 
 def should_run(checkpoint, contains_filter):
@@ -19,11 +34,13 @@ def should_run(checkpoint, contains_filter):
             if i in checkpoint:
                 res = True
     # check if evaluation result file is already there
-    results_path = os.path.join(
-        checkpoint.replace("checkpoints", "evaluation_results"),
-        "evaluation_results.json",
+    results_path = os.path.join(checkpoint.replace("checkpoints", "evaluation_results"), "evaluation_results.json",)
+    alt_results_path = os.path.join(
+        checkpoint.replace("checkpoints", "evaluation_results"), "evaluation_results_symbolic.json",
     )
     if os.path.exists(results_path):
+        res = False
+    if os.path.exists(alt_results_path):
         res = False
     if checkpoint.endswith("=0.ckpt"):
         res = False
@@ -32,14 +49,9 @@ def should_run(checkpoint, contains_filter):
     return res
 
 
-def submit(executor, path, model_type):
+def submit(executor, path, config):
     print("submitting", path)
-    config = eval_policy.EvalConfig(
-        checkpoint_path=path,
-        save_gradients=True,
-        num_processes=8,
-        model_type=model_type,
-    )
+    config = eval_policy.EvalConfig(checkpoint_path=path, num_processes=8, dataset=config.dataset,)
     return executor.submit(eval_policy.main, config)
 
 
@@ -52,57 +64,29 @@ def get_all_checkpoints(path, contains_filter):
 
 
 def main():
+    config = EvalWatchdogConfig.parse_from_command_line()
     parser = argparse.ArgumentParser(fromfile_prefix_chars="@")
-    parser.add_argument("--dir", type=str, default=".")
-    parser.add_argument(
-        "--check_interval",
-        type=int,
-        default=300,
-        help="interval in seconds between checks for new results",
-    )
-    parser.add_argument(
-        "--new_only",
-        action="store_true",
-        help="don't evaluate existing checkpoints",
-    )
-    parser.add_argument(
-        "--debug", action="store_true", help="don't run jobs",
-    )
-    parser.add_argument(
-        "--contains_filter",
-        type=str,
-        default="[]",
-        help="run only experiments containing words from the filter list",
-    )
-    parser.add_argument(
-        "--model_type",
-        type=str,
-        default="continuous_v3",
-        help="Policy model type",
-    )
-    parser.add_argument("--cluster", type=str, default="slurm")
-    opt = parser.parse_args()
-    contains_filter = eval(opt.contains_filter)
 
-    executor = slurm.get_executor(
-        job_name="eval", cpus_per_task=8, cluster=opt.cluster
-    )
+    contains_filter = config.contains_filter.split(",")
+    print(contains_filter)
+
+    executor = slurm.get_executor(job_name="eval", cpus_per_task=8, cluster=config.cluster)
     executor.update_parameters(slurm_time="2:00:00")
 
     already_run = []
 
     first_run = True
     while True:
-        checkpoints = get_all_checkpoints(opt.dir, contains_filter)
+        checkpoints = get_all_checkpoints(config.dir, contains_filter)
         for checkpoint in checkpoints:
             if checkpoint not in already_run:
                 already_run.append(checkpoint)
-                if opt.debug:
+                if config.debug:
                     print("would run", checkpoint)
-                if not opt.debug and (not first_run or not opt.new_only):
-                    job = submit(executor, checkpoint, opt.model_type)
+                if not config.debug and (not first_run or not config.new_only):
+                    job = submit(executor, checkpoint, config)
                     if job is not None:
-                        if opt.cluster in ["local", "debug"]:
+                        if config.cluster in ["local", "debug"]:
                             print(job)
                             while True:
                                 try:
@@ -113,9 +97,9 @@ def main():
                                     print("waiting", str(e))
                         print("job id: ", job.job_id)
         print("done")
-        if opt.check_interval == -1:
+        if config.check_interval == -1:
             break
-        time.sleep(opt.check_interval)
+        time.sleep(config.check_interval)
         first_run = False
 
 

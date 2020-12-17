@@ -22,7 +22,6 @@ def main(config):
     config.training.auto_batch_size()
 
     if config.training.debug or config.training.fast_dev_run:
-        config.training.set_dataset("50")
         config.training.epoch_size = 10
         config.training.n_epochs = 10
         config.cost.uncertainty_n_batches = 10
@@ -47,6 +46,7 @@ def main(config):
         seed=f"seed={config.training.seed}",
         version=config.training.version,
         project="PPUU_policy",
+        offline=config.training.wandb_offline,
     )
 
     n_checkpoints = 5
@@ -66,7 +66,7 @@ def main(config):
         num_sanity_val_steps=0,
         fast_dev_run=config.training.fast_dev_run,
         distributed_backend=config.training.distributed_backend,
-        callbacks=[LearningRateMonitor(logging_interval="step")],
+        callbacks=[LearningRateMonitor(logging_interval="epoch")],
         checkpoint_callback=pl.callbacks.ModelCheckpoint(
             filepath=os.path.join(
                 logger.log_dir, "checkpoints", "{epoch}_{sample_step}"

@@ -9,7 +9,6 @@ from ppuu.lightning_modules.policy.mpur import (
 )
 from ppuu.costs.policy_costs_km import (
     PolicyCostKM,
-    PolicyCostKMSplit,
     PolicyCostKMTaper,
 )
 from ppuu.wrappers import ForwardModelKM
@@ -19,13 +18,8 @@ from ppuu.wrappers import ForwardModelKM
 class MPURKMModule(MPURModule):
     def forward(self, batch):
         self.forward_model.eval()
-        predictions = self.forward_model.unfold_km(self.policy_model, batch, augmenter=self.augmenter)
+        predictions = self.forward_model.unfold_km(self.policy_model, batch, augmenter=self.augmenter, npred=self.config.model.n_pred)
         return predictions
-
-
-@inject(cost_type=PolicyCostKMSplit, fm_type=ForwardModelKM)
-class MPURKMSplitModule(MPURKMModule):
-    pass
 
 
 @inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelKM)
