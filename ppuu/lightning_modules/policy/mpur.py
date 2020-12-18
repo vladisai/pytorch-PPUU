@@ -236,8 +236,10 @@ class MPURModule(pl.LightningModule):
         self._setup_policy_cost()
         self._setup_episode_evaluator()
 
-    def _setup_normalizer(self):
-        self.normalizer = Normalizer(self.trainer.datamodule.data_store.stats)
+    def _setup_normalizer(self, stats = None):
+        if stats is None:
+            stats = self.trainer.datamodule.data_store.stats
+        self.normalizer = Normalizer(stats)
         self.policy_model.normalizer = self.normalizer
         if hasattr(self.forward_model, 'state_predictor'):
             self.forward_model.state_predictor.normalizer = self.normalizer

@@ -45,7 +45,10 @@ class EvalConfig(configs.ConfigBase):
     def __post_init__(self):
         if self.num_processes == -1:
             self.num_processes = get_optimal_pool_size()
-            logging.info(f"Number of processes wasn't speicifed, " f"going to use {self.num_processes}")
+            logging.info(
+                f"Number of processes wasn't speicifed, "
+                f"going to use {self.num_processes}"
+            )
 
         if self.output_dir is None:
             self.checkpoint_path = os.path.normpath(self.checkpoint_path)
@@ -54,7 +57,10 @@ class EvalConfig(configs.ConfigBase):
             self.output_dir = os.path.join(*components)
             if self.checkpoint_path[0] == os.path.sep:
                 self.output_dir = os.path.sep + self.output_dir
-            logging.info(f"Output dir wasn't specified, " f"going to save to {self.output_dir}")
+            logging.info(
+                f"Output dir wasn't specified, "
+                f"going to save to {self.output_dir}"
+            )
 
 
 def main(config):
@@ -66,9 +72,18 @@ def main(config):
 
     if config.model_type is None:
         if "model_config" in checkpoint["hyper_parameters"]:
-            config.model_type = checkpoint["hyper_parameters"]["model_config"]["model_type"]
+            config.model_type = checkpoint["hyper_parameters"]["model_config"][
+                "model_type"
+            ]
         else:
-            config.model_type = checkpoint["hyper_parameters"]["model"]["model_type"]
+            config.model_type = checkpoint["hyper_parameters"]["model"][
+                "model_type"
+
+            ]
+
+    test_dataset = dataloader.EvaluationDataset(
+        config.dataset, "test", config.test_size_cap
+    )
 
     Module = get_module(config.model_type)
 
@@ -76,19 +91,29 @@ def main(config):
     mpur_module.cuda()
     mpur_module._setup_mixout()
     mpur_module.load_state_dict(checkpoint["state_dict"], strict=False)
-    mpur_module.policy_model.diffs = checkpoint["hyper_parameters"]["training"]["diffs"]
+    mpur_module.policy_model.diffs = checkpoint["hyper_parameters"][
+        "training"
+    ]["diffs"]
+    mpur_module._setup_normalizer(test_dataset.stats)
 
     alternative_module = None
     if config.alternative_checkpoint_path:
-        alternative_module = Module.load_from_checkpoint(checkpoint_path=config.alternative_checkpoint_path)
+        alternative_module = Module.load_from_checkpoint(
+            checkpoint_path=config.alternative_checkpoint_path
+        )
         alternative_module.policy_model.diffs = config.diffs
 
-    test_dataset = dataloader.EvaluationDataset(config.dataset, "test", config.test_size_cap)
-
     evaluator = PolicyEvaluator(
-        test_dataset, config.num_processes, build_gradients=config.save_gradients, enable_logging=True,
+        test_dataset,
+        config.num_processes,
+        build_gradients=config.save_gradients,
+        enable_logging=True,
     )
-    result = evaluator.evaluate(mpur_module, output_dir=config.output_dir, alternative_module=alternative_module,)
+    result = evaluator.evaluate(
+        mpur_module,
+        output_dir=config.output_dir,
+        alternative_module=alternative_module,
+    )
     print(result["stats"])
     return result
 

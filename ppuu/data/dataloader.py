@@ -174,7 +174,7 @@ class Dataset(torch.utils.data.Dataset):
         self.shift = shift
         self.random_actions = random_actions
         self.state_diffs = state_diffs
-        self.normalizer = Normalizer(self.data_store.stats, state_diffs)
+        self.normalizer = Normalizer(self.data_store.stats)
 
     def sample_episode(self):
         return self.random.choice(self.data_store.splits[self.split])
@@ -241,6 +241,7 @@ class Dataset(torch.utils.data.Dataset):
                 break
 
         if self.state_diffs:
+            # TODO: this is not tested.
             states = self.normalizer.states_to_diffs(states)
 
         if self.normalize:
@@ -363,7 +364,7 @@ class EvaluationDataset(torch.utils.data.Dataset):
 
 
 class Normalizer:
-    def __init__(self, stats, diffs=False):
+    def __init__(self, stats):
         self.data_stats = stats
 
     @property

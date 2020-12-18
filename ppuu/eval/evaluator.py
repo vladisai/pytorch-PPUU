@@ -43,6 +43,7 @@ class PolicyEvaluator:
         self.enable_logging = enable_logging
         self.rollback_seconds = rollback_seconds
         self.visualizer = visualizer
+        self.normalizer = dataloader.Normalizer(dataset.stats)
         assert self.visualizer is None or self.num_processes == 0, "can't use visualizer with multiprocessing"
 
         i80_env_id = "I-80-v1"
@@ -126,7 +127,6 @@ class PolicyEvaluator:
                 input_states.cuda(),
                 car_size=car_size,
                 normalize_inputs=True,
-                diff_inputs=True,
                 normalize_outputs=True,
             )
             a = a.cpu().view(1, 2).numpy()
@@ -279,7 +279,7 @@ class PolicyEvaluator:
 
         if hasattr(module, "policy_model"):
             module.policy_model.cuda()
-            # module.policy_model.stats = self.dataset.stats
+            module.policy_model.stats = self.dataset.stats
             if alternative_module is not None:
                 alternative_module.policy_model.cuda()
                 # alternative_module.policy_model.stats = self.dataset.stats
