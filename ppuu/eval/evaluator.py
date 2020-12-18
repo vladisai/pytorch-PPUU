@@ -126,6 +126,7 @@ class PolicyEvaluator:
                 input_states.cuda(),
                 car_size=car_size,
                 normalize_inputs=True,
+                diff_inputs=True,
                 normalize_outputs=True,
             )
             a = a.cpu().view(1, 2).numpy()

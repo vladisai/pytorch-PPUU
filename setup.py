@@ -9,6 +9,6 @@ setup(
     author="",
     author_email="",
     url="https://github.com/vladisai/pytorch-PPUU",
-    install_requires=["pytorch-lightning", "torch", "numpy", "pandas",],
+    install_requires=["pytorch-lightning", "torch", "numpy", "pandas", "omegaconf", "wandb", "gym", "submitit", "pygame", "imageio"],
     packages=find_packages(),
 )

@@ -174,6 +174,7 @@ class Dataset(torch.utils.data.Dataset):
         self.shift = shift
         self.random_actions = random_actions
         self.state_diffs = state_diffs
+        self.normalizer = Normalizer(self.data_store.stats, state_diffs)
 
     def sample_episode(self):
         return self.random.choice(self.data_store.splits[self.split])
@@ -229,8 +230,6 @@ class Dataset(torch.utils.data.Dataset):
                 images = self.data_store.images[s][t : t + T]
                 actions = self.data_store.actions[s][t : t + T]
                 states = self.data_store.states[s][t : t + T, 0]
-                state_diffs = states[1:] - states[:-1]
-                state_diffs = torch.cat([torch.zeros(1, 5), state_diffs], axis=0)
                 costs = self.data_store.costs[s][t : t + T]
                 ids = self.data_store.ids[s]
                 ego_cars = self.data_store.ego_car_images[s]
@@ -241,12 +240,14 @@ class Dataset(torch.utils.data.Dataset):
                 car_sizes = torch.tensor([size[0], size[1]])
                 break
 
+        if self.state_diffs:
+            states = self.normalizer.states_to_diffs(states)
+
         if self.normalize:
-            actions = self.normalise_action(actions.clone())
-            states = self.normalise_state_vector(states.clone())
-            images = self.normalise_state_image(images.clone())
-            ego_cars = self.normalise_state_image(ego_cars.clone())
-            state_diffs = self.normalize_state_diff_vector(state_diffs)
+            actions = self.normalizer.normalize_actions(actions)
+            states = self.normalizer.normalize_states(states)
+            images = self.normalizer.normalize_images(images)
+            ego_cars = self.normalizer.normalize_images(ego_cars)
 
         t0 = self.n_cond
         t1 = T
@@ -254,17 +255,7 @@ class Dataset(torch.utils.data.Dataset):
         input_states = states[:t0].float().contiguous()
         target_images = images[t0:t1].float().contiguous()
         target_states = states[t0:t1].float().contiguous()
-        # target_state_diffs = (
-        #     state_diffs[(t0 - 1) : (t1 - 1)].float().contiguous()
-        # )
-        # input_state_diffs = state_diffs[: (t0 - 1)].float().contiguous()
-        input_state_diffs = state_diffs[:t0].float().contiguous()
-        target_state_diffs = state_diffs[t0:t1].float().contiguous()
         target_costs = costs[t0:t1].float().contiguous()
-
-        if self.state_diffs:
-            input_states[:, :2] = input_state_diffs[:, :2]
-            target_states[:, :2] = target_state_diffs[:, :2]
 
         if not self.shift:
             t0 -= 1
@@ -279,12 +270,10 @@ class Dataset(torch.utils.data.Dataset):
         return dict(
             input_images=input_images,
             input_states=input_states,
-            input_state_diffs=input_state_diffs,
             ego_cars=ego_cars,
             actions=actions,
             target_images=target_images,
             target_states=target_states,
-            target_state_diffs=target_state_diffs,
             target_costs=target_costs,
             ids=ids,
             car_sizes=car_sizes,
@@ -292,29 +281,6 @@ class Dataset(torch.utils.data.Dataset):
             s=s,
             t=t,
         )
-
-    @staticmethod
-    def normalise_state_image(images):
-        return images.float().div_(255.0)
-
-    def normalise_state_vector(self, states):
-        shape = (1, 1, 5) if states.dim() == 3 else (1, 5)  # dim = 3: state sequence, dim = 2: single state
-        states -= self.data_store.s_mean.view(*shape).expand(states.size()).to(states.device)
-        states /= (1e-8 + self.data_store.s_std.view(*shape).expand(states.size())).to(states.device)
-        return states
-
-    def normalize_state_diff_vector(self, state_diffs):
-        shape = (1, 1, 5) if state_diffs.dim() == 3 else (1, 5)  # dim = 3: state sequence, dim = 2: single state
-        state_diffs -= self.data_store.s_diff_mean.view(*shape).expand(state_diffs.size()).to(state_diffs.device)
-        state_diffs /= (1e-8 + self.data_store.s_diff_std.view(*shape).expand(state_diffs.size())).to(
-            state_diffs.device
-        )
-        return state_diffs
-
-    def normalise_action(self, actions):
-        actions -= self.data_store.a_mean.view(1, 2).expand(actions.size()).to(actions.device)
-        actions /= (1e-8 + self.data_store.a_std.view(1, 2).expand(actions.size())).to(actions.device)
-        return actions
 
 
 class EvaluationDataset(torch.utils.data.Dataset):
@@ -397,7 +363,7 @@ class EvaluationDataset(torch.utils.data.Dataset):
 
 
 class Normalizer:
-    def __init__(self, stats):
+    def __init__(self, stats, diffs=False):
         self.data_stats = stats
 
     @property
@@ -407,6 +373,12 @@ class Normalizer:
     @property
     def stats_cuda(self):
         return {k: v.cuda().unsqueeze(0) for k, v in self.data_stats.items()}
+
+    def states_to_diffs(self, states):
+        state_diffs = states[1:] - states[:-1]
+        state_diffs = torch.cat([torch.zeros(1, 5), state_diffs], axis=0)
+        state_diffs[..., 2:] = states[..., 2:]
+        return state_diffs
 
     def normalize_states(self, states):
         device = states.device
@@ -422,8 +394,8 @@ class Normalizer:
 
     def normalize_actions(self, actions):
         device = actions.device
-        actions = actions - self.data_stats["a_mean"].view(1, 5).expand(actions.size()).to(device)
-        actions = actions / (1e-8 + self.data_stats["a_std"].view(1, 5).expand(actions.size())).to(device)
+        actions = actions - self.data_stats["a_mean"].view(1, 2).expand(actions.size()).to(device)
+        actions = actions / (1e-8 + self.data_stats["a_std"].view(1, 2).expand(actions.size())).to(device)
         return actions
 
     def unnormalize_actions(self, actions):

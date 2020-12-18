@@ -27,24 +27,16 @@ class MixoutDeterministicPolicy(nn.Module):
     def forward(
         self, state_images, states, normalize_inputs=False, normalize_outputs=False, car_size=None,
     ):
+        if state_images.dim() == 4:  # if processing single vehicle
+            state_images = state_images.cuda().unsqueeze(0)
+            states = states.cuda().unsqueeze(0)
+
         bsize = state_images.size(0)
-        device = state_images.device
         if normalize_inputs:
-            state_images = state_images.clone().float().div_(255.0)
-            if self.diffs:
-                state_diffs = states.clone()
-                state_diffs = state_diffs[1:] - state_diffs[:-1]
-                state_diffs = torch.cat([torch.zeros(1, 5).to(device), state_diffs], axis=0)
-                state_diffs[:, 2:] = states[:, 2:]
-                states = state_diffs
-                mean, std = self.stats["s_diff_mean"], self.stats["s_diff_std"]
-            else:
-                mean, std = self.stats["s_mean"], self.stats["s_std"]
-            states -= mean.cuda().view(1, 5).expand(states.size())
-            states /= std.cuda().view(1, 5).expand(states.size())
-            if state_images.dim() == 4:  # if processing single vehicle
-                state_images = state_images.cuda().unsqueeze(0)
-                states = states.cuda().unsqueeze(0)
+            state_images = self.original_model.normalizer.normalize_images(state_images)
+            if self.original_model.diffs:
+                states = self.original_model.normalizer.states_to_diffs(states)
+            states = self.original_model.normalizer.normalize_states(states)
 
         h = self.encoder(state_images, states).view(bsize, self.hsize)
         h = self.proj(h)  # from hidden_size to n_hidden
@@ -96,19 +88,12 @@ class DeterministicPolicy(nn.Module):
 
         bsize = state_images.size(0)
         device = state_images.device
+
         if normalize_inputs:
-            state_images = state_images.clone().float().div_(255.0)
+            state_images = self.normalizer.normalize_images(state_images)
             if self.diffs:
-                state_diffs = states.clone()
-                state_diffs = state_diffs[:, 1:] - state_diffs[:, :-1]
-                state_diffs = torch.cat([torch.zeros(bsize, 1, 5).to(device), state_diffs], axis=1)
-                state_diffs[:, :, 2:] = states[:, :, 2:]
-                states = state_diffs
-                mean, std = self.stats["s_diff_mean"], self.stats["s_diff_std"]
-            else:
-                mean, std = self.stats["s_mean"], self.stats["s_std"]
-            states -= mean.cuda().view(1, 5).expand(states.size())
-            states /= std.cuda().view(1, 5).expand(states.size())
+                states = self.normalizer.states_to_diffs(states)
+            states = self.normalizer.normalize_states(states)
 
         h = self.encoder(state_images, states).view(bsize, self.hsize)
         h = self.proj(h)  # from hidden_size to n_hidden
