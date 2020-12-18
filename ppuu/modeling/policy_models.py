@@ -150,11 +150,11 @@ class MPCKMPolicy(nn.Module):
         """
         predictions = []
         for i in range(self.unfold_len):
-            states = predict_states(states, actions[:, i], self.normalizer.data_stats, timestep=self.timestep)
+            states = predict_states(states, actions[:, i], self.normalizer, timestep=self.timestep)
             predictions.append(states)
         return torch.stack(predictions, dim=1)
 
-    def unfold_fm(self, actions):
+    def unfold_fm(self, images, states, actions):
         """
         Autoregressively applies fm prediction to get reference images and states.
             states shape : batch, state_dim
@@ -163,11 +163,9 @@ class MPCKMPolicy(nn.Module):
             predicted_states, shape = batch, unfold_len, state_dim
         """
 
-        history_images, history_states = self.get_history()
         inputs = {
-            "input_images": history_images.cuda(),
-            "input_states": history_states.cuda(),
-            "stats": self.normalizer.stats_cuda,
+            "input_images": images.cuda(),
+            "input_states": states.cuda(),
         }
 
         actions_per_fm_timestep = int(0.1 / self.timestep)
@@ -185,19 +183,8 @@ class MPCKMPolicy(nn.Module):
         self.states = []
         self.history_len = 0
 
-    def get_history(self):
-        if self.history_len < 20:
-            padding_images = [self.images[0]] * (20 - self.history_len)
-            padding_states = [self.states[0]] * (20 - self.history_len)
-            return (
-                torch.stack(padding_images + self.images).unsqueeze(0),
-                torch.stack(padding_states + self.states).unsqueeze(0),
-            )
-        else:
-            return torch.stack(self.images).unsqueeze(0), torch.stack(self.states).unsqueeze(0)
-
     def update_history(self, images, states):
-        self.images.append(images[0, 0, :3])
+        self.images = images
         self.states.append(states[0])
         self.history_len += 1
         if self.history_len > 20:
@@ -212,9 +199,10 @@ class MPCKMPolicy(nn.Module):
             images = self.normalizer.normalize_images(images)
             car_size = torch.tensor(car_size).unsqueeze(0)
         orig_shape = states.shape
+        full_states = states.unsqueeze(0)
+        full_images = images[:, :3].unsqueeze(0)
         states = states[..., -1, :].view(-1, 5)
         images = images[..., -1, :, :, :].view(-1, 1, 4, 117, 24)
-        self.update_history(images, states)
         if self.last_actions is not None:
             actions = torch.cat(
                 (self.last_actions[:, 1:-1], self.last_actions[:, -2].unsqueeze(1).repeat(1, 2, 1)), dim=1
@@ -229,10 +217,10 @@ class MPCKMPolicy(nn.Module):
         # ref_states = self.unfold_km(states, torch.zeros_like(actions))
         # ref_images = images.repeat(1, self.unfold_len, 1, 1, 1)
 
-        # Another way is by using fm
-        ref_images, ref_states = self.unfold_fm(actions)
-
         for i in range(self.n_iter):
+            if i % self.update_ref_period == 0:
+                ref_images, ref_states = self.unfold_fm(full_images, full_states, actions)
+
             pred_states = self.unfold_km(states, actions)
             inputs = {
                 "input_images": images,
@@ -253,9 +241,6 @@ class MPCKMPolicy(nn.Module):
             costs["policy_loss"].backward()
             torch.nn.utils.clip_grad_norm_(actions, 0.5)
             optimizer.step()
-
-            if (i + 1) % self.update_ref_period == 0:
-                ref_images, ref_states = self.unfold_fm(actions)
 
         self.last_actions = actions
 

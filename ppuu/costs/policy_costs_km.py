@@ -46,7 +46,7 @@ class PolicyCostKM(PolicyCostContinuous):
         states = states.view(bsize * npred, 4).clone()
 
         if unnormalize:
-            states = self.normalize.unnormalize_states(states)
+            states = self.normalizer.unnormalize_states(states)
 
         states = states.view(bsize, npred, 5)
 
@@ -304,6 +304,7 @@ class PolicyCostKMTaper(PolicyCostKM):
             ref_states = self.normalizer.unnormalize_states(ref_states)
             actions = self.normalizer.unnormalize_actions(actions)
 
+
         states = states.view(bsize, npred, 5)
         ref_states = ref_states.view(bsize, npred, 5)
         actions = actions.view(bsize, npred, 2)
@@ -372,9 +373,12 @@ class PolicyCostKMTaper(PolicyCostKM):
         # z_x_prime_rotation = torch.clamp(
         #     (x_s_rotation - torch.abs(x_prime)) / (x_s_rotation), min=0
         # )
+        assert z_x_prime.max() > 0, 'Seems like the car is outside the state image.'
+
         r_y_prime = torch.clamp(
             (y_d.view(bsize, 1, 1, 1) - torch.abs(y_prime)) / (y_d - width / 2).view(bsize, 1, 1, 1), min=0,
         )
+        assert r_y_prime.max() > 0, 'Seems like the car is outside the state image.'
 
         # Double max reduces the last two dimensions, leaving batch_size x
         # n_pred.

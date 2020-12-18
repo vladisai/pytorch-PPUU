@@ -61,11 +61,13 @@ def main(config):
         m_config.training.enable_latent = True
         m_config.training.diffs = config.diffs
         forward_model = FM(m_config).cuda()
+        forward_model._setup_normalizer(test_dataset.stats)
     else:
         forward_model = None
 
-    cost = PolicyCostKMTaper(config.cost, None, test_dataset.stats)
-    policy = MPCKMPolicy(forward_model, cost, dataloader.Normalizer(test_dataset.stats))
+    normalizer = dataloader.Normalizer(test_dataset.stats)
+    cost = PolicyCostKMTaper(config.cost, None, normalizer)
+    policy = MPCKMPolicy(forward_model, cost, normalizer)
 
     evaluator = PolicyEvaluator(
         test_dataset,

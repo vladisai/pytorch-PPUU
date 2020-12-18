@@ -100,6 +100,6 @@ class StatePredictor:
     def __call__(self, *args, **kwargs):
         assert self.normalizer is not None, "Normalizer is not set for state predictor"
         if self.diff:
-            return predict_states(*args, normalizer=self.normalizer, **kwargs)
-        else:
             return predict_states_diff(*args, normalizer=self.normalizer, **kwargs)
+        else:
+            return predict_states(*args, normalizer=self.normalizer, **kwargs)
