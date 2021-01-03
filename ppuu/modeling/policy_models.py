@@ -117,17 +117,18 @@ class MPCKMPolicy(nn.Module):
         lr: float = 0.01
 
     def __init__(
-        self, forward_model, cost, normalizer, n_iter=20, lr=0.1, unfold_len=30, timestep=0.01, update_ref_period=10
+        self, forward_model, cost, normalizer, visualizer=None, n_iter=100, lr=0.1, unfold_len=30, timestep=0.01, update_ref_period=100
     ):
         super().__init__()
 
         self.cost = cost
         self.cost.config.shifted_reference_frame = True
         self.cost.config.u_reg = 0.0
-        self.cost.config.lambda_a = 0.001
-        self.cost.config.lambda_p = 4.0
-        self.cost.config.lambda_l = 1.0
-        self.cost.config.lambda_o = 1.0
+        # self.cost.config.lambda_a = 0.001
+        # self.cost.config.lambda_j = 0.1
+        self.cost.config.lambda_p = 0.0
+        self.cost.config.lambda_l = 4.0
+        self.cost.config.lambda_o = 0.0
         self.cost.config.rotate = 1.0
         self.forward_model = forward_model
         self.normalizer = normalizer
@@ -137,6 +138,7 @@ class MPCKMPolicy(nn.Module):
         self.unfold_len = unfold_len
         self.last_actions = None
         self.update_ref_period = update_ref_period
+        self.visualizer = visualizer
         self.reset()
         print(self.cost.config)
 
@@ -203,19 +205,23 @@ class MPCKMPolicy(nn.Module):
         full_images = images[:, :3].unsqueeze(0)
         states = states[..., -1, :].view(-1, 5)
         images = images[..., -1, :, :, :].view(-1, 1, 4, 117, 24)
-        if self.last_actions is not None:
-            actions = torch.cat(
-                (self.last_actions[:, 1:-1], self.last_actions[:, -2].unsqueeze(1).repeat(1, 2, 1)), dim=1
-            )
-            actions = torch.tensor(actions, requires_grad=True)
-        else:
-            actions = torch.zeros(states.shape[0], self.unfold_len, 2, device=device, requires_grad=True)
+        # if self.last_actions is not None:
+        #     actions = torch.cat(
+        #         (self.last_actions[:, 1:-1], self.last_actions[:, -2].unsqueeze(1).repeat(1, 2, 1)), dim=1
+        #     )
+        #     actions = torch.tensor(actions, requires_grad=True)
+        # else:
+        actions = torch.zeros(states.shape[0], self.unfold_len, 2, device=device, requires_grad=True)
 
         optimizer = torch.optim.Adam((actions,), self.lr)
 
         # # One way to get reference states/images
         # ref_states = self.unfold_km(states, torch.zeros_like(actions))
         # ref_images = images.repeat(1, self.unfold_len, 1, 1, 1)
+        self.cost.traj_landscape = False
+
+        if self.visualizer:
+            self.visualizer.episode_reset()
 
         for i in range(self.n_iter):
             if i % self.update_ref_period == 0:
@@ -237,10 +243,20 @@ class MPCKMPolicy(nn.Module):
 
             # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
             optimizer.zero_grad()
+            if i == self.n_iter - 1:
+                self.cost.traj_landscape = True
             costs = self.cost.calculate_cost(inputs, predictions)
+            if i == self.n_iter - 1:
+                self.cost.traj_landscape = False
             costs["policy_loss"].backward()
+
             torch.nn.utils.clip_grad_norm_(actions, 0.5)
             optimizer.step()
+
+            if self.visualizer:
+                self.visualizer.update_values(costs["policy_loss"].item(), actions[0, 0, 0].item(), actions[0, 0, 1].item())
+
+        self.visualizer.update_plot()
 
         self.last_actions = actions
 
