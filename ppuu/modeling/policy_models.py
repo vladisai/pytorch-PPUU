@@ -117,7 +117,7 @@ class MPCKMPolicy(nn.Module):
         lr: float = 0.01
 
     def __init__(
-        self, forward_model, cost, normalizer, visualizer=None, n_iter=300, lr=0.01, unfold_len=2, timestep=0.01, update_ref_period=100
+        self, forward_model, cost, normalizer, visualizer=None, n_iter=10, lr=0.01, unfold_len=2, timestep=0.01, update_ref_period=100
     ):
         super().__init__()
 
@@ -189,6 +189,7 @@ class MPCKMPolicy(nn.Module):
         self.images = []
         self.states = []
         self.history_len = 0
+        self.ctr = 0
 
     def update_history(self, images, states):
         self.images = images
@@ -201,6 +202,14 @@ class MPCKMPolicy(nn.Module):
 
     def __call__(self, images, states, normalize_inputs=False, normalize_outputs=False, car_size=None, init=None):
         device = states.device
+        if self.ctr == 30:
+            dump_dict = dict(
+                images=images,
+                states=states,
+                car_size=car_size,
+            )
+            torch.save(dump_dict, 'bad_example.dump')
+
         if normalize_inputs:
             states = self.normalizer.normalize_states(states.clone())
             images = self.normalizer.normalize_images(images)
@@ -219,11 +228,13 @@ class MPCKMPolicy(nn.Module):
         actions = torch.zeros(states.shape[0], self.unfold_len, 2, device=device, requires_grad=True)
 
         optimizer = torch.optim.Adam((actions,), self.lr)
+        self.ctr += 1
 
         # # One way to get reference states/images
         # ref_states = self.unfold_km(states, torch.zeros_like(actions))
         # ref_images = images.repeat(1, self.unfold_len, 1, 1, 1)
         self.cost.traj_landscape = False
+
 
         if self.visualizer:
             self.visualizer.episode_reset()
@@ -259,7 +270,8 @@ class MPCKMPolicy(nn.Module):
             optimizer.step()
 
             if self.visualizer:
-                self.visualizer.update_values(costs["policy_loss"].item(), actions[0, 0, 0].item(), actions[0, 0, 1].item())
+                unnormalized_actions = self.normalizer.unnormalize_actions(actions.data.clamp(-3, 3))
+                self.visualizer.update_values(costs["policy_loss"].item(), unnormalized_actions[0, 0, 0].item(), unnormalized_actions[0, 0, 1].item())
 
         self.visualizer.update_plot()
 
@@ -269,6 +281,6 @@ class MPCKMPolicy(nn.Module):
 
         if normalize_outputs:
             actions = self.normalizer.unnormalize_actions(actions.data.clamp(-3, 3))
-        print(actions)
+        print('final actions for', self.ctr, 'are', actions)
 
         return actions.detach()

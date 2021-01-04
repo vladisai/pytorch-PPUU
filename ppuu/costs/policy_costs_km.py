@@ -454,7 +454,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         )
 
         import datetime
-        assert datetime.datetime.now() < datetime.datetime(2021, 1, 4), 'this is debug stuff to be removed'
+        assert datetime.datetime.now() < datetime.datetime(2021, 1, 5), 'this is debug stuff to be removed'
         # r_y_prime = torch.clamp(r_y_prime * y_multiply_coefficient, max=1)
         r_y_prime = r_y_prime ** self.config.masks_power_y
 
