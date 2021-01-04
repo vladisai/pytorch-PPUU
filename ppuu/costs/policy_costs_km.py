@@ -452,7 +452,10 @@ class PolicyCostKMTaper(PolicyCostKM):
         y_multiply_coefficient = torch.max(
             y_multiply_coefficient, min_multiplier
         )
-        r_y_prime = torch.clamp(r_y_prime * y_multiply_coefficient, max=1)
+
+        import datetime
+        assert datetime.datetime.now() < datetime.datetime(2021, 1, 4), 'this is debug stuff to be removed'
+        # r_y_prime = torch.clamp(r_y_prime * y_multiply_coefficient, max=1)
         r_y_prime = r_y_prime ** self.config.masks_power_y
 
         # Acceleration probe

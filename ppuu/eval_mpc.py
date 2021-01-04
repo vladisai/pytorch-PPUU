@@ -46,7 +46,6 @@ class EvalMPCConfig(configs.ConfigBase):
     visualizer: Any = None
     forward_model_path: Optional[str] = None
 
-
 def main(config):
     if config.num_processes > 0:
         torch.multiprocessing.set_sharing_strategy("file_system")
