@@ -117,20 +117,32 @@ class MPCKMPolicy(nn.Module):
         lr: float = 0.01
 
     def __init__(
-        self, forward_model, cost, normalizer, visualizer=None, n_iter=10, lr=0.01, unfold_len=2, timestep=0.01, update_ref_period=100
+        self,
+        forward_model,
+        cost,
+        normalizer,
+        visualizer=None,
+        n_iter=10,
+        lr=0.1,
+        unfold_len=10,
+        timestep=0.11,
+        update_ref_period=100,
     ):
         super().__init__()
 
         self.cost = cost
         self.cost.config.shifted_reference_frame = True
         self.cost.config.u_reg = 0.0
-        # self.cost.config.lambda_a = 0.001
-        # self.cost.config.lambda_j = 0.1
+        self.cost.config.lambda_a = 0.0
+        self.cost.config.lambda_j = 0.0
         self.cost.config.lambda_p = 1.0
         self.cost.config.lambda_l = 0.0
         self.cost.config.lambda_o = 0.0
         self.cost.config.rotate = 1.0
         self.cost.config.safe_factor = 3.0
+        self.cost.config.gamma = 0.99
+        self.cost.config.masks_power_x = 4.0
+        self.cost.config.masks_power_y = 4.0
         self.forward_model = forward_model
         self.normalizer = normalizer
         self.n_iter = n_iter
@@ -173,14 +185,16 @@ class MPCKMPolicy(nn.Module):
         }
 
         actions_per_fm_timestep = int(0.1 / self.timestep)
-        if self.unfold_len % actions_per_fm_timestep != 0:
-            return images[:, -1].repeat(1, self.unfold_len, 1, 1, 1), states[:, -1].repeat(1, self.unfold_len, 1)
+        if actions_per_fm_timestep == 0 or self.unfold_len % actions_per_fm_timestep != 0:
+            ref_states = self.unfold_km(states[..., -1, :].view(-1, 5), torch.zeros_like(actions))
+            return images[:, -1].repeat(1, self.unfold_len, 1, 1, 1), ref_states
         else:
             actions = actions.view(actions.shape[0], -1, actions_per_fm_timestep, 2)
             avg_actions = actions.mean(dim=2)
 
             unfolding = self.forward_model.model.unfold(actions_or_policy=avg_actions, batch=inputs, npred=3,)
             ref_images = unfolding["pred_images"].repeat_interleave(actions_per_fm_timestep, dim=1)
+            # TODO: this has to also account for the fact that other cars are probably moving at the same rate as us.
             ref_states = unfolding["pred_states"].repeat_interleave(actions_per_fm_timestep, dim=1)
             return ref_images, ref_states
 
@@ -200,15 +214,13 @@ class MPCKMPolicy(nn.Module):
             self.states = self.states[-20:]
             self.history_len = 20
 
-    def __call__(self, images, states, normalize_inputs=False, normalize_outputs=False, car_size=None, init=None):
+    def __call__(
+        self, images, states, normalize_inputs=False, normalize_outputs=False, car_size=None, init=None, metadata=None
+    ):
         device = states.device
-        if self.ctr == 30:
-            dump_dict = dict(
-                images=images,
-                states=states,
-                car_size=car_size,
-            )
-            torch.save(dump_dict, 'bad_example.dump')
+        # if self.ctr == 99:
+        #     dump_dict = dict(images=images, states=states, car_size=car_size,)
+        #     torch.save(dump_dict, "bad_example.dump")
 
         if normalize_inputs:
             states = self.normalizer.normalize_states(states.clone())
@@ -225,7 +237,14 @@ class MPCKMPolicy(nn.Module):
         #     )
         #     actions = torch.tensor(actions, requires_grad=True)
         # else:
-        actions = torch.zeros(states.shape[0], self.unfold_len, 2, device=device, requires_grad=True)
+
+        # Zero normalized maps to slight acceleration when normalized. We make sure we start from
+        # true zero.
+        actions = torch.zeros(states.shape[0], self.unfold_len, 2, device=device)
+        if init is not None:
+            actions[0, 0] = init
+        actions = self.normalizer.normalize_actions(actions)
+        actions.requires_grad = True
 
         optimizer = torch.optim.Adam((actions,), self.lr)
         self.ctr += 1
@@ -234,7 +253,6 @@ class MPCKMPolicy(nn.Module):
         # ref_states = self.unfold_km(states, torch.zeros_like(actions))
         # ref_images = images.repeat(1, self.unfold_len, 1, 1, 1)
         self.cost.traj_landscape = False
-
 
         if self.visualizer:
             self.visualizer.episode_reset()
@@ -262,6 +280,9 @@ class MPCKMPolicy(nn.Module):
             if i == self.n_iter - 1:
                 self.cost.traj_landscape = True
             costs = self.cost.calculate_cost(inputs, predictions)
+            if metadata is not None and "cost" not in metadata:
+                metadata["cost"] = costs["policy_loss"]
+
             if i == self.n_iter - 1:
                 self.cost.traj_landscape = False
             costs["policy_loss"].backward()
@@ -271,7 +292,11 @@ class MPCKMPolicy(nn.Module):
 
             if self.visualizer:
                 unnormalized_actions = self.normalizer.unnormalize_actions(actions.data.clamp(-3, 3))
-                self.visualizer.update_values(costs["policy_loss"].item(), unnormalized_actions[0, 0, 0].item(), unnormalized_actions[0, 0, 1].item())
+                self.visualizer.update_values(
+                    costs["policy_loss"].item(),
+                    unnormalized_actions[0, 0, 0].item(),
+                    unnormalized_actions[0, 0, 1].item(),
+                )
 
         self.visualizer.update_plot()
 
@@ -281,6 +306,6 @@ class MPCKMPolicy(nn.Module):
 
         if normalize_outputs:
             actions = self.normalizer.unnormalize_actions(actions.data.clamp(-3, 3))
-        print('final actions for', self.ctr, 'are', actions)
+        print("final actions for", self.ctr, "are", actions)
 
         return actions.detach()

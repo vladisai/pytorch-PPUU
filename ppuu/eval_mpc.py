@@ -67,7 +67,7 @@ def main(config):
     normalizer = dataloader.Normalizer(test_dataset.stats)
     cost = PolicyCostKMTaper(config.cost, None, normalizer)
     policy = MPCKMPolicy(forward_model, cost, normalizer, config.visualizer)
-    return policy
+    # return policy
 
     evaluator = PolicyEvaluator(
         test_dataset,

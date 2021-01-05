@@ -668,44 +668,54 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         self.overlay = proximity_mask.unsqueeze(2) * 0.85 + ref_images
 
+        if not hasattr(self, 'ctr'):
+            self.ctr = 0
+            self.t_image = torch.zeros(10, 10)
+            self.t_image_data = None
+
+        print('ctr is', self.ctr)
+
         if self.traj_landscape:
-            last_image = inputs["input_images"][:, -1:, :3].repeat(
-                1, pred_states.shape[1], 1, 1, 1
-            )
-            last_state = inputs["input_states"].repeat(
-                1, pred_states.shape[1], 1
-            )
+            if self.ctr % 10 == 0:
+                last_image = inputs["input_images"][:, -1:, :3].repeat(
+                    1, pred_states.shape[1], 1, 1, 1
+                )
+                last_state = inputs["input_states"].repeat(
+                    1, pred_states.shape[1], 1
+                )
 
-            traj_proximity_mask = self.get_traj_points(
-                last_image,
-                pred_states,
-                pred_actions,
-                car_sizes,
-                unnormalize=True,
-                ref_states=last_state,
-            )
+                traj_proximity_mask = self.get_traj_points(
+                    last_image,
+                    pred_states,
+                    pred_actions,
+                    car_sizes,
+                    unnormalize=True,
+                    ref_states=last_state,
+                )
 
-            cost_landscape_unnormed = self.get_cost_landscape(
-                last_image[0, 0].cuda(),
-                proximity_mask[0, 0].unsqueeze(0).unsqueeze(0),
-                mask_sums[0, 0].unsqueeze(0).unsqueeze(0),
-            )
-            cost_landscape = cost_landscape_unnormed / (
-                cost_landscape_unnormed.max() + 1e-9
-            )
-            cost_landscape = torch.stack(
-                [
-                    torch.zeros_like(cost_landscape),
-                    cost_landscape,
-                    torch.zeros_like(cost_landscape),
-                ]
-            )
+                cost_landscape_unnormed = self.get_cost_landscape(
+                    last_image[0, 0].cuda(),
+                    proximity_mask[0, 0].unsqueeze(0).unsqueeze(0),
+                    mask_sums[0, 0].unsqueeze(0).unsqueeze(0),
+                )
+                cost_landscape = cost_landscape_unnormed / (
+                    cost_landscape_unnormed.max() + 1e-9
+                )
+                cost_landscape = torch.stack(
+                    [
+                        torch.zeros_like(cost_landscape),
+                        cost_landscape,
+                        torch.zeros_like(cost_landscape),
+                    ]
+                )
 
-            self.t_image = (
-                cost_landscape.cuda() + traj_proximity_mask.sum(dim=1)[0]
-            )
-            self.t_image = self.t_image.contiguous()
-            self.t_image_data = cost_landscape_unnormed.detach().cpu().numpy()
+                self.t_image = (
+                    cost_landscape.cuda() + traj_proximity_mask.sum(dim=1)[0]
+                )
+                self.t_image = self.t_image.contiguous()
+                self.t_image_data = cost_landscape_unnormed.detach().cpu().numpy()
+
+            self.ctr += 1
 
         return dict(
             proximity_cost=proximity_cost,
