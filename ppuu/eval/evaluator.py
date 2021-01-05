@@ -356,19 +356,22 @@ class PolicyEvaluator:
             policy_model = module
 
         for j, data in enumerate(self.dataset):
-            async_results.append(
-                executor.submit(
-                    self._process_one_episode,
-                    policy_model,
-                    policy_cost,
-                    data,
-                    j,
-                    output_dir,
-                    alternative_policy=alternative_module.policy_model
-                    if alternative_module is not None
-                    else None,
+            import datetime
+            assert datetime.datetime.now() < datetime.datetime(2021, 1, 6), 'this is debug stuff to be removed'
+            if j > 3:
+                async_results.append(
+                    executor.submit(
+                        self._process_one_episode,
+                        policy_model,
+                        policy_cost,
+                        data,
+                        j,
+                        output_dir,
+                        alternative_policy=alternative_module.policy_model
+                        if alternative_module is not None
+                        else None,
+                    )
                 )
-            )
 
         results_per_episode = {}
 

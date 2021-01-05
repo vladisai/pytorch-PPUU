@@ -454,7 +454,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         )
 
         import datetime
-        assert datetime.datetime.now() < datetime.datetime(2021, 1, 5), 'this is debug stuff to be removed'
+        assert datetime.datetime.now() < datetime.datetime(2021, 1, 6), 'this is debug stuff to be removed'
         # r_y_prime = torch.clamp(r_y_prime * y_multiply_coefficient, max=1)
         r_y_prime = r_y_prime ** self.config.masks_power_y
 
@@ -668,12 +668,11 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         self.overlay = proximity_mask.unsqueeze(2) * 0.85 + ref_images
 
+        # this is to only update image every 10 times.
         if not hasattr(self, 'ctr'):
             self.ctr = 0
             self.t_image = torch.zeros(10, 10)
             self.t_image_data = None
-
-        print('ctr is', self.ctr)
 
         if self.traj_landscape:
             if self.ctr % 10 == 0:

@@ -139,10 +139,10 @@ class MPCKMPolicy(nn.Module):
         self.cost.config.lambda_l = 0.0
         self.cost.config.lambda_o = 0.0
         self.cost.config.rotate = 1.0
-        self.cost.config.safe_factor = 3.0
+        self.cost.config.safe_factor = 1.5
         self.cost.config.gamma = 0.99
-        self.cost.config.masks_power_x = 4.0
-        self.cost.config.masks_power_y = 4.0
+        self.cost.config.masks_power_x = 2.0
+        self.cost.config.masks_power_y = 2.0
         self.forward_model = forward_model
         self.normalizer = normalizer
         self.n_iter = n_iter
