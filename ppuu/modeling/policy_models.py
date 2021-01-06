@@ -136,8 +136,8 @@ class MPCKMPolicy(nn.Module):
         self.cost.config.lambda_a = 0.0
         self.cost.config.lambda_j = 0.0
         self.cost.config.lambda_p = 1.0
-        self.cost.config.lambda_l = 0.0
-        self.cost.config.lambda_o = 0.0
+        self.cost.config.lambda_l = 0.1
+        self.cost.config.lambda_o = 0.5
         self.cost.config.rotate = 1.0
         self.cost.config.safe_factor = 1.5
         self.cost.config.gamma = 0.99

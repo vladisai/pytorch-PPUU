@@ -254,6 +254,7 @@ class PolicyEvaluator:
         output_dir,
         alternative_policy=None,
     ):
+        self.visualizer.episode_i = index
         inputs = self.env.reset(
             time_slot=car_info["time_slot"], vehicle_id=car_info["car_id"]
         )
@@ -356,22 +357,19 @@ class PolicyEvaluator:
             policy_model = module
 
         for j, data in enumerate(self.dataset):
-            import datetime
-            assert datetime.datetime.now() < datetime.datetime(2021, 1, 6), 'this is debug stuff to be removed'
-            if j > 3:
-                async_results.append(
-                    executor.submit(
-                        self._process_one_episode,
-                        policy_model,
-                        policy_cost,
-                        data,
-                        j,
-                        output_dir,
-                        alternative_policy=alternative_module.policy_model
-                        if alternative_module is not None
-                        else None,
-                    )
+            async_results.append(
+                executor.submit(
+                    self._process_one_episode,
+                    policy_model,
+                    policy_cost,
+                    data,
+                    j,
+                    output_dir,
+                    alternative_policy=alternative_module.policy_model
+                    if alternative_module is not None
+                    else None,
                 )
+            )
 
         results_per_episode = {}
 
