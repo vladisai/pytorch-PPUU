@@ -7,7 +7,10 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 
 import logging
+from pathlib import Path
+import yaml
 from dataclasses import dataclass
+import dataclasses
 from typing import Optional, Any
 
 import torch.multiprocessing
@@ -20,6 +23,7 @@ from ppuu.eval import PolicyEvaluator
 from ppuu.costs.policy_costs_km import PolicyCostKMTaper
 from ppuu import slurm
 from ppuu.modeling.policy_models import MPCKMPolicy
+from ppuu.eval_mpc_visualizer import EvalVisualizer
 
 from omegaconf import MISSING
 
@@ -43,8 +47,9 @@ class EvalMPCConfig(configs.ConfigBase):
     cost_type: str = "km_taper"
     diffs: bool = False
     cost: PolicyCostKMTaper.Config = PolicyCostKMTaper.Config()
-    visualizer: Any = None
+    visualizer: Optional[Any] = None
     forward_model_path: Optional[str] = None
+
 
 def main(config):
     if config.num_processes > 0:
@@ -64,6 +69,17 @@ def main(config):
     else:
         forward_model = None
 
+    if config.output_dir is not None:
+        print(config)
+        path = Path(config.output_dir)
+        path.mkdir(exist_ok=True, parents=True)
+        path = path / "hparams.yml"
+        with open(path, 'w') as f:
+            yaml.dump(dataclasses.asdict(config), f)
+
+    if config.visualizer is None:
+        config.visualizer = EvalVisualizer()
+
     normalizer = dataloader.Normalizer(test_dataset.stats)
     cost = PolicyCostKMTaper(config.cost, None, normalizer)
     policy = MPCKMPolicy(forward_model, cost, normalizer, config.visualizer)
@@ -78,6 +94,10 @@ def main(config):
     )
     result = evaluator.evaluate(policy, output_dir=config.output_dir)
     print(result["stats"])
+
+    if hasattr(config.visualizer, 'save_videos'):
+        config.visualizer.save_videos(config.output_dir)
+
     return result
 
 

@@ -122,10 +122,10 @@ class MPCKMPolicy(nn.Module):
         cost,
         normalizer,
         visualizer=None,
-        n_iter=10,
+        n_iter=30,
         lr=0.1,
         unfold_len=10,
-        timestep=0.11,
+        timestep=0.10,
         update_ref_period=100,
     ):
         super().__init__()
@@ -287,11 +287,11 @@ class MPCKMPolicy(nn.Module):
                 self.cost.traj_landscape = False
             costs["policy_loss"].backward()
 
-            torch.nn.utils.clip_grad_norm_(actions, 0.5)
+            # torch.nn.utils.clip_grad_norm_(actions, 0.5)
             optimizer.step()
 
             if self.visualizer:
-                unnormalized_actions = self.normalizer.unnormalize_actions(actions.data.clamp(-3, 3))
+                unnormalized_actions = self.normalizer.unnormalize_actions(actions.data)
                 self.visualizer.update_values(
                     costs["policy_loss"].item(),
                     unnormalized_actions[0, 0, 0].item(),
@@ -305,7 +305,7 @@ class MPCKMPolicy(nn.Module):
         actions = actions[:, 0]
 
         if normalize_outputs:
-            actions = self.normalizer.unnormalize_actions(actions.data.clamp(-3, 3))
+            actions = self.normalizer.unnormalize_actions(actions.data)
         print("final actions for", self.ctr, "are", actions)
 
         return actions.detach()

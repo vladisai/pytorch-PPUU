@@ -254,7 +254,8 @@ class PolicyEvaluator:
         output_dir,
         alternative_policy=None,
     ):
-        self.visualizer.episode_i = index
+        if self.visualizer is not None:
+            self.visualizer.episode_i = index
         inputs = self.env.reset(
             time_slot=car_info["time_slot"], vehicle_id=car_info["car_id"]
         )
