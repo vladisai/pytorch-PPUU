@@ -19,13 +19,26 @@ class MixoutDeterministicPolicy(nn.Module):
         fc_layers = []
         for layer in original_model.fc:
             if isinstance(layer, nn.Linear):
-                fc_layers.append(MixLinear(layer.in_features, layer.out_features, bias=True, target=layer.weight, p=p,))
+                fc_layers.append(
+                    MixLinear(
+                        layer.in_features,
+                        layer.out_features,
+                        bias=True,
+                        target=layer.weight,
+                        p=p,
+                    )
+                )
             else:
                 fc_layers.append(layer)
         self.fc = nn.Sequential(*fc_layers)
 
     def forward(
-        self, state_images, states, normalize_inputs=False, normalize_outputs=False, car_size=None,
+        self,
+        state_images,
+        states,
+        normalize_inputs=False,
+        normalize_outputs=False,
+        car_size=None,
     ):
         if state_images.dim() == 4:  # if processing single vehicle
             state_images = state_images.cuda().unsqueeze(0)
@@ -33,7 +46,9 @@ class MixoutDeterministicPolicy(nn.Module):
 
         bsize = state_images.size(0)
         if normalize_inputs:
-            state_images = self.original_model.normalizer.normalize_images(state_images)
+            state_images = self.original_model.normalizer.normalize_images(
+                state_images
+            )
             if self.original_model.diffs:
                 states = self.original_model.normalizer.states_to_diffs(states)
             states = self.original_model.normalizer.normalize_states(states)
@@ -51,7 +66,15 @@ class MixoutDeterministicPolicy(nn.Module):
 
 class DeterministicPolicy(nn.Module):
     def __init__(
-        self, n_cond=20, n_feature=256, n_actions=2, h_height=14, h_width=3, n_hidden=256, diffs=False, turn_power=3,
+        self,
+        n_cond=20,
+        n_feature=256,
+        n_actions=2,
+        h_height=14,
+        h_width=3,
+        n_hidden=256,
+        diffs=False,
+        turn_power=3,
     ):
         super().__init__()
         self.n_channels = 4
@@ -63,7 +86,12 @@ class DeterministicPolicy(nn.Module):
         self.n_hidden = n_hidden
         self.diffs = diffs
         self.turn_power = turn_power
-        self.encoder = Encoder(a_size=0, n_inputs=self.n_cond, n_channels=self.n_channels, batch_norm=False,)
+        self.encoder = Encoder(
+            a_size=0,
+            n_inputs=self.n_cond,
+            n_channels=self.n_channels,
+            batch_norm=False,
+        )
         self.n_outputs = self.n_actions
         self.hsize = self.n_feature * self.h_height * self.h_width
         self.proj = nn.Linear(self.hsize, self.n_hidden)
@@ -81,7 +109,14 @@ class DeterministicPolicy(nn.Module):
             nn.Linear(self.n_hidden, self.n_outputs),
         )
 
-    def forward(self, state_images, states, normalize_inputs=False, normalize_outputs=False, car_size=None):
+    def forward(
+        self,
+        state_images,
+        states,
+        normalize_inputs=False,
+        normalize_outputs=False,
+        car_size=None,
+    ):
         if state_images.dim() == 4:  # if processing single vehicle
             state_images = state_images.cuda().unsqueeze(0)
             states = states.cuda().unsqueeze(0)
@@ -113,20 +148,19 @@ class DeterministicPolicy(nn.Module):
 class MPCKMPolicy(nn.Module):
     @dataclass
     class Config(configs.ConfigBase):
-        n_iter: int = 1000
+        n_iter: int = 10
         lr: float = 0.01
+        unfold_len: int = 30
+        timestep: float = 0.1
+        update_ref_period: int = 100
 
     def __init__(
         self,
         forward_model,
         cost,
         normalizer,
+        config,
         visualizer=None,
-        n_iter=30,
-        lr=0.1,
-        unfold_len=10,
-        timestep=0.10,
-        update_ref_period=100,
     ):
         super().__init__()
 
@@ -135,7 +169,7 @@ class MPCKMPolicy(nn.Module):
         self.cost.config.u_reg = 0.0
         self.cost.config.lambda_a = 0.0
         self.cost.config.lambda_j = 0.0
-        self.cost.config.lambda_p = 1.0
+        self.cost.config.lambda_p = 8.0
         self.cost.config.lambda_l = 0.1
         self.cost.config.lambda_o = 0.5
         self.cost.config.rotate = 1.0
@@ -145,15 +179,11 @@ class MPCKMPolicy(nn.Module):
         self.cost.config.masks_power_y = 2.0
         self.forward_model = forward_model
         self.normalizer = normalizer
-        self.n_iter = n_iter
-        self.lr = lr
-        self.timestep = timestep
-        self.unfold_len = unfold_len
+        self.config = config
+
         self.last_actions = None
-        self.update_ref_period = update_ref_period
         self.visualizer = visualizer
         self.reset()
-        print(self.cost.config)
 
     def unfold_km(self, states, actions):
         """
@@ -164,8 +194,10 @@ class MPCKMPolicy(nn.Module):
             predicted_states, shape = batch, unfold_len, state_dim
         """
         predictions = []
-        for i in range(self.unfold_len):
-            states = predict_states(states, actions[:, i], self.normalizer, timestep=self.timestep)
+        for i in range(self.config.unfold_len):
+            states = predict_states(
+                states, actions[:, i], self.normalizer, timestep=self.config.timestep
+            )
             predictions.append(states)
         return torch.stack(predictions, dim=1)
 
@@ -184,18 +216,36 @@ class MPCKMPolicy(nn.Module):
             "input_states": states.cuda(),
         }
 
-        actions_per_fm_timestep = int(0.1 / self.timestep)
-        if actions_per_fm_timestep == 0 or self.unfold_len % actions_per_fm_timestep != 0:
-            ref_states = self.unfold_km(states[..., -1, :].view(-1, 5), torch.zeros_like(actions))
-            return images[:, -1].repeat(1, self.unfold_len, 1, 1, 1), ref_states
+        actions_per_fm_timestep = int(0.1 / self.config.timestep)
+        if (
+            actions_per_fm_timestep == 0
+            or self.config.unfold_len % actions_per_fm_timestep != 0
+        ):
+            ref_states = self.unfold_km(
+                states[..., -1, :].view(-1, 5), torch.zeros_like(actions)
+            )
+            return (
+                images[:, -1].repeat(1, self.config.unfold_len, 1, 1, 1),
+                ref_states,
+            )
         else:
-            actions = actions.view(actions.shape[0], -1, actions_per_fm_timestep, 2)
+            actions = actions.view(
+                actions.shape[0], -1, actions_per_fm_timestep, 2
+            )
             avg_actions = actions.mean(dim=2)
 
-            unfolding = self.forward_model.model.unfold(actions_or_policy=avg_actions, batch=inputs, npred=3,)
-            ref_images = unfolding["pred_images"].repeat_interleave(actions_per_fm_timestep, dim=1)
+            unfolding = self.forward_model.model.unfold(
+                actions_or_policy=avg_actions,
+                batch=inputs,
+                npred=3,
+            )
+            ref_images = unfolding["pred_images"].repeat_interleave(
+                actions_per_fm_timestep, dim=1
+            )
             # TODO: this has to also account for the fact that other cars are probably moving at the same rate as us.
-            ref_states = unfolding["pred_states"].repeat_interleave(actions_per_fm_timestep, dim=1)
+            ref_states = unfolding["pred_states"].repeat_interleave(
+                actions_per_fm_timestep, dim=1
+            )
             return ref_images, ref_states
 
     def reset(self):
@@ -215,7 +265,14 @@ class MPCKMPolicy(nn.Module):
             self.history_len = 20
 
     def __call__(
-        self, images, states, normalize_inputs=False, normalize_outputs=False, car_size=None, init=None, metadata=None
+        self,
+        images,
+        states,
+        normalize_inputs=False,
+        normalize_outputs=False,
+        car_size=None,
+        init=None,
+        metadata=None,
     ):
         device = states.device
         # if self.ctr == 99:
@@ -240,13 +297,15 @@ class MPCKMPolicy(nn.Module):
 
         # Zero normalized maps to slight acceleration when normalized. We make sure we start from
         # true zero.
-        actions = torch.zeros(states.shape[0], self.unfold_len, 2, device=device)
+        actions = torch.zeros(
+            states.shape[0], self.config.unfold_len, 2, device=device
+        )
         if init is not None:
             actions[0, 0] = init
         actions = self.normalizer.normalize_actions(actions)
         actions.requires_grad = True
 
-        optimizer = torch.optim.Adam((actions,), self.lr)
+        optimizer = torch.optim.Adam((actions,), self.config.lr)
         self.ctr += 1
 
         # # One way to get reference states/images
@@ -257,9 +316,11 @@ class MPCKMPolicy(nn.Module):
         if self.visualizer:
             self.visualizer.episode_reset()
 
-        for i in range(self.n_iter):
-            if i % self.update_ref_period == 0:
-                ref_images, ref_states = self.unfold_fm(full_images, full_states, actions)
+        for i in range(self.config.n_iter):
+            if i % self.config.update_ref_period == 0:
+                ref_images, ref_states = self.unfold_fm(
+                    full_images, full_states, actions
+                )
 
             pred_states = self.unfold_km(states, actions)
             inputs = {
@@ -277,13 +338,13 @@ class MPCKMPolicy(nn.Module):
 
             # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
             optimizer.zero_grad()
-            if i == self.n_iter - 1:
+            if i == self.config.n_iter - 1:
                 self.cost.traj_landscape = True
             costs = self.cost.calculate_cost(inputs, predictions)
             if metadata is not None and "cost" not in metadata:
                 metadata["cost"] = costs["policy_loss"]
 
-            if i == self.n_iter - 1:
+            if i == self.config.n_iter - 1:
                 self.cost.traj_landscape = False
             costs["policy_loss"].backward()
 
@@ -291,7 +352,9 @@ class MPCKMPolicy(nn.Module):
             optimizer.step()
 
             if self.visualizer:
-                unnormalized_actions = self.normalizer.unnormalize_actions(actions.data)
+                unnormalized_actions = self.normalizer.unnormalize_actions(
+                    actions.data
+                )
                 self.visualizer.update_values(
                     costs["policy_loss"].item(),
                     unnormalized_actions[0, 0, 0].item(),

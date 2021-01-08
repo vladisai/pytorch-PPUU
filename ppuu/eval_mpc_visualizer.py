@@ -48,7 +48,14 @@ class EvalVisualizer:
         self.c_data = big_image
 
     def update_t(self, image, data):
-        image = image.clone().detach().cpu().mul_(255.0).clamp_(0, 255).type(torch.uint8)
+        image = (
+            image.clone()
+            .detach()
+            .cpu()
+            .mul_(255.0)
+            .clamp_(0, 255)
+            .type(torch.uint8)
+        )
         image = self.transform(image)
         self.t_data = image
         self.t_data_no_traj = data
@@ -59,7 +66,11 @@ class EvalVisualizer:
         self.turn_history.append(turn)
 
     def update_plot(self):
-        if self.i_data is not None and self.t_data is not None and self.c_data is not None:
+        if (
+            self.i_data is not None
+            and self.t_data is not None
+            and self.c_data is not None
+        ):
             self.costs_plot_output.clear_output()
             with self.costs_plot_output:
                 plt.figure(dpi=200, figsize=(10, 10))
@@ -87,7 +98,9 @@ class EvalVisualizer:
                     im = plt.imshow(self.t_data_no_traj)
                     im.axes.get_xaxis().set_visible(False)
                     im.axes.get_yaxis().set_visible(False)
-                    plt.gcf().colorbar(im, orientation="vertical", ax=plt.gca())
+                    plt.gcf().colorbar(
+                        im, orientation="vertical", ax=plt.gca()
+                    )
 
                 plt.subplot(1, 4, 1)
                 im = plt.imshow(self.i_data)  # show image
@@ -134,6 +147,24 @@ class EvalVisualizer:
             for i, img in enumerate(self.images_history[k]):
                 with open(path / f"{i:0>4d}.png", "wb") as f:
                     f.write(img)
-            video_path = Path(output_dir) / "visualizer" / "videos" / f"{k}.mp4"
+            video_path = (
+                Path(output_dir) / "visualizer" / "videos" / f"{k}.mp4"
+            )
             video_path.parent.mkdir(exist_ok=True, parents=True)
-            subprocess.call(['ffmpeg', '-r', '10', '-i', f'{path}/%04d.png', '-vcodec', 'mpeg4', '-y', video_path])
+            with open("/dev/null", 'w') as f:
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-nostdin", 
+                        "-r",
+                        "10",
+                        "-i",
+                        f"{path}/%04d.png",
+                        "-vcodec",
+                        "mpeg4",
+                        "-y",
+                        video_path,
+                    ],
+                    stdout=f,
+                    stderr=f,
+                )

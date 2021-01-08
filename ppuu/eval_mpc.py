@@ -47,6 +47,7 @@ class EvalMPCConfig(configs.ConfigBase):
     cost_type: str = "km_taper"
     diffs: bool = False
     cost: PolicyCostKMTaper.Config = PolicyCostKMTaper.Config()
+    mpc: MPCKMPolicy.Config = MPCKMPolicy.Config()
     visualizer: Optional[Any] = None
     forward_model_path: Optional[str] = None
 
@@ -70,7 +71,9 @@ def main(config):
         forward_model = None
 
     if config.output_dir is not None:
-        print(config)
+        print('config', config)
+        print('dict config', dataclasses.asdict(config))
+        print(type(config))
         path = Path(config.output_dir)
         path.mkdir(exist_ok=True, parents=True)
         path = path / "hparams.yml"
@@ -82,7 +85,7 @@ def main(config):
 
     normalizer = dataloader.Normalizer(test_dataset.stats)
     cost = PolicyCostKMTaper(config.cost, None, normalizer)
-    policy = MPCKMPolicy(forward_model, cost, normalizer, config.visualizer)
+    policy = MPCKMPolicy(forward_model, cost, normalizer, config.mpc, config.visualizer)
     # return policy
 
     evaluator = PolicyEvaluator(
@@ -106,7 +109,7 @@ if __name__ == "__main__":
     config = EvalMPCConfig.parse_from_command_line()
     use_slurm = slurm.parse_from_command_line()
     if use_slurm:
-        executor = slurm.get_executor("eval", 8)
+        executor = slurm.get_executor("mpc", 8, logs_path=config.output_dir)
         job = executor.submit(main, config)
         print(f"submitted to slurm with job id: {job.job_id}")
     else:
