@@ -412,6 +412,41 @@ class Normalizer:
         return images.clone().mul_(255.0).uint8()
 
 
+class UnitConverter:
+    METRES_IN_FOOT = 0.3048
+    LANE_WIDTH_METRES = 3.7
+    LANE_WIDTH_PIXELS = 24  # pixels / 3.7 m, lane width
+    PIXELS_IN_METRE = LANE_WIDTH_PIXELS / LANE_WIDTH_METRES
+
+    @classmethod
+    def feet_to_m(cls, x):
+        return x * cls.METRES_IN_FOOT
+
+    @classmethod
+    def m_to_feet(cls, x):
+        return x / cls.METRES_IN_FOOT
+
+    @classmethod
+    def pixels_to_m(cls, x):
+        return x / cls.PIXELS_IN_METRE
+
+    @classmethod
+    def m_to_pixels(cls, x):
+        return x * cls.PIXELS_IN_METRE
+
+    @classmethod
+    def feet_to_pixels(cls, x):
+        return cls.m_to_pixels(cls.feet_to_m(x))
+
+    @classmethod
+    def pixels_to_feet(cls, x):
+        return cls.m_to_feet(cls.pixels_to_m(x))
+
+    @classmethod
+    def pixels_per_s_to_kmph(cls, x):
+        return cls.pixels_to_m(x) / 1000 * 60 * 60
+
+
 if __name__ == "__main__":
     ds = DataStore("i80")
     d = Dataset(ds, "train", 20, 30, 100)

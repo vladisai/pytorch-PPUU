@@ -149,7 +149,7 @@ class MPCKMPolicy(nn.Module):
     @dataclass
     class Config(configs.ConfigBase):
         n_iter: int = 10
-        lr: float = 0.01
+        lr: float = 0.1
         unfold_len: int = 30
         timestep: float = 0.1
         update_ref_period: int = 100
@@ -165,18 +165,6 @@ class MPCKMPolicy(nn.Module):
         super().__init__()
 
         self.cost = cost
-        self.cost.config.shifted_reference_frame = True
-        self.cost.config.u_reg = 0.0
-        self.cost.config.lambda_a = 0.0
-        self.cost.config.lambda_j = 0.0
-        self.cost.config.lambda_p = 8.0
-        self.cost.config.lambda_l = 0.1
-        self.cost.config.lambda_o = 0.5
-        self.cost.config.rotate = 1.0
-        self.cost.config.safe_factor = 1.5
-        self.cost.config.gamma = 0.99
-        self.cost.config.masks_power_x = 2.0
-        self.cost.config.masks_power_y = 2.0
         self.forward_model = forward_model
         self.normalizer = normalizer
         self.config = config
