@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 from torch.nn import Parameter
 
-from ppuu.modeling.mixout.mixout import mixout
+from mixout import mixout
 
 
 class MixLinear(torch.nn.Module):
