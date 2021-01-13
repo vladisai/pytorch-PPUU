@@ -46,7 +46,7 @@ if __name__ == "__main__":
     print(c_dict)
 
     config = eval_mpc.EvalMPCConfig.parse_from_flat_dict(c_dict)
-    config.test_size_cap = 10
+    config.test_size_cap = 20
     config.num_processes = 0
     config.diffs = False
     config.forward_model_path = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_64/seed=42/checkpoints/last.ckpt"

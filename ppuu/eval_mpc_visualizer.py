@@ -11,13 +11,13 @@ import os
 from pathlib import Path
 import subprocess
 
-mpl.use("Agg")
 
 from torchvision import transforms
 
 
 class EvalVisualizer:
     def __init__(self):
+        mpl.use("Agg")
         self.transform = transforms.ToPILImage()
         self.costs_plot_output = widgets.Output()
         self.episode_reset()
