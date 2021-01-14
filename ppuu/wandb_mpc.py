@@ -29,7 +29,7 @@ if __name__ == "__main__":
     ]
     for k in c_dict:
         if k in log_params:
-            if c_dict[k] == "nil":
+            if c_dict[k] == -100:
                 c_dict[k] = 0.0
             else:
                 c_dict[k] = 10.0 ** c_dict[k]

@@ -348,8 +348,8 @@ class PolicyEvaluator:
         if self.num_processes > 0:
             executor = ProcessPoolExecutor(max_workers=self.num_processes)
         else:
-            # executor = ThreadPoolExecutor(max_workers=1)
-            executor = DummyExecutor()
+            executor = ThreadPoolExecutor(max_workers=1)
+            # executor = DummyExecutor()
         async_results = []
 
         # We create a copy of the cost module, but don't pass in the forward
