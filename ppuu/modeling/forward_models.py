@@ -19,7 +19,6 @@ class FMResult(NamedTuple):
     p_loss: torch.Tensor
 
 
-# forward model, deterministic (compatible with TEN3 model, use to initialize)
 class FwdCNN(nn.Module):
     def __init__(
         self,
@@ -50,9 +49,8 @@ class FwdCNN(nn.Module):
         self.predict_state = predict_state
         self.normalizer = None
 
-        self.encoder = Encoder(a_size=0, n_inputs=self.ncond)
+        self.encoder = Encoder(a_size=0, n_inputs=self.ncond, layers=self.layers)
         self.decoder = Decoder(
-            layers=self.layers,
             n_feature=self.nfeature,
             dropout=self.dropout,
             h_height=self.h_height,
@@ -72,7 +70,7 @@ class FwdCNN(nn.Module):
             nn.Linear(self.nfeature, self.hidden_size),
         )
         self.u_network = UNetwork(
-            n_feature=self.nfeature, layers=self.layers, dropout=self.dropout
+            n_feature=self.nfeature, dropout=self.dropout
         )
 
     # dummy function

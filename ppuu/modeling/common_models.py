@@ -23,6 +23,14 @@ class Encoder(nn.Module):
                 output_size // 4,
                 output_size // 2,
             )
+        elif layers == 5:
+            assert output_size % 16 == 0
+            feature_maps = (
+                output_size // 16,
+                output_size // 8,
+                output_size // 4,
+                output_size // 2,
+            )
         encoder_layers = []
         current_size = input_size
         for i, next_size in enumerate(feature_maps):
