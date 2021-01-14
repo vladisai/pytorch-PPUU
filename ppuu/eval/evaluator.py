@@ -25,6 +25,19 @@ from ppuu.data import dataloader
 MAX_ENV_QUEUE_SIZE = 5
 
 
+class DummyExecutor:
+    def submit(self, f, *args, **kwargs):
+        return DummyResult(f(*args, **kwargs))
+
+
+class DummyResult:
+    def __init__(self, v):
+        self.v = v
+
+    def result(self):
+        return self.v
+
+
 class PolicyEvaluator:
     def __init__(
         self,
@@ -167,7 +180,9 @@ class PolicyEvaluator:
 
             if self.visualizer is not None:
                 self.visualizer.update(inputs["context"][-1].contiguous())
-                self.visualizer.update_t(policy.cost.t_image.contiguous(), policy.cost.t_image_data)
+                self.visualizer.update_t(
+                    policy.cost.t_image.contiguous(), policy.cost.t_image_data
+                )
                 self.visualizer.update_c(policy.cost.overlay[0].contiguous())
 
             # every second, we save a copy of the environment
@@ -333,7 +348,8 @@ class PolicyEvaluator:
         if self.num_processes > 0:
             executor = ProcessPoolExecutor(max_workers=self.num_processes)
         else:
-            executor = ThreadPoolExecutor(max_workers=1)
+            # executor = ThreadPoolExecutor(max_workers=1)
+            executor = DummyExecutor()
         async_results = []
 
         # We create a copy of the cost module, but don't pass in the forward

@@ -80,7 +80,7 @@ def main(config):
         with open(path, 'w') as f:
             yaml.dump(dataclasses.asdict(config), f)
 
-    if config.visualizer is None:
+    if config.visualizer == 'dump':
         config.visualizer = EvalVisualizer()
 
     normalizer = dataloader.Normalizer(test_dataset.stats)

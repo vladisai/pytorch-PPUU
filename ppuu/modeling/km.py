@@ -45,6 +45,58 @@ def predict_states(states, actions, normalizer, timestep=0.1):
     return new_states
 
 
+def predict_states_seq(states, actions, normalizer, timestep=0.1):
+    """
+    Args:
+        - states : tensor of shape [batch size, 4]
+        - actions : tensor of shape [batch size, n_actions, 2]
+        - normalizer: normalizer object ot decode normalized values
+        - timestep : the time delta between two consecutive states
+    The main difference from predict_states is that this function predicts
+    a sequence of states given a sequence of actions.
+    """
+    actions = normalizer.unnormalize_actions(actions)
+    states = normalizer.unnormalize_states(states)
+
+    a = actions[:, :, 0]
+    b = actions[:, :, 1].unsqueeze(1)
+
+    positions = states[:, :2]
+
+    speeds_norm = states[:, 4].unsqueeze(1)
+
+    directions = states[:, 2:4]
+
+    directions = directions / directions.norm(dim=1).unsqueeze(1)
+
+    n_actions = actions.shape[1]
+
+    result = []
+
+    for i in range(n_actions):
+        new_positions = positions + timestep * directions * speeds_norm
+
+        ortho_directions = torch.stack([directions[:, 1], -directions[:, 0]], axis=1)
+
+        new_directions_unnormed = directions + ortho_directions * b[:, :, i] * speeds_norm * timestep
+        # + torch.tensor([1e-6, 0]).unsqueeze(0).to(directions.device)
+
+        new_directions = new_directions_unnormed / (
+            torch.clamp(new_directions_unnormed.norm(dim=1).view(positions.shape[0], 1), min=1e-8, max=1e6,)
+        )
+
+        new_speeds_norm = speeds_norm + a[:, i].unsqueeze(1) * timestep
+
+        result.append(torch.cat([new_positions, new_directions, new_speeds_norm], 1))
+
+        positions = new_positions
+        directions = new_directions
+        speeds_norm = new_speeds_norm
+
+    return torch.stack(result, dim=1)
+
+
+
 def predict_states_diff(states, actions, normalizer, timestep=0.1):
     """
     Args:
