@@ -54,8 +54,11 @@ class EvalMPCConfig(configs.ConfigBase):
 
 def main(config):
     if config.num_processes > 0:
-        torch.multiprocessing.set_sharing_strategy("file_system")
-        torch.multiprocessing.set_start_method("spawn")
+        try:
+            torch.multiprocessing.set_sharing_strategy("file_system")
+            torch.multiprocessing.set_start_method("spawn")
+        except RuntimeError:
+            pass
 
     test_dataset = dataloader.EvaluationDataset(config.dataset, "test", config.test_size_cap)
 

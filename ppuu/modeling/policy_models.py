@@ -161,6 +161,9 @@ class MPCKMPolicy(nn.Module):
         optimizer: str = "Adam"
         optimizer_budget: Optional[int] = None
         lbfgs_log_barrier_alpha: float = 0.01
+        fm_unfold_variance: float = 1.0
+        fm_unfold_samples: int = 1
+        fm_unfold_samples_agg: str = "max"
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -196,7 +199,9 @@ class MPCKMPolicy(nn.Module):
         Returns:
             predicted_states, shape = batch, unfold_len, state_dim
         """
-        return predict_states_seq(states, actions, self.normalizer, timestep=self.config.timestep)
+        return predict_states_seq(
+            states, actions, self.normalizer, timestep=self.config.timestep
+        )
         # predictions = []
         # for i in range(self.config.unfold_len):
         #     states = predict_states(
@@ -208,6 +213,7 @@ class MPCKMPolicy(nn.Module):
         #     predictions.append(states)
         # return torch.stack(predictions, dim=1)
 
+    @torch.no_grad()
     def unfold_fm(self, images, states, actions):
         """
         Autoregressively applies fm prediction to get reference images and states.
@@ -217,11 +223,6 @@ class MPCKMPolicy(nn.Module):
             predicted_images, shape = batch, unfold_len, images channels, images h, images w
             predicted_states, shape = batch, unfold_len, state_dim
         """
-
-        inputs = {
-            "input_images": images.cuda(),
-            "input_states": states.cuda(),
-        }
 
         actions_per_fm_timestep = int(0.1 / self.config.timestep)
         if (
@@ -242,18 +243,50 @@ class MPCKMPolicy(nn.Module):
             )
             avg_actions = actions.mean(dim=2)
 
+            # We make a batch of the same values, but we use different latents.
+            # The motivation is to get multiple fm predictions and plan through that to get
+            # better results that reflect the uncertainty.
+
+            def repeat_batch(value, times):
+                return value.repeat(times, *([1] * (len(value.shape) - 1)))
+
+            avg_actions = repeat_batch(
+                avg_actions, self.config.fm_unfold_samples
+            )
+            images = repeat_batch(images, self.config.fm_unfold_samples)
+            states = repeat_batch(states, self.config.fm_unfold_samples)
+
+            Z = (
+                torch.randn(*avg_actions.shape[:2], 32)
+                * self.config.fm_unfold_variance
+            )
+
             unfolding = self.forward_model.model.unfold(
                 actions_or_policy=avg_actions,
-                batch=inputs,
-                npred=3,
+                batch={
+                    "input_images": images.cuda(),
+                    "input_states": states.cuda(),
+                },
+                Z=Z,
             )
-            ref_images = unfolding["pred_images"].repeat_interleave(
-                actions_per_fm_timestep, dim=1
-            )
+            if self.config.fm_unfold_samples_agg == "max":
+                ref_images = (
+                    unfolding["pred_images"]
+                    .max(dim=0, keepdim=True)
+                    .values.repeat_interleave(actions_per_fm_timestep, dim=1)
+                )
+            elif self.config.fm_unfold_samples_agg == "mean":
+                ref_images = (
+                    unfolding["pred_images"]
+                    .mean(dim=0, keepdim=True)
+                    .repeat_interleave(actions_per_fm_timestep, dim=1)
+                )
+
             # TODO: this has to also account for the fact that other cars are probably moving at the same rate as us.
-            ref_states = unfolding["pred_states"].repeat_interleave(
+            ref_states = unfolding["pred_states"][:1].repeat_interleave(
                 actions_per_fm_timestep, dim=1
             )
+
             return ref_images, ref_states
 
     def reset(self):
