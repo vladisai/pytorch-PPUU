@@ -50,6 +50,7 @@ class EvalMPCConfig(configs.ConfigBase):
     mpc: MPCKMPolicy.Config = MPCKMPolicy.Config()
     visualizer: Optional[Any] = None
     forward_model_path: Optional[str] = None
+    seed: int = 42
 
 
 def main(config):
@@ -59,6 +60,8 @@ def main(config):
             torch.multiprocessing.set_start_method("spawn")
         except RuntimeError:
             pass
+
+    torch.manual_seed(seed)
 
     test_dataset = dataloader.EvaluationDataset(config.dataset, "test", config.test_size_cap)
 

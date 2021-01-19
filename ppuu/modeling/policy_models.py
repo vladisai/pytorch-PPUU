@@ -164,6 +164,7 @@ class MPCKMPolicy(nn.Module):
         fm_unfold_variance: float = 1.0
         fm_unfold_samples: int = 1
         fm_unfold_samples_agg: str = "max"
+        planning_freq: int = 1
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -191,6 +192,10 @@ class MPCKMPolicy(nn.Module):
         self.visualizer = visualizer
         self.reset()
 
+    def reset(self):
+        self.last_actions = None
+        self.ctr = 0
+
     def unfold_km(self, states, actions):
         """
         Autoregressively applies km state prediction to states with given actions.
@@ -198,9 +203,14 @@ class MPCKMPolicy(nn.Module):
             actions shape : batch, unfold_len, action_dim
         Returns:
             predicted_states, shape = batch, unfold_len, state_dim
+
+        These calculations are faster on cpu, so we transfer the data before we do it.
         """
         return predict_states_seq(
-            states, actions, self.normalizer, timestep=self.config.timestep
+            states,
+            actions,
+            self.normalizer,
+            timestep=self.config.timestep,
         )
         # predictions = []
         # for i in range(self.config.unfold_len):
@@ -289,22 +299,6 @@ class MPCKMPolicy(nn.Module):
 
             return ref_images, ref_states
 
-    def reset(self):
-        self.last_actions = None
-        self.images = []
-        self.states = []
-        self.history_len = 0
-        self.ctr = 0
-
-    def update_history(self, images, states):
-        self.images = images
-        self.states.append(states[0])
-        self.history_len += 1
-        if self.history_len > 20:
-            self.images = self.images[-20:]
-            self.states = self.states[-20:]
-            self.history_len = 20
-
     def __call__(
         self,
         images,
@@ -316,7 +310,19 @@ class MPCKMPolicy(nn.Module):
         metadata=None,
     ):
         device = states.device
-        self.ctr += 1
+
+        if self.ctr % self.config.planning_freq > 0:
+            actions = self.last_actions[:, self.ctr % self.config.planning_freq]
+
+            if normalize_outputs:
+                actions = self.normalizer.unnormalize_actions(actions.data)
+
+            print("final actions for", self.ctr, "are", actions)
+
+            self.ctr += 1
+
+            return actions.detach()
+
         # if self.ctr == 99:
         #     dump_dict = dict(images=images, states=states, car_size=car_size,)
         #     torch.save(dump_dict, "bad_example.dump")
@@ -328,6 +334,7 @@ class MPCKMPolicy(nn.Module):
             states = self.normalizer.normalize_states(states.clone())
             images = self.normalizer.normalize_images(images)
             car_size = torch.tensor(car_size).unsqueeze(0)
+
         full_states = states.unsqueeze(0)
         full_images = images[:, :3].unsqueeze(0)
         states = states[..., -1, :].view(-1, 5)
@@ -346,6 +353,7 @@ class MPCKMPolicy(nn.Module):
         )
         if init is not None:
             actions[0, 0] = init
+
         actions = self.normalizer.normalize_actions(actions)
         actions.requires_grad = True
         self.cost.traj_landscape = False
@@ -510,6 +518,9 @@ class MPCKMPolicy(nn.Module):
 
         if normalize_outputs:
             actions = self.normalizer.unnormalize_actions(actions.data)
+
         print("final actions for", self.ctr, "are", actions)
+
+        self.ctr += 1
 
         return actions.detach()
