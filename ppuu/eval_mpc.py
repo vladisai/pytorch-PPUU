@@ -61,7 +61,7 @@ def main(config):
         except RuntimeError:
             pass
 
-    torch.manual_seed(seed)
+    torch.manual_seed(config.seed)
 
     test_dataset = dataloader.EvaluationDataset(config.dataset, "test", config.test_size_cap)
 
