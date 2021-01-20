@@ -63,7 +63,9 @@ def main(config):
 
     torch.manual_seed(config.seed)
 
-    test_dataset = dataloader.EvaluationDataset(config.dataset, "test", config.test_size_cap)
+    test_dataset = dataloader.EvaluationDataset(
+        config.dataset, "test", config.test_size_cap
+    )
 
     if config.forward_model_path is not None:
         m_config = FM.Config()
@@ -77,21 +79,23 @@ def main(config):
         forward_model = None
 
     if config.output_dir is not None:
-        print('config', config)
-        print('dict config', dataclasses.asdict(config))
+        print("config", config)
+        print("dict config", dataclasses.asdict(config))
         print(type(config))
         path = Path(config.output_dir)
         path.mkdir(exist_ok=True, parents=True)
         path = path / "hparams.yml"
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             yaml.dump(dataclasses.asdict(config), f)
 
-    if config.visualizer == 'dump':
+    if config.visualizer == "dump":
         config.visualizer = EvalVisualizer()
 
     normalizer = dataloader.Normalizer(test_dataset.stats)
     cost = PolicyCostKMTaper(config.cost, None, normalizer)
-    policy = MPCKMPolicy(forward_model, cost, normalizer, config.mpc, config.visualizer)
+    policy = MPCKMPolicy(
+        forward_model, cost, normalizer, config.mpc, config.visualizer
+    )
     # return policy
 
     evaluator = PolicyEvaluator(
@@ -104,7 +108,7 @@ def main(config):
     result = evaluator.evaluate(policy, output_dir=config.output_dir)
     print(result["stats"])
 
-    if hasattr(config.visualizer, 'save_videos'):
+    if hasattr(config.visualizer, "save_videos"):
         config.visualizer.save_videos(config.output_dir)
 
     return result
