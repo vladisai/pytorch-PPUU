@@ -24,6 +24,7 @@ if __name__ == "__main__":
         "lambda_p",
         "lambda_l",
         "lambda_o",
+        "lambda_j_mpc",
         "mask_coeff",
         "lr",
     ]
@@ -46,8 +47,8 @@ if __name__ == "__main__":
     print(c_dict)
 
     config = eval_mpc.EvalMPCConfig.parse_from_flat_dict(c_dict)
-    config.test_size_cap = 20
-    config.num_processes = 5
+    config.test_size_cap = 50
+    config.num_processes = 7
     config.diffs = False
     config.forward_model_path = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_64/seed=42/checkpoints/last.ckpt"
     config.dataset = "/home/us441/nvidia-collab/vlad/traffic-data-5/state-action-cost/data_i80_v0/"

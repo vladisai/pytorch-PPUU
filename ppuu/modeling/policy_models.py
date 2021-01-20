@@ -165,6 +165,7 @@ class MPCKMPolicy(nn.Module):
         fm_unfold_samples: int = 1
         fm_unfold_samples_agg: str = "max"
         planning_freq: int = 1
+        lambda_j_mpc: float = 0.0
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -328,7 +329,7 @@ class MPCKMPolicy(nn.Module):
         #     torch.save(dump_dict, "bad_example.dump")
 
         if self.visualizer:
-            self.visualizer.episode_reset()
+            self.visualizer.step_reset()
 
         if normalize_inputs:
             states = self.normalizer.normalize_states(states.clone())
@@ -373,9 +374,30 @@ class MPCKMPolicy(nn.Module):
                 "pred_actions": actions.unsqueeze(1),
             }
 
+            jerk_actions = actions
+            if self.last_actions is not None:
+                # Cat the last action so we account for what action we performed in the past when calculating jerk.
+                jerk_actions = torch.cat([self.last_actions[:, :1], actions], dim=1)
+
+            gamma_mask = (
+                torch.tensor([self.cost.config.gamma ** t for t in range(jerk_actions.shape[1] - 1)])
+                .cuda()
+                .unsqueeze(0)
+            )
+            loss_j = (
+                (
+                    jerk_actions[:, 1:]
+                    - jerk_actions[:, :-1]
+                )
+                .norm(2, 2)
+                .pow(2)
+                .mul(gamma_mask)
+                .sum()
+            )
+
             # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
             costs = self.cost.calculate_cost(inputs, predictions)
-            return costs["policy_loss"]
+            return costs["policy_loss"] + loss_j * self.config.lambda_j_mpc
 
         if self.config.optimizer in ["SGD", "Adam"]:
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
@@ -402,7 +424,8 @@ class MPCKMPolicy(nn.Module):
                     self.cost.traj_landscape = False
                 cost.backward()
 
-                # torch.nn.utils.clip_grad_norm_(actions, 0.5)
+                # this is definitely needed, judging from some examples I saw where gradient is 50
+                torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type='inf')
                 optimizer.step()
 
                 if self.visualizer:
@@ -413,6 +436,8 @@ class MPCKMPolicy(nn.Module):
                         cost.item(),
                         unnormalized_actions[0, 0, 0].item(),
                         unnormalized_actions[0, 0, 1].item(),
+                        actions.grad[0, 0, 0].item(),
+                        actions.grad[0, 0, 1].item(),
                     )
 
         elif self.config.optimizer == "Nevergrad":

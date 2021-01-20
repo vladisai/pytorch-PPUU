@@ -89,7 +89,7 @@ def main(config):
             yaml.dump(dataclasses.asdict(config), f)
 
     if config.visualizer == "dump":
-        config.visualizer = EvalVisualizer()
+        config.visualizer = EvalVisualizer(config.output_dir)
 
     normalizer = dataloader.Normalizer(test_dataset.stats)
     cost = PolicyCostKMTaper(config.cost, None, normalizer)
@@ -107,9 +107,6 @@ def main(config):
     )
     result = evaluator.evaluate(policy, output_dir=config.output_dir)
     print(result["stats"])
-
-    if hasattr(config.visualizer, "save_videos"):
-        config.visualizer.save_videos(config.output_dir)
 
     return result
 

@@ -61,9 +61,6 @@ class PolicyEvaluator:
         self.rollback_seconds = rollback_seconds
         self.visualizer = visualizer
         self.normalizer = dataloader.Normalizer(dataset.stats)
-        assert (
-            self.visualizer is None or self.num_processes == 0
-        ), "can't use visualizer with multiprocessing"
 
         i80_env_id = "I-80-v1"
         if i80_env_id not in [e.id for e in gym.envs.registry.all()]:
@@ -274,7 +271,8 @@ class PolicyEvaluator:
         alternative_policy=None,
     ):
         if self.visualizer is not None:
-            self.visualizer.episode_i = index
+            self.visualizer.episode_reset()
+
         inputs = self.env.reset(
             time_slot=car_info["time_slot"], vehicle_id=car_info["car_id"]
         )
@@ -335,6 +333,9 @@ class PolicyEvaluator:
         if self.return_episode_data:
             result["episode_data"] = episode_data
 
+        if self.visualizer is not None:
+            self.visualizer.save_video(index)
+
         return result
 
     def evaluate(
@@ -343,6 +344,7 @@ class PolicyEvaluator:
         output_dir: Optional[str] = None,
         alternative_module: Optional[torch.nn.Module] = None,
     ):
+
         if output_dir is not None:
             os.makedirs(
                 os.path.join(output_dir, "episode_data"), exist_ok=True
@@ -437,5 +439,6 @@ class PolicyEvaluator:
                 "w",
             ) as f:
                 json.dump(result, f, indent=4)
+
 
         return result
