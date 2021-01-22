@@ -16,6 +16,10 @@ from ppuu import configs
 from ppuu.modeling.km import predict_states, predict_states_seq
 
 
+def repeat_batch(value, times):
+    return value.repeat(times, *([1] * (len(value.shape) - 1)))
+
+
 class MixoutDeterministicPolicy(nn.Module):
     def __init__(self, original_model, p):
         super().__init__()
@@ -149,6 +153,98 @@ class DeterministicPolicy(nn.Module):
         return a
 
 
+class CE:
+    """Adapted from:
+    https://github.com/homangab/gradcem/blob/master/mpc/cem.py
+    """
+
+    def __init__(
+        self,
+        batch_size=1,
+        horizon=30,
+        n_iter=10,
+        population_size=30,
+        top_size=10,
+        variance=4,
+        gd=True,
+        lr=0.1,
+    ):
+        self.a_size = 2
+        self.batch_size = batch_size
+        self.horizon = horizon
+        self.device = torch.device("cuda")
+        self.n_iter = n_iter
+        self.population_size = population_size
+        self.top_size = top_size
+        self.variance = variance
+        self.gd = gd
+        self.lr = lr
+
+    def plan(self, get_cost):
+        # Initialize factorized belief over action sequences q(a_t:t+H) ~ N(0, I)
+        a_mu = torch.zeros(
+            self.batch_size, 1, self.horizon, self.a_size, device=self.device
+        )
+        a_std = self.variance * torch.ones(
+            self.batch_size, 1, self.horizon, self.a_size, device=self.device
+        )
+        actions = a_mu + a_std * torch.randn(
+            self.batch_size,
+            self.population_size,
+            self.horizon,
+            self.a_size,
+            device=self.device,
+        )
+
+        optimizer = torch.optim.SGD(
+            (actions,), self.lr
+        )
+        actions.requires_grad = True
+
+        for _ in range(self.n_iter):
+            # now we want to get the rewards for those actions.
+            costs = get_cost(
+                actions.view(-1, self.horizon, self.a_size),
+                keep_batch_dim=True,
+            ).view(self.batch_size, self.population_size)
+
+            optimizer.zero_grad()
+            costs.mean().backward()
+            torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
+            optimizer.step()
+
+            # get the indices of the best cost elements
+            values, topk = costs.topk(
+                self.top_size, dim=1, largest=False, sorted=True,
+            )
+
+            # pick the actions that correspond to the best elements
+            best_actions = actions.view(
+                self.batch_size,
+                self.population_size,
+                self.horizon,
+                self.a_size,
+            ).gather(
+                dim=1, index=topk.view(*topk.shape, 1, 1).repeat(1, 1, 40, 2)
+            )
+
+            # Update belief with new means and standard deviations
+            a_mu = best_actions.mean(dim=1, keepdim=True)
+            a_std = best_actions.std(dim=1, unbiased=False, keepdim=True)
+
+            resample_actions = a_mu + a_std * torch.randn(
+                self.batch_size,
+                self.population_size - self.top_size,
+                self.horizon,
+                self.a_size,
+                device=self.device,
+            )
+
+            actions.data = torch.cat([best_actions, resample_actions], dim=1)
+
+        return actions[:, 0]
+
+
 class MPCKMPolicy(nn.Module):
     @dataclass
     class Config(configs.ConfigBase):
@@ -166,6 +262,7 @@ class MPCKMPolicy(nn.Module):
         fm_unfold_samples_agg: str = "max"
         planning_freq: int = 1
         lambda_j_mpc: float = 0.0
+        batch_size: int = 1
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -258,9 +355,6 @@ class MPCKMPolicy(nn.Module):
             # The motivation is to get multiple fm predictions and plan through that to get
             # better results that reflect the uncertainty.
 
-            def repeat_batch(value, times):
-                return value.repeat(times, *([1] * (len(value.shape) - 1)))
-
             avg_actions = repeat_batch(
                 avg_actions, self.config.fm_unfold_samples
             )
@@ -313,7 +407,9 @@ class MPCKMPolicy(nn.Module):
         device = states.device
 
         if self.ctr % self.config.planning_freq > 0:
-            actions = self.last_actions[:, self.ctr % self.config.planning_freq]
+            actions = self.last_actions[
+                :, self.ctr % self.config.planning_freq
+            ]
 
             if normalize_outputs:
                 actions = self.normalizer.unnormalize_actions(actions.data)
@@ -349,9 +445,13 @@ class MPCKMPolicy(nn.Module):
 
         # Zero normalized maps to slight acceleration when normalized. We make sure we start from
         # true zero.
-        actions = torch.zeros(
-            states.shape[0], self.config.unfold_len, 2, device=device
+        actions = torch.randn(
+            self.config.batch_size, self.config.unfold_len, 2, device=device
         )
+        actions[:, :, 1] = 0
+        best_actions = actions[:1]
+        best_cost = 1e10
+
         if init is not None:
             actions[0, 0] = init
 
@@ -359,45 +459,61 @@ class MPCKMPolicy(nn.Module):
         actions.requires_grad = True
         self.cost.traj_landscape = False
 
-        def get_cost(actions):
-            pred_states = self.unfold_km(states, actions)
+        def get_cost(actions, keep_batch_dim=False):
+            batch_size = actions.shape[0]
+            rep_states = repeat_batch(states, batch_size)
+
+            pred_states = self.unfold_km(rep_states, actions)
             inputs = {
-                "input_images": images,
-                "input_states": states.unsqueeze(1),
-                "car_sizes": car_size,
-                "ref_states": ref_states,
-                "ref_images": ref_images,
+                "input_images": repeat_batch(images, batch_size),
+                "input_states": repeat_batch(states.unsqueeze(1), batch_size),
+                "car_sizes": repeat_batch(car_size, batch_size),
+                "ref_states": repeat_batch(ref_states, batch_size),
+                "ref_images": repeat_batch(ref_images, batch_size),
             }
             predictions = {
                 "pred_states": pred_states,
-                "pred_images": ref_images,
+                "pred_images": repeat_batch(ref_images, batch_size),
                 "pred_actions": actions.unsqueeze(1),
             }
 
             jerk_actions = actions
             if self.last_actions is not None:
                 # Cat the last action so we account for what action we performed in the past when calculating jerk.
-                jerk_actions = torch.cat([self.last_actions[:, :1], actions], dim=1)
+                jerk_actions = torch.cat(
+                    [
+                        repeat_batch(self.last_actions[:, :1], batch_size),
+                        actions,
+                    ],
+                    dim=1,
+                )
 
             gamma_mask = (
-                torch.tensor([self.cost.config.gamma ** t for t in range(jerk_actions.shape[1] - 1)])
+                torch.tensor(
+                    [
+                        self.cost.config.gamma ** t
+                        for t in range(jerk_actions.shape[1] - 1)
+                    ]
+                )
                 .cuda()
                 .unsqueeze(0)
             )
             loss_j = (
-                (
-                    jerk_actions[:, 1:]
-                    - jerk_actions[:, :-1]
-                )
+                (jerk_actions[:, 1:] - jerk_actions[:, :-1])
                 .norm(2, 2)
                 .pow(2)
                 .mul(gamma_mask)
-                .sum()
+                .mean(dim=1)
             )
 
             # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
             costs = self.cost.calculate_cost(inputs, predictions)
-            return costs["policy_loss"] + loss_j * self.config.lambda_j_mpc
+
+            result = costs["policy_loss"] + loss_j * self.config.lambda_j_mpc
+            if keep_batch_dim:
+                return result
+            else:
+                return result.mean()
 
         if self.config.optimizer in ["SGD", "Adam"]:
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
@@ -407,7 +523,7 @@ class MPCKMPolicy(nn.Module):
             for i in range(self.config.n_iter):
                 if i % self.config.update_ref_period == 0:
                     ref_images, ref_states = self.unfold_fm(
-                        full_images, full_states, actions
+                        full_images, full_states, best_actions
                     )
 
                 # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
@@ -415,25 +531,28 @@ class MPCKMPolicy(nn.Module):
                 if i == self.config.n_iter - 1 and self.visualizer is not None:
                     self.cost.traj_landscape = True
 
-                cost = get_cost(actions)
-
-                if metadata is not None and "cost" not in metadata:
-                    metadata["cost"] = cost
+                cost = get_cost(actions, keep_batch_dim=True)
 
                 if i == self.config.n_iter - 1:
                     self.cost.traj_landscape = False
-                cost.backward()
+
+                cost.mean().backward()
 
                 # this is definitely needed, judging from some examples I saw where gradient is 50
-                torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type='inf')
+                torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
                 optimizer.step()
+
+                values, indices = cost.max(dim=0)
+                if cost[indices] < best_cost:
+                    best_actions = actions[indices].unsqueeze(0).clone()
+                    best_cost = cost[indices]
 
                 if self.visualizer:
                     unnormalized_actions = self.normalizer.unnormalize_actions(
                         actions.data
                     )
                     self.visualizer.update_values(
-                        cost.item(),
+                        best_cost.item(),
                         unnormalized_actions[0, 0, 0].item(),
                         unnormalized_actions[0, 0, 1].item(),
                         actions.grad[0, 0, 0].item(),
@@ -532,14 +651,35 @@ class MPCKMPolicy(nn.Module):
                     unnormalized_actions[0, 0, 1].item(),
                 )
 
+        elif self.config.optimizer == "CE":
+            ref_images, ref_states = self.unfold_fm(
+                full_images, full_states, actions
+            )
+            ce = CE(
+                batch_size=1,
+                horizon=self.config.unfold_len,
+                n_iter=self.config.n_iter,
+            )
+            actions = ce.plan(get_cost)
+
+            if self.visualizer:
+                unnormalized_actions = self.normalizer.unnormalize_actions(
+                    actions.data
+                )
+                self.visualizer.update_values(
+                    0.0,
+                    unnormalized_actions[0, 0, 0].item(),
+                    unnormalized_actions[0, 0, 1].item(),
+                )
+
         self.cost.traj_landscape = False
 
         if self.visualizer is not None:
             self.visualizer.update_plot()
 
-        self.last_actions = actions
+        self.last_actions = best_actions
 
-        actions = actions[:, 0]
+        actions = best_actions[:, 0]
 
         if normalize_outputs:
             actions = self.normalizer.unnormalize_actions(actions.data)

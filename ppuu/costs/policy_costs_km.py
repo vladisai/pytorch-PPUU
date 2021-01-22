@@ -598,9 +598,9 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         # Multiply everything with mask_coeff used to scale up the costs that
         # depend on mask size.
-        lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred]) * self.config.mask_coeff
-        offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred]) * self.config.mask_coeff
-        proximity_loss = torch.mean(proximity_cost * gamma_mask[:, :npred]) * self.config.mask_coeff
+        lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
+        offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
+        proximity_loss = torch.mean(proximity_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
 
         self.overlay = proximity_mask.unsqueeze(2) * 0.85 + ref_images
 
