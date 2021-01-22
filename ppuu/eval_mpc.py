@@ -51,6 +51,7 @@ class EvalMPCConfig(configs.ConfigBase):
     visualizer: Optional[Any] = None
     forward_model_path: Optional[str] = None
     seed: int = 42
+    dataset_partition: str = "test"
 
 
 def main(config):
@@ -64,7 +65,7 @@ def main(config):
     torch.manual_seed(config.seed)
 
     test_dataset = dataloader.EvaluationDataset(
-        config.dataset, "test", config.test_size_cap
+        config.dataset, config.dataset_partition, config.test_size_cap
     )
 
     if config.forward_model_path is not None:

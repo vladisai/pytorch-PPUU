@@ -148,6 +148,7 @@ class PolicyCostKM(PolicyCostContinuous):
         result["masks"] = proximity_masks
         result["pre_max"] = pre_max
         result["contours"] = green_contours
+
         return result
 
     def compute_lane_cost_km(self, images, proximity_masks, masks_sums=None):
@@ -601,6 +602,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
         offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
         proximity_loss = torch.mean(proximity_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
+
 
         self.overlay = proximity_mask.unsqueeze(2) * 0.85 + ref_images
 
