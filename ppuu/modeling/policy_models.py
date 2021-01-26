@@ -126,7 +126,7 @@ class CE:
     """
 
     def __init__(
-        self, batch_size=1, horizon=30, n_iter=10, population_size=30, top_size=10, variance=4, gd=True, lr=0.1,
+        self, batch_size=1, horizon=30, n_iter=10, population_size=30, top_size=10, variance=4, gd=True, lr=0.1, repeat_step=5,
     ):
         self.a_size = 2
         self.batch_size = batch_size
@@ -138,17 +138,19 @@ class CE:
         self.variance = variance
         self.gd = gd
         self.lr = lr
+        self.repeat_step = repeat_step
+        self.plan_length = int(self.horizon / self.repeat_step)
 
     def plan(self, get_cost):
         # Initialize factorized belief over action sequences q(a_t:t+H) ~ N(0, I)
-        a_mu = torch.zeros(self.batch_size, 1, self.horizon, self.a_size, device=self.device)
-        a_std = self.variance * torch.ones(self.batch_size, 1, self.horizon, self.a_size, device=self.device)
-        actions = a_mu + a_std * torch.randn(
-            self.batch_size, self.population_size, self.horizon, self.a_size, device=self.device,
-        )
+        a_mu = torch.zeros(self.batch_size, 1, self.plan_length, self.a_size, device=self.device)
+        a_std = self.variance * torch.ones(self.batch_size, 1, self.plan_length, self.a_size, device=self.device)
+        actions = (a_mu + a_std * torch.randn(
+            self.batch_size, self.population_size, self.plan_length, self.a_size, device=self.device,
+        )).repeat_interleave(self.repeat_step, dim=2)
+        actions.requires_grad = True
 
         optimizer = torch.optim.SGD((actions,), self.lr)
-        actions.requires_grad = True
 
         for _ in range(self.n_iter):
             # now we want to get the rewards for those actions.
@@ -156,17 +158,18 @@ class CE:
                 self.batch_size, self.population_size
             )
 
-            optimizer.zero_grad()
-            costs.mean().backward()
-            torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
-            optimizer.step()
+            if self.gd:
+                optimizer.zero_grad()
+                costs.mean().backward()
+                torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
+                optimizer.step()
 
             # get the indices of the best cost elements
             values, topk = costs.topk(self.top_size, dim=1, largest=False, sorted=True,)
 
             # pick the actions that correspond to the best elements
             best_actions = actions.view(self.batch_size, self.population_size, self.horizon, self.a_size,).gather(
-                dim=1, index=topk.view(*topk.shape, 1, 1).repeat(1, 1, 40, 2)
+                dim=1, index=topk.view(*topk.shape, 1, 1).repeat(1, 1, self.horizon, 2)
             )
 
             # Update belief with new means and standard deviations
@@ -174,8 +177,8 @@ class CE:
             a_std = best_actions.std(dim=1, unbiased=False, keepdim=True)
 
             resample_actions = a_mu + a_std * torch.randn(
-                self.batch_size, self.population_size - self.top_size, self.horizon, self.a_size, device=self.device,
-            )
+                self.batch_size, self.population_size - self.top_size, self.plan_length, self.a_size, device=self.device,
+            ).repeat_interleave(self.repeat_step, dim=2)
 
             actions.data = torch.cat([best_actions, resample_actions], dim=1)
 
@@ -200,6 +203,7 @@ class MPCKMPolicy(nn.Module):
         planning_freq: int = 1
         lambda_j_mpc: float = 0.0
         batch_size: int = 1
+        ce_repeat_step: int = 5
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -469,7 +473,7 @@ class MPCKMPolicy(nn.Module):
 
                 return cost.item()
 
-            ref_images, ref_states = self.unfold_fm(full_images, full_states, actions)
+            ref_images, ref_states = self.unfold_fm(full_images, full_states, best_actions)
 
             parametrization = ng.p.Array(shape=actions.shape)
             parametrization.set_bounds(-5, 5)
@@ -514,9 +518,9 @@ class MPCKMPolicy(nn.Module):
                 )
 
         elif self.config.optimizer == "CE":
-            ref_images, ref_states = self.unfold_fm(full_images, full_states, actions)
-            ce = CE(batch_size=1, horizon=self.config.unfold_len, n_iter=self.config.n_iter,)
-            actions = ce.plan(get_cost)
+            ref_images, ref_states = self.unfold_fm(full_images, full_states, best_actions)
+            ce = CE(batch_size=1, horizon=self.config.unfold_len, n_iter=self.config.n_iter, repeat_step=self.config.ce_repeat_step)
+            best_actions = ce.plan(get_cost)
 
             if self.visualizer:
                 unnormalized_actions = self.normalizer.unnormalize_actions(actions.data)

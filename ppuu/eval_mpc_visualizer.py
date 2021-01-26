@@ -172,6 +172,8 @@ class EvalVisualizer:
                     f"{path}/%04d.png",
                     "-vcodec",
                     "mpeg4",
+                    "-q:v",
+                    "10",
                     "-y",
                     video_path,
                 ],
