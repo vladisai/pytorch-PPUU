@@ -41,7 +41,6 @@ class DummyResult:
         return self.v
 
 
-
 class PolicyEvaluator:
     def __init__(
         self,
@@ -105,6 +104,9 @@ class PolicyEvaluator:
                 "alternative_distance_diff"
             ].mean(),
             succeeded=int(results_per_episode_df["road_completed"].sum()),
+            mean_proximity_cost=results_per_episode_df["mean_proximity_cost"].mean(),
+            mean_pixel_proximity_cost=results_per_episode_df["mean_pixel_proximity_cost"].mean(),
+            mean_lane_cost=results_per_episode_df["mean_lane_cost"].mean(),
         )
 
     def unfold(self, env, inputs, policy, car_size):
@@ -122,6 +124,9 @@ class PolicyEvaluator:
                 "road_completed",
                 "has_collided_ahead",
                 "has_collided_behind",
+                "mean_proximity_cost",
+                "mean_pixel_proximity_cost",
+                "mean_lane_cost",
             ],
         )
         TimeCapsule = namedtuple("TimeCapsule", ["env", "inputs", "cost"])
@@ -146,6 +151,12 @@ class PolicyEvaluator:
         if hasattr(policy, "reset"):
             policy.reset()
 
+        total_cost = {
+            "proximity_cost":0.0,
+            "pixel_proximity_cost":0.0,
+            "lane_cost": 0.0,
+        }
+
         while not done:
             input_images = inputs["context"].contiguous()
             input_states = inputs["state"].contiguous()
@@ -161,6 +172,11 @@ class PolicyEvaluator:
 
             # env_copy = copy.deepcopy(self.env)
             inputs, cost, done, info = env.step(a[0])
+
+            for k in total_cost:
+                if k in cost:
+                    total_cost[k] += cost[k]
+
             if info.collisions_per_frame > 0:
                 has_collided = True
             if info.collisions_per_frame_ahead > 0:
@@ -206,6 +222,9 @@ class PolicyEvaluator:
                 )
             )
 
+        for k in total_cost:
+            total_cost[k] /= t
+
         images = torch.stack(images)
         states = torch.stack(states)
         actions = torch.stack(actions)
@@ -221,6 +240,9 @@ class PolicyEvaluator:
             road_completed,
             has_collided_ahead,
             has_collided_behind,
+            total_cost["proximity_cost"],
+            total_cost["pixel_proximity_cost"],
+            total_cost["lane_cost"],
         )
 
     def _build_episode_data(self, unfolding):
@@ -259,6 +281,9 @@ class PolicyEvaluator:
             has_collided=unfolding.has_collided,
             has_collided_ahead=unfolding.has_collided_ahead,
             has_collided_behind=unfolding.has_collided_behind,
+            mean_proximity_cost=unfolding.mean_proximity_cost,
+            mean_pixel_proximity_cost=unfolding.mean_pixel_proximity_cost,
+            mean_lane_cost=unfolding.mean_lane_cost,
         )
 
     def _process_one_episode(
@@ -439,6 +464,5 @@ class PolicyEvaluator:
                 "w",
             ) as f:
                 json.dump(result, f, indent=4)
-
 
         return result

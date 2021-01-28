@@ -35,19 +35,21 @@ if __name__ == "__main__":
             else:
                 c_dict[k] = 10.0 ** c_dict[k]
 
-    c_dict["masks_power_x"] = c_dict["powers"]
-    c_dict["masks_power_y"] = c_dict["powers"]
+    if "powers" in c_dict:
+        c_dict["masks_power_x"] = c_dict["powers"]
+        c_dict["masks_power_y"] = c_dict["powers"]
+        del c_dict["powers"]
+
     c_dict["n_iter"] = int(c_dict["iter_reach_value"] / c_dict["lr"])
     # unfold_len is how many seconds into the future we want to see
     c_dict["unfold_len"] = int(c_dict["unfold_len"] / c_dict["timestep"])
 
-    del c_dict["powers"]
     del c_dict["iter_reach_value"]
 
     print(c_dict)
 
     config = eval_mpc.EvalMPCConfig.parse_from_flat_dict(c_dict)
-    config.test_size_cap = 200
+    config.test_size_cap = 7
     config.num_processes = 7
     config.diffs = False
     config.forward_model_path = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_64/seed=42/checkpoints/last.ckpt"
@@ -60,7 +62,7 @@ if __name__ == "__main__":
     config.cost.lambda_a = 0.0
     config.cost.lambda_j = 0.0
     config.cost.u_reg = 0.0
-    config.cost.rotate = 1.0
+    config.cost.rotate = 1
 
     # Debug
     # config.mpc.n_iter = 10
@@ -74,5 +76,9 @@ if __name__ == "__main__":
         "success_rate": results["stats"]["success_rate"],
         "mean_time": results["stats"]["mean_time"],
         "mean_distance": results["stats"]["mean_distance"],
+        "mean_proximity_cost": results["stats"]["mean_proximity_cost"],
+        "mean_pixel_proximity_cost": results["stats"]["mean_pixel_proximity_cost"],
+        "mean_lane_cost": results["stats"]["mean_lane_cost"],
     }
+
     wandb.log(metrics)

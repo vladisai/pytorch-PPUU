@@ -124,7 +124,6 @@ class EvalVisualizer:
                 im.axes.get_xaxis().set_visible(False)
                 im.axes.get_yaxis().set_visible(False)
 
-                plt.tight_layout()
 
                 # saving to history for replay
                 io_buf = io.BytesIO()
@@ -135,6 +134,8 @@ class EvalVisualizer:
                 io_buf.seek(0)
     #             self.images_history.append(np.frombuffer(io_buf.getvalue(), dtype=np.uint8))
                 self.images_history.append(io_buf.getvalue())
+                plt.subplots_adjust(left=0.01, bottom=None, right=0.99, top=None, wspace=0.5, hspace=0.4)
+
                 plt.show()
                 plt.close()
 

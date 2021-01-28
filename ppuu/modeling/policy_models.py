@@ -16,8 +16,11 @@ from ppuu import configs
 from ppuu.modeling.km import predict_states, predict_states_seq
 
 
-def repeat_batch(value, times):
-    return value.repeat(times, *([1] * (len(value.shape) - 1)))
+def repeat_batch(value, times, interleave=False):
+    if interleave:
+        return value.repeat_interleave(times, dim=0)
+    else:
+        return value.repeat(times, *([1] * (len(value.shape) - 1)))
 
 
 class MixoutDeterministicPolicy(nn.Module):
@@ -204,6 +207,7 @@ class MPCKMPolicy(nn.Module):
         lambda_j_mpc: float = 0.0
         batch_size: int = 1
         ce_repeat_step: int = 5
+        unfolding_agg: str = "max"
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -293,6 +297,7 @@ class MPCKMPolicy(nn.Module):
                 batch={"input_images": images.cuda(), "input_states": states.cuda(),},
                 Z=Z,
             )
+
             if self.config.fm_unfold_samples_agg == "max":
                 ref_images = (
                     unfolding["pred_images"]
@@ -303,9 +308,14 @@ class MPCKMPolicy(nn.Module):
                 ref_images = (
                     unfolding["pred_images"].mean(dim=0, keepdim=True).repeat_interleave(actions_per_fm_timestep, dim=1)
                 )
+            elif self.config.fm_unfold_samples_agg == "keep":
+                ref_images = unfolding["pred_images"].repeat_interleave(actions_per_fm_timestep, dim=1)
 
-            # TODO: this has to also account for the fact that other cars are probably moving at the same rate as us.
-            ref_states = unfolding["pred_states"][:1].repeat_interleave(actions_per_fm_timestep, dim=1)
+            if self.config.fm_unfold_samples_agg == "keep":
+                ref_states = unfolding["pred_states"].repeat_interleave(actions_per_fm_timestep, dim=1)
+            else:
+                # TODO: this has to also account for the fact that other cars are probably moving at the same rate as us.
+                ref_states = unfolding["pred_states"][:1].repeat_interleave(actions_per_fm_timestep, dim=1)
 
             return ref_images, ref_states
 
@@ -371,22 +381,26 @@ class MPCKMPolicy(nn.Module):
         actions.requires_grad = True
         self.cost.traj_landscape = False
 
-        def get_cost(actions, keep_batch_dim=False):
+        def get_cost(actions, keep_batch_dim=False, unfolding_agg="mean"):
             batch_size = actions.shape[0]
-            rep_states = repeat_batch(states, batch_size)
+            unfoldings_size = ref_images.shape[0]
 
-            pred_states = self.unfold_km(rep_states, actions)
+            rep_states = repeat_batch(states, batch_size)
+            rep_actions = repeat_batch(actions, unfoldings_size)
+
+            pred_states = repeat_batch(self.unfold_km(rep_states, actions), unfoldings_size)
+
             inputs = {
-                "input_images": repeat_batch(images, batch_size),
-                "input_states": repeat_batch(states.unsqueeze(1), batch_size),
-                "car_sizes": repeat_batch(car_size, batch_size),
-                "ref_states": repeat_batch(ref_states, batch_size),
-                "ref_images": repeat_batch(ref_images, batch_size),
+                "input_images": repeat_batch(images, batch_size * unfoldings_size),
+                "input_states": repeat_batch(states.unsqueeze(1), batch_size * unfoldings_size),
+                "car_sizes": repeat_batch(car_size, batch_size * unfoldings_size),
+                "ref_states": repeat_batch(ref_states, batch_size, interleave=True),
+                "ref_images": repeat_batch(ref_images, batch_size, interleave=True),
             }
             predictions = {
                 "pred_states": pred_states,
-                "pred_images": repeat_batch(ref_images, batch_size),
-                "pred_actions": actions.unsqueeze(1),
+                "pred_images": repeat_batch(ref_images, batch_size, interleave=True),
+                "pred_actions": repeat_batch(actions, unfoldings_size),
             }
 
             jerk_actions = actions
@@ -404,7 +418,16 @@ class MPCKMPolicy(nn.Module):
             # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
             costs = self.cost.calculate_cost(inputs, predictions)
 
-            result = costs["policy_loss"] + loss_j * self.config.lambda_j_mpc
+            result = costs["policy_loss"] + repeat_batch(loss_j, unfoldings_size) * self.config.lambda_j_mpc
+
+            # TODO: double check this is correct.
+            result = result.view(unfoldings_size, batch_size)
+
+            if unfolding_agg == "mean":
+                result = result.mean(dim=0)
+            elif unfolding_agg == "max":
+                result = result.max(dim=0).values
+
             if keep_batch_dim:
                 return result
             else:
@@ -422,7 +445,7 @@ class MPCKMPolicy(nn.Module):
                 if i == self.config.n_iter - 1 and self.visualizer is not None:
                     self.cost.traj_landscape = True
 
-                cost = get_cost(actions, keep_batch_dim=True)
+                cost = get_cost(actions, keep_batch_dim=True, unfolding_agg=self.config.unfolding_agg)
 
                 if i == self.config.n_iter - 1:
                     self.cost.traj_landscape = False
@@ -433,7 +456,7 @@ class MPCKMPolicy(nn.Module):
                 torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
                 optimizer.step()
 
-                values, indices = cost.max(dim=0)
+                values, indices = cost.min(dim=0)
                 if cost[indices] < best_cost:
                     best_actions = actions[indices].unsqueeze(0).clone()
                     best_cost = cost[indices]
