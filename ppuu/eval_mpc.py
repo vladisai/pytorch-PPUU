@@ -22,7 +22,7 @@ from ppuu.lightning_modules.fm import FM
 from ppuu.eval import PolicyEvaluator
 from ppuu.costs.policy_costs_km import PolicyCostKMTaper
 from ppuu import slurm
-from ppuu.modeling.policy_models import MPCKMPolicy
+from ppuu.modeling.mpc import MPCKMPolicy
 from ppuu.eval_mpc_visualizer import EvalVisualizer
 
 from omegaconf import MISSING

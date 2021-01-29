@@ -603,6 +603,19 @@ class PolicyCostKMTaper(PolicyCostKM):
         offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
         proximity_loss = torch.mean(proximity_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
 
+        traj_proximity_mask = self.get_traj_points(
+            pred_images[:, :, :3].contiguous().detach(),
+            pred_states,
+            pred_actions,
+            car_sizes,
+            unnormalize=True,
+            ref_states=ref_states,
+        )
+
+        # count collisions: if more then 50% of the center are covered in green, we've collided.
+        collisions_sum = (traj_proximity_mask * ref_images[:, :, 1]).sum(dim=(2, 3))
+        traj_mask_sums = traj_proximity_mask.sum(dim=(2, 3))
+        collisions = collisions_sum > 0.5 * traj_mask_sums
 
         self.overlay = proximity_mask.unsqueeze(2) * 0.85 + ref_images
 
@@ -644,4 +657,5 @@ class PolicyCostKMTaper(PolicyCostKM):
             lane_loss=lane_loss,
             offroad_loss=offroad_loss,
             proximity_loss=proximity_loss,
+            collisions=collisions,
         )
