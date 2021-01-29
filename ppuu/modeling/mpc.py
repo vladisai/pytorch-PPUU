@@ -275,7 +275,7 @@ class MPCKMPolicy(torch.nn.Module):
                 # The first action is always just zeros.
                 torch.zeros(1, self.config.unfold_len, 2, device=device),
                 # The rest are random repeated.
-                torch.randn(self.config.batch_size - 1, 1, 2, device=device).repeat(1, self.config.unfold_len, 1),
+                7 * torch.randn(self.config.batch_size - 1, 1, 2, device=device).repeat(1, self.config.unfold_len, 1),
             ],
             dim=0,
         )
@@ -362,13 +362,16 @@ class MPCKMPolicy(torch.nn.Module):
                 cost.mean().backward()
 
                 # this is definitely needed, judging from some examples I saw where gradient is 50
+                a_grad = actions.grad[0, 0].clone() # save for plotting later
                 torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
                 optimizer.step()
 
                 values, indices = cost.min(dim=0)
-                if cost[indices] < best_cost:
-                    best_actions = actions[indices].unsqueeze(0).clone()
-                    best_cost = cost[indices]
+                # if cost[indices] < best_cost:
+                #     best_actions = actions[indices].unsqueeze(0).clone()
+                #     best_cost = cost[indices]
+                best_cost = cost[indices]
+                best_actions = actions[indices].unsqueeze(0).clone()
 
                 if self.visualizer:
                     unnormalized_actions = self.normalizer.unnormalize_actions(actions.data)
@@ -376,8 +379,8 @@ class MPCKMPolicy(torch.nn.Module):
                         best_cost.item(),
                         unnormalized_actions[0, 0, 0].item(),
                         unnormalized_actions[0, 0, 1].item(),
-                        actions.grad[0, 0, 0].item(),
-                        actions.grad[0, 0, 1].item(),
+                        a_grad[0].item(),
+                        a_grad[1].item(),
                     )
 
         elif self.config.optimizer == "Nevergrad":

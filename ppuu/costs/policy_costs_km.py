@@ -175,7 +175,7 @@ class PolicyCostKM(PolicyCostContinuous):
         )
 
         npred = pred_images.size(1)
-        gamma_mask = torch.tensor([0.99 ** t for t in range(npred + 1)]).cuda().unsqueeze(0)
+        gamma_mask = torch.tensor([self.config.gamma ** t for t in range(npred + 1)]).cuda().unsqueeze(0)
         proximity_cost = self.compute_proximity_cost_km(pred_images, proximity_masks[1],)["costs"]
 
         lane_cost = self.compute_lane_cost_km(pred_images, proximity_masks[0])
@@ -590,7 +590,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         # proximity_mask_lo, mask_sums_lo = proximity_mask, mask_sums
 
         npred = pred_images.size(1)
-        gamma_mask = torch.tensor([0.99 ** t for t in range(npred + 1)]).to(device).unsqueeze(0)
+        gamma_mask = torch.tensor([self.config.gamma ** t for t in range(npred + 1)]).to(device).unsqueeze(0)
 
         proximity_cost = self.compute_proximity_cost_km(ref_images, proximity_mask, mask_sums)["costs"]
 

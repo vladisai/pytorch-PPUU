@@ -94,7 +94,6 @@ def predict_states_seq(states, actions, normalizer, timestep=0.1):
         speeds_norm = new_speeds_norm
 
     result = torch.stack(result, dim=1)
-
     return normalizer.normalize_states(result)
 
 
