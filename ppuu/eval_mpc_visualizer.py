@@ -18,7 +18,6 @@ from torchvision import transforms
 class EvalVisualizer:
     def __init__(self, output_dir=None):
         self.setup_mpl()
-        self.costs_plot_output = widgets.Output()
         self.transform = transforms.ToPILImage()
 
         self.output_dir = output_dir
@@ -162,6 +161,7 @@ class EvalVisualizer:
         self.turn_grad_history = []
 
     def episode_reset(self):
+        self.costs_plot_output = widgets.Output()
         self.images_history = []
         self.step_reset()
 
