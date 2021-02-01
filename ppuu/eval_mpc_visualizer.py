@@ -1,17 +1,17 @@
+import io
+from pathlib import Path
+import subprocess
+import shutil
+import os
+
 import ipywidgets as widgets
 import torch
 import PIL
 from IPython.display import display
-import io
 import numpy as np
 import bqplot
 from matplotlib import pyplot as plt
 import matplotlib as mpl
-import os
-from pathlib import Path
-import subprocess
-
-
 from torchvision import transforms
 
 
@@ -194,3 +194,5 @@ class EvalVisualizer:
                 stdout=f,
                 stderr=f,
             )
+        # Delete images because they take up space in scratch.
+        shutil.rmtree(path)
