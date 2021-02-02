@@ -572,8 +572,15 @@ class PolicyCostKMTaper(PolicyCostKM):
             assert ref_images.shape == pred_images.shape
             assert ref_states.shape == pred_states.shape
         else:
-            ref_states = pred_states.detach()
-            ref_images = pred_images.detach()
+            if "ref_states" in inputs:
+                ref_states = inputs["ref_states"].detach()
+            else:
+                ref_states = pred_states.detach()
+
+            if "ref_images" in inputs:
+                ref_images = inputs["ref_images"].detach()
+            else:
+                ref_images = pred_images.detach()
         ref_images = ref_images[:, :, :3]
 
         # get masks

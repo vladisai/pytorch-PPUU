@@ -1,6 +1,7 @@
 """Train the forward model"""
 import os
 from dataclasses import dataclass
+from typing import Optional
 
 # These environment variables need to be set before
 # import numpy to prevent numpy from spawning a lot of processes
@@ -42,22 +43,18 @@ class Config(configs.ConfigBase):
     single_check: bool = False
     ignore_z: bool = False
     shift: bool = False
-    path: str = None
+    path: Optional[str] = None
     diff: bool = False
 
-    def __post_init__(self):
-        if self.dataset in configs.DATASET_PATHS_MAPPING:
-            self.dataset = configs.DATASET_PATHS_MAPPING[self.dataset]
 
 
-
-def predict_all_states(predictor, states, actions, stats):
+def predict_all_states(predictor, states, actions, normalizer):
     last_state = states[:, -1]
     predicted_states = []
     for i in range(actions.shape[1]):
         next_action = actions[:, i]
         predicted_state = predictor(
-            last_state, next_action, stats
+            last_state, next_action, normalizer 
         )
         last_state = predicted_state
         predicted_states.append(predicted_state.squeeze(1))
@@ -100,6 +97,7 @@ def main(config):
         normalize=config.normalize,
         state_diffs=config.diff,
     )
+    normalizer = dataloader.Normalizer(data_store.stats)
     dataset.random.seed(24)
     loader = DataLoader(dataset, batch_size=1, num_workers=0,)
 
@@ -120,7 +118,7 @@ def main(config):
         m_config.model.fm_type = 'km'
         m_config.model.checkpoint = config.path
         m_config.training.enable_latent = True
-        # m_config.training.diffs = True
+        m_config.training.diffs = False
         model = FM(m_config)
         model = model.cuda()
         model = model.eval()
@@ -161,7 +159,7 @@ def main(config):
                     b["stats"] if config.normalize else dummy_stats(b["stats"])
                 )
                 predicted_states = predict_all_states(
-                    predictor, b["input_states"], b["actions"], stats
+                    predictor, b["input_states"], b["actions"], normalizer
                 )
                 pred_images = None
             else:

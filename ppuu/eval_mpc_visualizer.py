@@ -16,7 +16,7 @@ from torchvision import transforms
 
 
 class EvalVisualizer:
-    def __init__(self, output_dir=None):
+    def __init__(self, output_dir=None, notebook=False):
         self.setup_mpl()
         self.transform = transforms.ToPILImage()
 
@@ -24,6 +24,13 @@ class EvalVisualizer:
         self.t_data = None
         self.c_data = None
         self.i_data = None
+        self.notebook = notebook
+
+        if notebook:
+            # In the notebook we create this once and keep it, otherwise we spawn a new one
+            # for each episode.
+            self.costs_plot_output = widgets.Output()
+
         self.images_history = []
 
     def setup_mpl(self):
@@ -161,7 +168,8 @@ class EvalVisualizer:
         self.turn_grad_history = []
 
     def episode_reset(self):
-        self.costs_plot_output = widgets.Output()
+        if not self.notebook:
+            self.costs_plot_output = widgets.Output()
         self.images_history = []
         self.step_reset()
 
