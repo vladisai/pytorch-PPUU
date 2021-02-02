@@ -279,8 +279,11 @@ class MPCKMPolicy(torch.nn.Module):
             ],
             dim=0,
         )
-        actions[:, :, 1] = 0
+        # actions[:, :, 0] = 30
+        # best_actions = torch.zeros_like(actions[:1])
         best_actions = actions[:1]
+
+        actions[:, :, 1] = 0
         best_cost = 1e10
 
         if init is not None:

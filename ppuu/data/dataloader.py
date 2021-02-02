@@ -410,6 +410,7 @@ class Normalizer:
         return cls(dict(s_mean=torch.zeros(5), a_mean=torch.zeros(2), s_std=torch.ones(5), a_std=torch.ones(2)))
 
     def states_to_diffs(self, states):
+        """ First two numbers are pixels"""
         state_diffs = states[1:] - states[:-1]
         state_diffs = torch.cat([torch.zeros(1, 5), state_diffs], axis=0)
         state_diffs[..., 2:] = states[..., 2:]
@@ -426,6 +427,7 @@ class Normalizer:
         return states
 
     def unnormalize_states(self, states):
+        """ From normalized to feet """
         device = states.device
         states = states * (
             1e-8 + self.data_stats["s_std"].view(1, 5).expand(states.size())
@@ -467,6 +469,11 @@ class UnitConverter:
     LANE_WIDTH_METRES = 3.7
     LANE_WIDTH_PIXELS = 24  # pixels / 3.7 m, lane width
     PIXELS_IN_METRE = LANE_WIDTH_PIXELS / LANE_WIDTH_METRES
+    """
+    LOOKAHEAD is 36 meters
+    LOOK sideways is 2 lane widths, which is 7.2 meters
+    One 6.5 pixels per s is about 1 m/s
+    """
 
     @classmethod
     def feet_to_m(cls, x):
