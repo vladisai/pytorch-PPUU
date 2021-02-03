@@ -526,8 +526,6 @@ class I80(Simulator):
 
     def step(self, policy_action=None):
 
-        assert not self.done, "Trying to step on an exhausted environment!"
-
         if self.normalise_action and policy_action is not None:
             np.multiply(
                 policy_action, self.data_stats["a_std"], policy_action

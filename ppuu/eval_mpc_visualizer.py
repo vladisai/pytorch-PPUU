@@ -107,7 +107,7 @@ class EvalVisualizer:
         ax2.set_ylabel("gradient")
 
         plt.subplot(4, 4, 4)
-        if self.t_data is not None:
+        if self.t_data is not None and self.t_data_no_traj is not None:
             plt.title("cost landscape", y=1.08)
             im = plt.imshow(self.t_data_no_traj)
             im.axes.get_xaxis().set_visible(False)

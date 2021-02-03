@@ -273,13 +273,10 @@ class PolicyEvaluator:
         env = copy.deepcopy(env)
         images = []
         states = []
-        done = False
         for i in range(t):
             inputs, cost, done, info = env.step([0, 0])
             images.append(inputs["context"].contiguous()[-1])
             states.append(inputs["state"].contiguous()[-1])
-            if done:
-                break
 
         return Future(torch.stack(images), torch.stack(states))
 

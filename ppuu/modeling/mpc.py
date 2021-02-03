@@ -463,7 +463,8 @@ class MPCKMPolicy(torch.nn.Module):
                 )
 
         elif self.config.optimizer == "CE":
-            ref_images, ref_states = self.unfold_fm(full_images, full_states, best_actions)
+            if gt_future is None:
+                ref_images, ref_states = self.unfold_fm(full_images, full_states, best_actions)
             ce = CE(
                 batch_size=1,
                 horizon=self.config.unfold_len,
@@ -473,7 +474,7 @@ class MPCKMPolicy(torch.nn.Module):
             best_actions = ce.plan(get_cost)
 
             if self.visualizer:
-                unnormalized_actions = self.normalizer.unnormalize_actions(actions.data)
+                unnormalized_actions = self.normalizer.unnormalize_actions(best_actions.data)
                 self.visualizer.update_values(
                     0.0, unnormalized_actions[0, 0, 0].item(), unnormalized_actions[0, 0, 1].item(),
                 )
