@@ -40,7 +40,9 @@ if __name__ == "__main__":
         c_dict["masks_power_y"] = c_dict["powers"]
         del c_dict["powers"]
 
-    c_dict["n_iter"] = int(c_dict["iter_reach_value"] / c_dict["lr"])
+
+
+    c_dict["lr"] = c_dict["iter_reach_value"] / c_dict["n_iter"]
     # unfold_len is how many seconds into the future we want to see
     c_dict["unfold_len"] = int(c_dict["unfold_len"] / c_dict["timestep"])
 

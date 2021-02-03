@@ -51,6 +51,7 @@ class PolicyEvaluator:
         enable_logging: bool = True,
         rollback_seconds: int = 3,
         visualizer=None,
+        pass_gt_future=False,
     ):
         self.dataset = dataset
         self.build_gradients = build_gradients
@@ -60,6 +61,7 @@ class PolicyEvaluator:
         self.rollback_seconds = rollback_seconds
         self.visualizer = visualizer
         self.normalizer = dataloader.Normalizer(dataset.stats)
+        self.pass_gt_future = pass_gt_future
 
         i80_env_id = "I-80-v1"
         if i80_env_id not in [e.id for e in gym.envs.registry.all()]:
@@ -104,12 +106,16 @@ class PolicyEvaluator:
                 "alternative_distance_diff"
             ].mean(),
             succeeded=int(results_per_episode_df["road_completed"].sum()),
-            mean_proximity_cost=results_per_episode_df["mean_proximity_cost"].mean(),
-            mean_pixel_proximity_cost=results_per_episode_df["mean_pixel_proximity_cost"].mean(),
+            mean_proximity_cost=results_per_episode_df[
+                "mean_proximity_cost"
+            ].mean(),
+            mean_pixel_proximity_cost=results_per_episode_df[
+                "mean_pixel_proximity_cost"
+            ].mean(),
             mean_lane_cost=results_per_episode_df["mean_lane_cost"].mean(),
         )
 
-    def unfold(self, env, inputs, policy, car_size):
+    def unfold(self, env, inputs, policy, car_size, t_limit=None):
         Unfolding = namedtuple(
             "Unfolding",
             [
@@ -152,8 +158,8 @@ class PolicyEvaluator:
             policy.reset()
 
         total_cost = {
-            "proximity_cost":0.0,
-            "pixel_proximity_cost":0.0,
+            "proximity_cost": 0.0,
+            "pixel_proximity_cost": 0.0,
             "lane_cost": 0.0,
         }
 
@@ -161,13 +167,25 @@ class PolicyEvaluator:
             input_images = inputs["context"].contiguous()
             input_states = inputs["state"].contiguous()
 
-            a = policy(
-                input_images.cuda(),
-                input_states.cuda(),
-                car_size=car_size,
-                normalize_inputs=True,
-                normalize_outputs=True,
-            )
+            if self.pass_gt_future:
+                a = policy(
+                    input_images.cuda(),
+                    input_states.cuda(),
+                    car_size=car_size,
+                    normalize_inputs=True,
+                    normalize_outputs=True,
+                    gt_future=lambda : self._get_future_with_no_action(
+                        env, t=policy.config.unfold_len
+                    ),
+                )
+            else:
+                a = policy(
+                    input_images.cuda(),
+                    input_states.cuda(),
+                    car_size=car_size,
+                    normalize_inputs=True,
+                    normalize_outputs=True,
+                )
             a = a.cpu().view(1, 2).numpy()
 
             # env_copy = copy.deepcopy(self.env)
@@ -222,6 +240,9 @@ class PolicyEvaluator:
                 )
             )
 
+            if t_limit is not None and t >= t_limit:
+                break
+
         for k in total_cost:
             total_cost[k] /= t
 
@@ -244,6 +265,23 @@ class PolicyEvaluator:
             total_cost["pixel_proximity_cost"],
             total_cost["lane_cost"],
         )
+
+    def _get_future_with_no_action(self, env, t):
+        """ Build state and images for the future if all actions are 0"""
+        Future = namedtuple("Future", ["images", "states"])
+        env._lane_surfaces = dict()
+        env = copy.deepcopy(env)
+        images = []
+        states = []
+        done = False
+        for i in range(t):
+            inputs, cost, done, info = env.step([0, 0])
+            images.append(inputs["context"].contiguous()[-1])
+            states.append(inputs["state"].contiguous()[-1])
+            if done:
+                break
+
+        return Future(torch.stack(images), torch.stack(states))
 
     def _build_episode_data(self, unfolding):
         return dict(

@@ -52,6 +52,7 @@ class EvalMPCConfig(configs.ConfigBase):
     forward_model_path: Optional[str] = None
     seed: int = 42
     dataset_partition: str = "test"
+    pass_gt_future: bool = False
 
 
 def main(config):
@@ -105,6 +106,7 @@ def main(config):
         build_gradients=config.save_gradients,
         enable_logging=True,
         visualizer=config.visualizer,
+        pass_gt_future=config.pass_gt_future,
     )
     result = evaluator.evaluate(policy, output_dir=config.output_dir)
     print(result["stats"])

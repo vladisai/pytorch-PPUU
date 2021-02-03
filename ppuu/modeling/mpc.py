@@ -230,6 +230,7 @@ class MPCKMPolicy(torch.nn.Module):
 
     def __call__(
         self, images, states, normalize_inputs=False, normalize_outputs=False, car_size=None, init=None, metadata=None,
+        gt_future=None,
     ):
         device = states.device
 
@@ -244,6 +245,11 @@ class MPCKMPolicy(torch.nn.Module):
             self.ctr += 1
 
             return actions.detach()
+
+        if gt_future is not None:
+            gt_future_values = gt_future() # gt future is a lambda. this is to save time when we don't plan every step.
+            ref_images = self.normalizer.normalize_images(gt_future_values.images.unsqueeze(0)).to(device)
+            ref_states = self.normalizer.normalize_states(gt_future_values.states.unsqueeze(0)).to(device)
 
         # if self.ctr == 99:
         #     dump_dict = dict(images=images, states=states, car_size=car_size,)
@@ -349,7 +355,8 @@ class MPCKMPolicy(torch.nn.Module):
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer]((actions,), self.config.lr)
 
             for i in range(self.config.n_iter):
-                if i % self.config.update_ref_period == 0:
+                if i % self.config.update_ref_period == 0 and gt_future is None:
+                    # We don't regenerate this if gt is passed!
                     ref_images, ref_states = self.unfold_fm(full_images, full_states, best_actions)
 
                 # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
