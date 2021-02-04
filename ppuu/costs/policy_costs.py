@@ -355,9 +355,7 @@ class PolicyCost(PolicyCostBase):
             inputs["car_sizes"],
         )
         result = dict(
-            proximity_loss=state_losses["proximity_loss"],
-            lane_loss=state_losses["lane_loss"],
-            offroad_loss=state_losses["offroad_loss"],
+            **state_losses,
             uncertainty_loss=u_loss,
             action_loss=loss_a,
             jerk_loss=loss_j,
@@ -415,5 +413,4 @@ class PolicyCost(PolicyCostBase):
             offroad_loss=costs["offroad_loss"],
         )
         combined_loss.backward()
-
         return input_images.grad[:, :, :3].abs().clamp(max=1.0)

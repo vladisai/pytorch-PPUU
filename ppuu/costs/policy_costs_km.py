@@ -135,9 +135,7 @@ class PolicyCostKM(PolicyCostContinuous):
 
     #     return result_rotation, result_acceleration
 
-    def compute_proximity_cost_km(
-        self, images, proximity_masks, masks_sums=None
-    ):
+    def compute_proximity_cost_km(self, images, proximity_masks, masks_sums=None):
         bsize, npred, nchannels, crop_h, crop_w = images.shape
         images = images.view(-1, nchannels, crop_h, crop_w)
         green_contours = self.compute_contours(images)
@@ -163,9 +161,7 @@ class PolicyCostKM(PolicyCostContinuous):
         costs_m = self.agg_func(costs.view(bsize, npred, -1), 2)
         return costs_m.view(bsize, npred)
 
-    def compute_offroad_cost_km(
-        self, images, proximity_masks, masks_sums=None
-    ):
+    def compute_offroad_cost_km(self, images, proximity_masks, masks_sums=None):
         bsize, npred = images.shape[0], images.shape[1]
         offroad = images[:, :, 2]
         costs = proximity_masks * (offroad ** 2)
@@ -174,31 +170,40 @@ class PolicyCostKM(PolicyCostContinuous):
         costs_m = self.agg_func(costs.view(bsize, npred, -1), 2)
         return costs_m.view(bsize, npred)
 
-    def compute_state_costs_for_training(
-        self, _, pred_images, pred_states, _pred_actions, car_sizes
+    def compute_combined_loss(
+        self,
+        proximity_loss,
+        uncertainty_loss,
+        lane_loss,
+        action_loss,
+        jerk_loss,
+        offroad_loss,
+        destination_loss,
+        reference_distance_loss,
+        **_kwargs,
     ):
+        return (
+            self.config.lambda_p * proximity_loss
+            + self.config.u_reg * uncertainty_loss
+            + self.config.lambda_l * lane_loss
+            + self.config.lambda_a * action_loss
+            + self.config.lambda_o * offroad_loss
+            + self.config.lambda_j * jerk_loss
+            + self.config.lambda_d * destination_loss
+            + self.config.lambda_r * reference_distance_loss
+        )
+
+    def compute_state_costs_for_training(self, _, pred_images, pred_states, _pred_actions, car_sizes):
         proximity_masks = self.get_masks(
-            pred_images[:, :, :3].contiguous().detach(),
-            pred_states,
-            car_sizes,
-            unnormalize=True,
+            pred_images[:, :, :3].contiguous().detach(), pred_states, car_sizes, unnormalize=True,
         )
 
         npred = pred_images.size(1)
-        gamma_mask = (
-            torch.tensor([self.config.gamma ** t for t in range(npred + 1)])
-            .cuda()
-            .unsqueeze(0)
-        )
-        proximity_cost = self.compute_proximity_cost_km(
-            pred_images,
-            proximity_masks[1],
-        )["costs"]
+        gamma_mask = torch.tensor([self.config.gamma ** t for t in range(npred + 1)]).cuda().unsqueeze(0)
+        proximity_cost = self.compute_proximity_cost_km(pred_images, proximity_masks[1],)["costs"]
 
         lane_cost = self.compute_lane_cost_km(pred_images, proximity_masks[0])
-        offroad_cost = self.compute_offroad_cost_km(
-            pred_images, proximity_masks[0]
-        )
+        offroad_cost = self.compute_offroad_cost_km(pred_images, proximity_masks[0])
 
         lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred])
         offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred])
@@ -303,6 +308,10 @@ class PolicyCostKMTaper(PolicyCostKM):
         mask_coeff: float = 10.0
         shifted_reference_frame: int = 0
         reference_distance_loss: bool = True
+        # Destination lambda
+        lambda_d: float = 0.0
+        # Reference distance loss
+        lambda_r: float = 1.0
         # lambda_a: float = field(default=0.23)
         # lambda_j: float = field(default=2.5)
         # lambda_l: float = field(default=2.86)
@@ -310,17 +319,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         # lambda_p: float = field(default=45.5)
         # u_reg: float = field(default=1.62)
 
-    def get_masks(
-        self,
-        images,
-        states,
-        actions,
-        car_size,
-        unnormalize,
-        ref_states=None,
-        *,
-        metadata=None
-    ):
+    def get_masks(self, images, states, actions, car_size, unnormalize, ref_states=None, *, metadata=None):
         """Returns two masks - one for proximity cost, so it has a flat nose,
         and one for lane and offroad costs, so it doesn't have a flat nose.
         """
@@ -368,30 +367,22 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         alphas = torch.atan(speeds_norm_pixels * actions[:, :, 1] * TIMESTEP)
         gammas = (np.pi - alphas) / 2
-        radii = (
-            -1 * speeds_norm * TIMESTEP / (2 * torch.cos(gammas) + 1e-7)
-        )  # in meters
+        radii = -1 * speeds_norm * TIMESTEP / (2 * torch.cos(gammas) + 1e-7)  # in meters
 
         directions = states[:, :, 2:4]
         ref_directions = ref_states[:, :, 2:4]
 
         positions_adjusted = positions - ref_positions.detach()
 
-        rotation = rotation_matrix(ref_directions.detach(), directions).to(
-            device
-        )
+        rotation = rotation_matrix(ref_directions.detach(), directions).to(device)
 
-        y = torch.linspace(
-            -LOOK_SIDEWAYS_M, LOOK_SIDEWAYS_M, crop_w, device=device
-        )
+        y = torch.linspace(-LOOK_SIDEWAYS_M, LOOK_SIDEWAYS_M, crop_w, device=device)
         x = torch.linspace(-LOOK_AHEAD_M, LOOK_AHEAD_M, crop_h, device=device)
         xx, yy = torch.meshgrid(x, y)
         xx = xx.repeat(bsize, npred, 1, 1)
         yy = yy.repeat(bsize, npred, 1, 1)
 
-        xx, yy = coordinate_shift(
-            xx, yy, positions_adjusted[:, :, 0], positions_adjusted[:, :, 1]
-        )
+        xx, yy = coordinate_shift(xx, yy, positions_adjusted[:, :, 0], positions_adjusted[:, :, 1])
         if self.config.rotate > 0:
             xx, yy = coordinate_rotate_matrix(xx, yy, rotation)
         if self.config.curl > 0:
@@ -413,16 +404,10 @@ class PolicyCostKMTaper(PolicyCostKM):
         if metadata is not None:
             metadata["y_d"] = y_d
         # x_s - is longitudinal distance to 0 mask value - safety distance
-        x_s = (
-            1.5 * torch.clamp(speeds_norm.detach(), min=10) + length * 1.5 + 1
-        )
+        x_s = 1.5 * torch.clamp(speeds_norm.detach(), min=10) + length * 1.5 + 1
         x_s = x_s.view(REPEAT_SHAPE)
 
-        z_x_prime = torch.clamp(
-            (x_s - torch.abs(x_prime))
-            / (x_s - length.view(bsize, 1, 1, 1) / 2),
-            min=0,
-        )
+        z_x_prime = torch.clamp((x_s - torch.abs(x_prime)) / (x_s - length.view(bsize, 1, 1, 1) / 2), min=0,)
         # z_x_prime_rotation = torch.clamp(
         #     (x_s_rotation - torch.abs(x_prime)) / (x_s_rotation), min=0
         # )
@@ -430,9 +415,7 @@ class PolicyCostKMTaper(PolicyCostKM):
             print("Seems like the car is outside the state image.")
 
         r_y_prime = torch.clamp(
-            (y_d.view(bsize, 1, 1, 1) - torch.abs(y_prime))
-            / (y_d - width / 2).view(bsize, 1, 1, 1),
-            min=0,
+            (y_d.view(bsize, 1, 1, 1) - torch.abs(y_prime)) / (y_d - width / 2).view(bsize, 1, 1, 1), min=0,
         )
         if metadata is not None:
             metadata["r_y_prime_b"] = r_y_prime
@@ -478,9 +461,7 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         return x_major * r_y_prime_clamped, x_major * r_y_prime
 
-    def get_traj_points(
-        self, images, states, actions, car_size, unnormalize, ref_states=None
-    ):
+    def get_traj_points(self, images, states, actions, car_size, unnormalize, ref_states=None):
         if ref_states is None:
             ref_states = states
 
@@ -525,30 +506,22 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         alphas = torch.atan(speeds_norm_pixels * actions[:, :, 1] * TIMESTEP)
         gammas = (np.pi - alphas) / 2
-        radii = (
-            -1 * speeds_norm * TIMESTEP / (2 * torch.cos(gammas) + 1e-7)
-        )  # in meters
+        radii = -1 * speeds_norm * TIMESTEP / (2 * torch.cos(gammas) + 1e-7)  # in meters
 
         directions = states[:, :, 2:4]
         ref_directions = ref_states[:, :, 2:4]
 
         positions_adjusted = positions - ref_positions.detach()
 
-        rotation = rotation_matrix(ref_directions.detach(), directions).to(
-            device
-        )
+        rotation = rotation_matrix(ref_directions.detach(), directions).to(device)
 
-        y = torch.linspace(
-            -LOOK_SIDEWAYS_M, LOOK_SIDEWAYS_M, crop_w, device=device
-        )
+        y = torch.linspace(-LOOK_SIDEWAYS_M, LOOK_SIDEWAYS_M, crop_w, device=device)
         x = torch.linspace(-LOOK_AHEAD_M, LOOK_AHEAD_M, crop_h, device=device)
         xx, yy = torch.meshgrid(x, y)
         xx = xx.repeat(bsize, npred, 1, 1)
         yy = yy.repeat(bsize, npred, 1, 1)
 
-        xx, yy = coordinate_shift(
-            xx, yy, positions_adjusted[:, :, 0], positions_adjusted[:, :, 1]
-        )
+        xx, yy = coordinate_shift(xx, yy, positions_adjusted[:, :, 0], positions_adjusted[:, :, 1])
         if self.config.rotate > 0:
             xx, yy = coordinate_rotate_matrix(xx, yy, rotation)
         if self.config.curl > 0:
@@ -595,29 +568,17 @@ class PolicyCostKMTaper(PolicyCostKM):
                 s_image = shift(image, shift_x, shift_y)
                 # p_cost = cost.compute_proximity_cost(s_image.unsqueeze(0).unsqueeze(0), states.unsqueeze(0), car_sizes.unsqueeze(0), unnormalize=True)
                 p_cost = (
-                    self.compute_proximity_cost_km(
-                        s_image.unsqueeze(0).unsqueeze(0).cuda(),
-                        masks,
-                        mask_sums,
-                    )["costs"]
+                    self.compute_proximity_cost_km(s_image.unsqueeze(0).unsqueeze(0).cuda(), masks, mask_sums,)["costs"]
                     * self.config.mask_coeff
                     * self.config.lambda_p
                 )
                 lane_cost = (
-                    self.compute_lane_cost_km(
-                        s_image.unsqueeze(0).unsqueeze(0).cuda(),
-                        masks,
-                        mask_sums,
-                    )
+                    self.compute_lane_cost_km(s_image.unsqueeze(0).unsqueeze(0).cuda(), masks, mask_sums,)
                     * self.config.mask_coeff
                     * self.config.lambda_l
                 )
                 offroad_cost = (
-                    self.compute_offroad_cost_km(
-                        s_image.unsqueeze(0).unsqueeze(0).cuda(),
-                        masks,
-                        mask_sums,
-                    )
+                    self.compute_offroad_cost_km(s_image.unsqueeze(0).unsqueeze(0).cuda(), masks, mask_sums,)
                     * self.config.mask_coeff
                     * self.config.lambda_o
                 )
@@ -625,9 +586,7 @@ class PolicyCostKMTaper(PolicyCostKM):
                 results[x][y] = p_cost + lane_cost + offroad_cost
         return results
 
-    def compute_state_costs_for_training(
-        self, inputs, pred_images, pred_states, pred_actions, car_sizes
-    ):
+    def compute_state_costs_for_training(self, inputs, pred_images, pred_states, pred_actions, car_sizes):
         device = pred_images.device
 
         if self.config.shifted_reference_frame > 0:
@@ -636,17 +595,11 @@ class PolicyCostKMTaper(PolicyCostKM):
             if "ref_states" in inputs:
                 ref_states = inputs["ref_states"].detach()
             else:
-                ref_states = torch.cat(
-                    (inputs["input_states"][:, -1:], pred_states[:, :-1]),
-                    axis=1,
-                ).detach()
+                ref_states = torch.cat((inputs["input_states"][:, -1:], pred_states[:, :-1]), axis=1,).detach()
             if "ref_images" in inputs:
                 ref_images = inputs["ref_images"].detach()
             else:
-                ref_images = torch.cat(
-                    (inputs["input_images"][:, -1:], pred_images[:, :-1]),
-                    axis=1,
-                ).detach()
+                ref_images = torch.cat((inputs["input_images"][:, -1:], pred_images[:, :-1]), axis=1,).detach()
             assert ref_images.shape == pred_images.shape
             assert ref_states.shape == pred_states.shape
         else:
@@ -676,47 +629,36 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         # We impose a cost for being too far from the reference. Being too far to the side is punished more.
         diff_xy = UnitConverter.pixels_to_m(
-                self.normalizer.unnormalize_states(ref_states)[..., :2]
-                - self.normalizer.unnormalize_states(pred_states)[..., :2]
+            self.normalizer.unnormalize_states(ref_states)[..., :2]
+            - self.normalizer.unnormalize_states(pred_states)[..., :2]
         ).abs()
 
-        # Shapes are bsize, npred, 2 for each of them.
-        reference_distance_loss = torch.nn.functional.relu(diff_xy[:, :, 0] - 30) ** 4 + torch.nn.functional.relu(diff_xy[:, :, 1] - 5) ** 4
-
         npred = pred_images.size(1)
-        gamma_mask = (
-            torch.tensor([self.config.gamma ** t for t in range(npred + 1)])
-            .to(device)
-            .unsqueeze(0)
-        )
+        gamma_mask = torch.tensor([self.config.gamma ** t for t in range(npred + 1)]).to(device).unsqueeze(0)
 
-        proximity_cost = self.compute_proximity_cost_km(
-            ref_images, proximity_mask, mask_sums
-        )["costs"]
+        proximity_cost = self.compute_proximity_cost_km(ref_images, proximity_mask, mask_sums)["costs"]
 
-        lane_cost = self.compute_lane_cost_km(
-            ref_images, proximity_mask_lo, mask_sums_lo
-        )
-        offroad_cost = self.compute_offroad_cost_km(
-            ref_images, proximity_mask_lo, mask_sums_lo
-        )
+        lane_cost = self.compute_lane_cost_km(ref_images, proximity_mask_lo, mask_sums_lo)
+        offroad_cost = self.compute_offroad_cost_km(ref_images, proximity_mask_lo, mask_sums_lo)
 
         # Multiply everything with mask_coeff used to scale up the costs that
         # depend on mask size.
-        lane_loss = (
-            torch.mean(lane_cost * gamma_mask[:, :npred], dim=1)
-            * self.config.mask_coeff
-        )
-        offroad_loss = (
-            torch.mean(offroad_cost * gamma_mask[:, :npred], dim=1)
-            * self.config.mask_coeff
-        )
-        proximity_loss = (
-            torch.mean(proximity_cost * gamma_mask[:, :npred], dim=1)
-            * self.config.mask_coeff
-        )
-        if self.config.reference_distance_loss:
-            proximity_loss += torch.mean(reference_distance_loss * gamma_mask[:, :npred], dim=1)
+        lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
+        offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
+        proximity_loss = torch.mean(proximity_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
+
+        reference_distance_loss = 0.0
+        if self.config.lambda_r > 0:
+            # Shapes are bsize, npred, 2 for each of them.
+            reference_distance_cost = (
+                torch.nn.functional.relu(diff_xy[:, :, 0] - 30) ** 4
+                + torch.nn.functional.relu(diff_xy[:, :, 1] - 5) ** 4
+            )
+            reference_distance_loss = torch.mean(reference_distance_cost * gamma_mask[:, :npred], dim=1)
+
+        destination_cost = -self.normalizer.unnormalize_states(pred_states)[..., 0]
+        destination_loss = torch.mean(destination_cost * gamma_mask[:, :npred], dim=1)
+        # Distance to destination loss.
 
         traj_proximity_mask = self.get_traj_points(
             pred_images[:, :, :3].contiguous().detach(),
@@ -728,9 +670,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         )
 
         # count collisions: if more then 50% of the center are covered in green, we've collided.
-        collisions_sum = (traj_proximity_mask * ref_images[:, :, 1]).sum(
-            dim=(2, 3)
-        )
+        collisions_sum = (traj_proximity_mask * ref_images[:, :, 1]).sum(dim=(2, 3))
         traj_mask_sums = traj_proximity_mask.sum(dim=(2, 3))
         collisions = collisions_sum > 0.5 * traj_mask_sums
 
@@ -744,20 +684,11 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         if self.traj_landscape:
             if self.ctr % 10 == 0:
-                last_image = inputs["input_images"][:, -1:, :3].repeat(
-                    1, pred_states.shape[1], 1, 1, 1
-                )
-                last_state = inputs["input_states"].repeat(
-                    1, pred_states.shape[1], 1
-                )
+                last_image = inputs["input_images"][:, -1:, :3].repeat(1, pred_states.shape[1], 1, 1, 1)
+                last_state = inputs["input_states"].repeat(1, pred_states.shape[1], 1)
 
                 traj_proximity_mask = self.get_traj_points(
-                    last_image,
-                    pred_states,
-                    pred_actions,
-                    car_sizes,
-                    unnormalize=True,
-                    ref_states=last_state,
+                    last_image, pred_states, pred_actions, car_sizes, unnormalize=True, ref_states=last_state,
                 )
 
                 cost_landscape_unnormed = self.get_cost_landscape(
@@ -765,24 +696,14 @@ class PolicyCostKMTaper(PolicyCostKM):
                     proximity_mask[0, 0].unsqueeze(0).unsqueeze(0),
                     mask_sums[0, 0].unsqueeze(0).unsqueeze(0),
                 )
-                cost_landscape = cost_landscape_unnormed / (
-                    cost_landscape_unnormed.max() + 1e-9
-                )
+                cost_landscape = cost_landscape_unnormed / (cost_landscape_unnormed.max() + 1e-9)
                 cost_landscape = torch.stack(
-                    [
-                        torch.zeros_like(cost_landscape),
-                        cost_landscape,
-                        torch.zeros_like(cost_landscape),
-                    ]
+                    [torch.zeros_like(cost_landscape), cost_landscape, torch.zeros_like(cost_landscape),]
                 )
 
-                self.t_image = (
-                    cost_landscape.cuda() + traj_proximity_mask.sum(dim=1)[0]
-                )
+                self.t_image = cost_landscape.cuda() + traj_proximity_mask.sum(dim=1)[0]
                 self.t_image = self.t_image.contiguous()
-                self.t_image_data = (
-                    cost_landscape_unnormed.detach().cpu().numpy()
-                )
+                self.t_image_data = cost_landscape_unnormed.detach().cpu().numpy()
 
             self.ctr += 1
 
@@ -794,4 +715,6 @@ class PolicyCostKMTaper(PolicyCostKM):
             offroad_loss=offroad_loss,
             proximity_loss=proximity_loss,
             collisions=collisions,
+            reference_distance_loss=reference_distance_loss,
+            destination_loss=destination_loss,
         )

@@ -24,6 +24,8 @@ if __name__ == "__main__":
         "lambda_p",
         "lambda_l",
         "lambda_o",
+        "lambda_d",
+        "lambda_r",
         "lambda_j_mpc",
         "mask_coeff",
         "lr",
