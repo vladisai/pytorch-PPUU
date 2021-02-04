@@ -37,6 +37,7 @@ def get_optimal_pool_size():
 
 @dataclass
 class EvalMPCConfig(configs.ConfigBase):
+    comment: str = ""
     dataset: str = MISSING
     save_gradients: bool = False
     debug: bool = False
