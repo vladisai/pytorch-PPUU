@@ -731,9 +731,10 @@ class Car:
 
     @property
     def valid(self):
+        # I commented this out because it wouldn't draw and store the images.
         return (
             self.back[0] > self.look_ahead
-            and self.front[0] < self.screen_w - 1.75 * self.look_ahead
+            and self.front[0] < self.screen_w # - 1.75 * self.look_ahead
         )
 
     def __repr__(self) -> str:
@@ -1207,59 +1208,61 @@ class Simulator(core.Env):
             # extract states
             ego_surface = pygame.Surface(machine_screen_size)
             for i, v in enumerate(self.vehicles):
-                if (self.store or v.is_controlled) and v.valid:
-                    # For every vehicle we want to extract the state,
-                    # start with a black surface
-                    vehicle_surface.fill((0, 0, 0))
-                    # Draw all the other vehicles (in green)
-                    for vv in set(self.vehicles) - {v}:
-                        vv.draw(
-                            vehicle_surface, mode=mode, offset=max_extension
-                        )
-                    # Superimpose the lanes
-                    vehicle_surface.blit(
-                        lane_surface, (0, 0), special_flags=pygame.BLEND_MAX
-                    )
-                    # Empty ego-surface
-                    ego_surface.fill((0, 0, 0))
-                    # Draw myself blue on the ego_surface
-                    v.draw(ego_surface, mode="ego-car", offset=max_extension)
-                    # Add me on top of others without shadowing
-                    # vehicle_surface.blit(ego_surface, ego_rect, ego_rect,
-                    # special_flags=pygame.BLEND_MAX)
-                    v.store(
-                        "state_image",
-                        (
-                            max_extension,
-                            vehicle_surface,
-                            width_height,
-                            scale,
-                            self.frame,
-                        ),
-                    )
-                    v.store(
-                        "ego_car_image",
-                        (
-                            max_extension,
-                            ego_surface,
-                            width_height,
-                            scale,
-                            self.frame,
-                        ),
-                    )
-                    # Store whole history, if requested
-                    if self.store_sim_video:
-                        if self.ghost:
-                            self.ghost.draw(
-                                vehicle_surface,
-                                mode="ghost",
-                                offset=max_extension,
+                if (self.store or v.is_controlled):
+                    assert self.time_counter == 0 or v.valid, 'drawing invalid car'
+                    if v.valid:
+                        # For every vehicle we want to extract the state,
+                        # start with a black surface
+                        vehicle_surface.fill((0, 0, 0))
+                        # Draw all the other vehicles (in green)
+                        for vv in set(self.vehicles) - {v}:
+                            vv.draw(
+                                vehicle_surface, mode=mode, offset=max_extension
                             )
-                        v.frames.append(
-                            pygame.surfarray.array3d(
-                                vehicle_surface
-                            ).transpose(1, 0, 2)
-                        )  # flip x and y
+                        # Superimpose the lanes
+                        vehicle_surface.blit(
+                            lane_surface, (0, 0), special_flags=pygame.BLEND_MAX
+                        )
+                        # Empty ego-surface
+                        ego_surface.fill((0, 0, 0))
+                        # Draw myself blue on the ego_surface
+                        v.draw(ego_surface, mode="ego-car", offset=max_extension)
+                        # Add me on top of others without shadowing
+                        # vehicle_surface.blit(ego_surface, ego_rect, ego_rect,
+                        # special_flags=pygame.BLEND_MAX)
+                        v.store(
+                            "state_image",
+                            (
+                                max_extension,
+                                vehicle_surface,
+                                width_height,
+                                scale,
+                                self.frame,
+                            ),
+                        )
+                        v.store(
+                            "ego_car_image",
+                            (
+                                max_extension,
+                                ego_surface,
+                                width_height,
+                                scale,
+                                self.frame,
+                            ),
+                        )
+                        # Store whole history, if requested
+                        if self.store_sim_video:
+                            if self.ghost:
+                                self.ghost.draw(
+                                    vehicle_surface,
+                                    mode="ghost",
+                                    offset=max_extension,
+                                )
+                            v.frames.append(
+                                pygame.surfarray.array3d(
+                                    vehicle_surface
+                                ).transpose(1, 0, 2)
+                            )  # flip x and y
 
             # # save surface as image, for visualisation only
             # pygame.image.save(vehicle_surface, "vehicle_surface.png")

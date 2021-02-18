@@ -174,33 +174,34 @@ class EvalVisualizer:
         self.step_reset()
 
     def save_video(self, k):
-        path = Path(self.output_dir) / "visualizer" / "images" / str(k)
-        path.mkdir(exist_ok=True, parents=True)
-        for i, img in enumerate(self.images_history):
-            with open(path / f"{i:0>4d}.png", "wb") as f:
-                f.write(img)
-        video_path = (
-            Path(self.output_dir) / "visualizer" / "videos" / f"{k}.mp4"
-        )
-        video_path.parent.mkdir(exist_ok=True, parents=True)
-        with open("/dev/null", "w") as f:
-            subprocess.run(
-                [
-                    "ffmpeg",
-                    "-nostdin",
-                    "-r",
-                    "10",
-                    "-i",
-                    f"{path}/%04d.png",
-                    "-vcodec",
-                    "mpeg4",
-                    "-q:v",
-                    "10",
-                    "-y",
-                    video_path,
-                ],
-                stdout=f,
-                stderr=f,
+        if self.output_dir is not None:
+            path = Path(self.output_dir) / "visualizer" / "images" / str(k)
+            path.mkdir(exist_ok=True, parents=True)
+            for i, img in enumerate(self.images_history):
+                with open(path / f"{i:0>4d}.png", "wb") as f:
+                    f.write(img)
+            video_path = (
+                Path(self.output_dir) / "visualizer" / "videos" / f"{k}.mp4"
             )
-        # Delete images because they take up space in scratch.
-        shutil.rmtree(path)
+            video_path.parent.mkdir(exist_ok=True, parents=True)
+            with open("/dev/null", "w") as f:
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-nostdin",
+                        "-r",
+                        "10",
+                        "-i",
+                        f"{path}/%04d.png",
+                        "-vcodec",
+                        "mpeg4",
+                        "-q:v",
+                        "10",
+                        "-y",
+                        video_path,
+                    ],
+                    stdout=f,
+                    stderr=f,
+                )
+            # Delete images because they take up space in scratch.
+            shutil.rmtree(path)

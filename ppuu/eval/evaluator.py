@@ -278,6 +278,9 @@ class PolicyEvaluator:
             images.append(inputs["context"].contiguous()[-1])
             states.append(inputs["state"].contiguous()[-1])
 
+        # if len(images) < t or done:
+        #     breakpoint()
+
         return Future(torch.stack(images), torch.stack(states))
 
     def _build_episode_data(self, unfolding):

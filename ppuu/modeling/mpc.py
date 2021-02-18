@@ -296,8 +296,8 @@ class MPCKMPolicy(torch.nn.Module):
             actions[0, 0] = init
 
         actions = self.normalizer.normalize_actions(actions)
-        actions.requires_grad = True
         self.cost.traj_landscape = False
+        actions.requires_grad = True
 
         def get_cost(actions, keep_batch_dim=False, unfolding_agg="max"):
             batch_size = actions.shape[0]
@@ -433,26 +433,30 @@ class MPCKMPolicy(torch.nn.Module):
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
                 (actions,), lr=self.config.lr, max_iter=self.config.n_iter
             )
-            ref_images, ref_states = self.unfold_fm(full_images, full_states, actions)
+            if gt_future is None:
+                # We don't regenerate this if gt is passed!
+                ref_images, ref_states = self.unfold_fm(full_images, full_states, best_actions)
+
             if self.visualizer is not None:
                 self.cost.traj_landscape = True
 
             def lbfgs_closure():
                 optimizer.zero_grad()
                 # We want to add log-barrier function to not let LBFGS go beyond a reasonable interval for optimization.
-                cost = get_cost(actions) - self.config.lbfgs_log_barrier_alpha * (1.0 - actions.abs()).log().sum()
+                cost = get_cost(actions, keep_batch_dim=True, unfolding_agg=self.config.unfolding_agg) - self.config.lbfgs_log_barrier_alpha * (1.0 - actions.abs()).log().sum()
 
                 if self.visualizer:
                     unnormalized_actions = self.normalizer.unnormalize_actions(actions.data)
                     self.visualizer.update_values(
-                        cost.item(), unnormalized_actions[0, 0, 0].item(), unnormalized_actions[0, 0, 1].item(),
+                        cost.mean().item(), unnormalized_actions[0, 0, 0].item(), unnormalized_actions[0, 0, 1].item(),
                     )
 
                 self.cost.traj_landscape = False
 
-                cost.backward()
+                cmean = cost.mean()
+                cmean.backward()
 
-                return cost
+                return cmean
 
             optimizer.step(lbfgs_closure)
 
@@ -461,6 +465,8 @@ class MPCKMPolicy(torch.nn.Module):
                 self.visualizer.update_values(
                     0.0, unnormalized_actions[0, 0, 0].item(), unnormalized_actions[0, 0, 1].item(),
                 )
+
+            best_actions = actions[:1]
 
         elif self.config.optimizer == "CE":
             if gt_future is None:
