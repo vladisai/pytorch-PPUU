@@ -321,6 +321,8 @@ class EvaluationDataset(torch.utils.data.Dataset):
                 test=splits.get("test_indx"),
             )
 
+        print('first 10 elements of test split', self.splits['test'][:10])
+
         car_sizes_path = os.path.join(data_dir, "car_sizes.pth")
         self.car_sizes = torch.load(car_sizes_path)
         self.split = split

@@ -1209,7 +1209,7 @@ class Simulator(core.Env):
             ego_surface = pygame.Surface(machine_screen_size)
             for i, v in enumerate(self.vehicles):
                 if (self.store or v.is_controlled):
-                    # assert self.time_counter == 0 or v.valid, 'drawing invalid car'
+                    assert self.time_counter == 0 or v.valid, 'drawing invalid car'
                     if v.valid:
                         # For every vehicle we want to extract the state,
                         # start with a black surface
