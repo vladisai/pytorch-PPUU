@@ -248,8 +248,11 @@ class MPCKMPolicy(torch.nn.Module):
 
         if gt_future is not None:
             gt_future_values = gt_future() # gt future is a lambda. this is to save time when we don't plan every step.
-            ref_images = self.normalizer.normalize_images(gt_future_values.images.unsqueeze(0)).to(device)
-            ref_states = self.normalizer.normalize_states(gt_future_values.states.unsqueeze(0)).to(device)
+            if gt_future_values is not None:
+                ref_images = self.normalizer.normalize_images(gt_future_values.images.unsqueeze(0)).to(device)
+                ref_states = self.normalizer.normalize_states(gt_future_values.states.unsqueeze(0)).to(device)
+        else:
+            gt_future_values = None
 
         # if self.ctr == 99:
         #     dump_dict = dict(images=images, states=states, car_size=car_size,)
@@ -355,7 +358,7 @@ class MPCKMPolicy(torch.nn.Module):
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer]((actions,), self.config.lr)
 
             for i in range(self.config.n_iter):
-                if i % self.config.update_ref_period == 0 and gt_future is None:
+                if i % self.config.update_ref_period == 0 and gt_future_values is None:
                     # We don't regenerate this if gt is passed!
                     ref_images, ref_states = self.unfold_fm(full_images, full_states, best_actions)
 
@@ -370,11 +373,14 @@ class MPCKMPolicy(torch.nn.Module):
                     self.cost.traj_landscape = False
 
                 cost.mean().backward()
-
-                # this is definitely needed, judging from some examples I saw where gradient is 50
                 a_grad = actions.grad[0, 0].clone() # save for plotting later
-                torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
-                optimizer.step()
+                if not torch.isnan(actions.grad).any():
+                    # this is definitely needed, judging from some examples I saw where gradient is 50
+                    torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
+                    optimizer.step()
+                else:
+                    print('NaN grad!')
+
 
                 values, indices = cost.min(dim=0)
                 # if cost[indices] < best_cost:
@@ -433,7 +439,7 @@ class MPCKMPolicy(torch.nn.Module):
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
                 (actions,), lr=self.config.lr, max_iter=self.config.n_iter
             )
-            if gt_future is None:
+            if gt_future_values is None:
                 # We don't regenerate this if gt is passed!
                 ref_images, ref_states = self.unfold_fm(full_images, full_states, best_actions)
 

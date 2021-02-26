@@ -277,6 +277,8 @@ class PolicyEvaluator:
             inputs, cost, done, info = env.step([0, 0])
             images.append(inputs["context"].contiguous()[-1])
             states.append(inputs["state"].contiguous()[-1])
+            if done:
+                return None # we fall back to using the forward model in this case.
 
         # if len(images) < t or done:
         #     breakpoint()
