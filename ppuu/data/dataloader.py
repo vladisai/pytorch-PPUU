@@ -344,6 +344,7 @@ class EvaluationDataset(torch.utils.data.Dataset):
 
         self.ids = []
         data_files = next(os.walk(data_dir))[1]
+        data_files.sort()
         for df in data_files:
             combined_data_path = f"{data_dir}/{df}/all_data.pth"
             if os.path.isfile(combined_data_path):
