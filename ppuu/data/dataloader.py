@@ -372,10 +372,12 @@ class EvaluationDataset(torch.utils.data.Dataset):
             yield self[i]
 
     def __getitem__(self, i):
+        print('getting item', i)
         car_info = self.get_episode_car_info(self.splits[self.split][i])
         return car_info
 
     def get_episode_car_info(self, episode):
+        print('getting episode', episode)
         splits = self.ids[episode].split("/")
         time_slot_str = splits[-2]
         car_id = int(re.findall(r"car(\d+).pkl", splits[-1])[0])
@@ -386,6 +388,8 @@ class EvaluationDataset(torch.utils.data.Dataset):
         }
         time_slot = data_files_mapping[time_slot_str]
         car_size = self.car_sizes[time_slot_str][car_id]
+        print('time slot is', time_slot)
+        print('car_id is', car_id)
         result = dict(
             time_slot=time_slot,
             time_slot_str=time_slot_str,
