@@ -508,3 +508,285 @@ class MPCKMPolicy(torch.nn.Module):
         self.ctr += 1
 
         return actions.detach()
+
+
+class MPCFMPolicy(torch.nn.Module):
+    @dataclass
+    class Config(configs.ConfigBase):
+        n_iter: int = 10
+        lr: float = 0.1
+        unfold_len: int = 30
+        timestep: float = 0.1
+        update_ref_period: int = 100
+        use_fm: bool = True
+        optimizer: str = "Adam"
+        optimizer_budget: Optional[int] = None
+        lbfgs_log_barrier_alpha: float = 0.01
+        fm_unfold_variance: float = 1.0
+        fm_unfold_samples: int = 1
+        fm_unfold_samples_agg: str = "max"
+        planning_freq: int = 1
+        lambda_j_mpc: float = 0.0
+        batch_size: int = 1
+        ce_repeat_step: int = 5
+        unfolding_agg: str = "max"
+
+    OPTIMIZER_DICT = {
+        "SGD": torch.optim.SGD,
+        "Adam": torch.optim.Adam,
+    }
+
+    def __init__(
+        self, forward_model, cost, normalizer, config, visualizer=None,
+    ):
+        super().__init__()
+
+        self.cost = cost
+        self.forward_model = forward_model
+        self.normalizer = normalizer
+        self.config = config
+
+        self.last_actions = None
+        self.visualizer = visualizer
+        self.reset()
+
+    def reset(self):
+        self.last_actions = None
+        self.ctr = 0
+
+    def unfold_fm(self, images, states, actions):
+        """
+        Autoregressively applies fm prediction to get reference images and states.
+            states shape : batch, state_dim
+            actions shape : batch, unfold_len, action_dim
+        Returns:
+            predicted_images, shape = batch, unfold_len, images channels, images h, images w
+            predicted_states, shape = batch, unfold_len, state_dim
+        """
+
+        actions_per_fm_timestep = int(0.1 / self.config.timestep)
+        if (
+            actions_per_fm_timestep == 0
+            or self.config.unfold_len % actions_per_fm_timestep != 0
+            or not self.config.use_fm
+        ):
+            ref_states = self.unfold_km(states[..., -1, :].view(-1, 5), torch.zeros_like(actions))
+            return (
+                images[:, -1].repeat(1, self.config.unfold_len, 1, 1, 1),
+                ref_states,
+            )
+        else:
+            # We make a batch of the same values, but we use different latents.
+            # The motivation is to get multiple fm predictions and plan through that to get
+            # better results that reflect the uncertainty.
+
+            actions = repeat_batch(actions, self.config.fm_unfold_samples)
+            images = repeat_batch(images, self.config.fm_unfold_samples)
+            states = repeat_batch(states, self.config.fm_unfold_samples)
+
+            Z = torch.randn(*actions.shape[:2], 32) * self.config.fm_unfold_variance
+
+            unfolding = self.forward_model.model.unfold(
+                actions_or_policy=actions,
+                batch={"input_images": images.cuda(), "input_states": states.cuda(),},
+                Z=Z,
+            )
+
+            if self.config.fm_unfold_samples_agg == "max":
+                ref_images = (
+                    unfolding["pred_images"]
+                    .max(dim=0, keepdim=True)
+                    .values
+                )
+            elif self.config.fm_unfold_samples_agg == "mean":
+                ref_images = (
+                    unfolding["pred_images"].mean(dim=0, keepdim=True)
+                )
+            elif self.config.fm_unfold_samples_agg == "keep":
+                ref_images = unfolding["pred_images"]
+
+            if self.config.fm_unfold_samples_agg == "keep":
+                ref_states = unfolding["pred_states"]
+            else:
+                # TODO: this has to also account for the fact that other cars are probably moving at the same rate as us.
+                ref_states = unfolding["pred_states"][:1]
+
+            return ref_images, ref_states, unfolding["Z"]
+
+    def __call__(
+        self, images, states, normalize_inputs=False, normalize_outputs=False, car_size=None, init=None, metadata=None,
+    ):
+        device = states.device
+
+        if self.ctr % self.config.planning_freq > 0:
+            actions = self.last_actions[:, self.ctr % self.config.planning_freq]
+
+            if normalize_outputs:
+                actions = self.normalizer.unnormalize_actions(actions.data)
+
+            print("final actions for", self.ctr, "are", actions)
+
+            self.ctr += 1
+
+            return actions.detach()
+
+        # if self.ctr == 99:
+        #     dump_dict = dict(images=images, states=states, car_size=car_size,)
+        #     torch.save(dump_dict, "bad_example.dump")
+
+        if self.visualizer:
+            self.visualizer.step_reset()
+
+        if normalize_inputs:
+            states = self.normalizer.normalize_states(states.clone())
+            images = self.normalizer.normalize_images(images)
+            car_size = torch.tensor(car_size).unsqueeze(0)
+
+        full_states = states.unsqueeze(0)
+        full_images = images[:, :3].unsqueeze(0)
+        states = states[..., -1, :].view(-1, 5)
+        images = images[..., -1, :, :, :].view(-1, 1, 4, 117, 24)
+        # if self.last_actions is not None:
+        #     actions = torch.cat(
+        #         (self.last_actions[:, 1:-1], self.last_actions[:, -2].unsqueeze(1).repeat(1, 2, 1)), dim=1
+        #     )
+        #     actions = torch.tensor(actions, requires_grad=True)
+        # else:
+
+        # Zero normalized maps to slight acceleration when normalized. We make sure we start from
+        # true zero.
+        actions = torch.cat(
+            [
+                # The first action is always just zeros.
+                torch.zeros(1, self.config.unfold_len, 2, device=device),
+                # The rest are random repeated.
+                7 * torch.randn(self.config.batch_size - 1, 1, 2, device=device).repeat(1, self.config.unfold_len, 1),
+            ],
+            dim=0,
+        )
+        # actions[:, :, 0] = 30
+        # best_actions = torch.zeros_like(actions[:1])
+        actions = torch.randn_like(actions) * 0.01
+        best_actions = actions[:1]
+
+        # actions[:, :, 1] = 0
+        # TODO: remove the changes to init in actions
+        best_cost = 1e10
+
+        if init is not None:
+            actions[0, 0] = init
+
+        actions = self.normalizer.normalize_actions(actions)
+        self.cost.traj_landscape = False
+        actions.requires_grad = True
+
+        def get_cost(actions, keep_batch_dim=False, unfolding_agg="max"):
+            batch_size = actions.shape[0]
+            unfoldings_size = self.config.fm_unfold_samples
+
+            rep_states = repeat_batch(full_states, batch_size)
+            rep_images = repeat_batch(full_images, batch_size)
+            rep_actions = repeat_batch(actions, unfoldings_size)
+
+            pred_images, pred_states, Z = self.unfold_fm(rep_images, rep_states, rep_actions)
+
+            inputs = {
+                "input_images": repeat_batch(full_images, batch_size * unfoldings_size),
+                "input_states": repeat_batch(full_states, batch_size * unfoldings_size),
+                "car_sizes": repeat_batch(car_size, batch_size * unfoldings_size),
+            }
+            predictions = {
+                "pred_states": pred_states,
+                "pred_images": pred_images,
+                "pred_actions": repeat_batch(actions, unfoldings_size),
+                "Z": Z,
+            }
+
+            jerk_actions = actions
+            if self.last_actions is not None:
+                # Cat the last action so we account for what action we performed in the past when calculating jerk.
+                jerk_actions = torch.cat([repeat_batch(self.last_actions[:, :1], batch_size), actions,], dim=1,)
+
+            gamma_mask = (
+                torch.tensor([self.cost.config.gamma ** t for t in range(jerk_actions.shape[1] - 1)])
+                .cuda()
+                .unsqueeze(0)
+            )
+            loss_j = (jerk_actions[:, 1:] - jerk_actions[:, :-1]).norm(2, 2).pow(2).mul(gamma_mask).mean(dim=1)
+
+            # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
+            costs = self.cost.calculate_cost(inputs, predictions)
+
+            result = costs["policy_loss"] + repeat_batch(loss_j, unfoldings_size) * self.config.lambda_j_mpc
+
+            # TODO: double check this is correct.
+            result = result.view(unfoldings_size, batch_size)
+
+            if unfolding_agg == "mean":
+                result = result.mean(dim=0)
+            elif unfolding_agg == "max":
+                result = result.max(dim=0).values
+
+            if keep_batch_dim:
+                return result
+            else:
+                return result.mean()
+
+        if self.config.optimizer in ["SGD", "Adam"]:
+            optimizer = self.OPTIMIZER_DICT[self.config.optimizer]((actions,), self.config.lr)
+
+            for i in range(self.config.n_iter):
+                # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
+                optimizer.zero_grad()
+                if i == self.config.n_iter - 1 and self.visualizer is not None:
+                    self.cost.traj_landscape = True
+
+                cost = get_cost(actions, keep_batch_dim=True, unfolding_agg=self.config.unfolding_agg)
+
+                if i == self.config.n_iter - 1:
+                    self.cost.traj_landscape = False
+
+                cost.mean().backward()
+                a_grad = actions.grad[0, 0].clone() # save for plotting later
+
+                if not torch.isnan(actions.grad).any():
+                    # this is definitely needed, judging from some examples I saw where gradient is 50
+                    torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
+                    optimizer.step()
+                else:
+                    print('NaN grad!')
+
+                values, indices = cost.min(dim=0)
+                # if cost[indices] < best_cost:
+                #     best_actions = actions[indices].unsqueeze(0).clone()
+                #     best_cost = cost[indices]
+                best_cost = cost[indices]
+                best_actions = actions[indices].unsqueeze(0).clone()
+
+                if self.visualizer:
+                    unnormalized_actions = self.normalizer.unnormalize_actions(actions.data)
+                    self.visualizer.update_values(
+                        best_cost.item(),
+                        unnormalized_actions[0, 0, 0].item(),
+                        unnormalized_actions[0, 0, 1].item(),
+                        a_grad[0].item(),
+                        a_grad[1].item(),
+                    )
+
+        self.cost.traj_landscape = False
+
+        if self.visualizer is not None:
+            self.visualizer.update_plot()
+
+        self.last_actions = best_actions
+
+        actions = best_actions[:, 0]
+
+        if normalize_outputs:
+            actions = self.normalizer.unnormalize_actions(actions.data)
+
+        print("final actions for", self.ctr, "are", actions)
+
+        self.ctr += 1
+
+        return actions.detach()

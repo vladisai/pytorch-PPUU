@@ -215,10 +215,11 @@ class PolicyEvaluator:
 
             if self.visualizer is not None:
                 self.visualizer.update(inputs["context"][-1].contiguous())
-                self.visualizer.update_t(
-                    policy.cost.t_image.contiguous(), policy.cost.t_image_data
-                )
-                self.visualizer.update_c(policy.cost.overlay[0].contiguous())
+                if hasattr(policy.cost, 't_image'):
+                    self.visualizer.update_t(
+                        policy.cost.t_image.contiguous(), policy.cost.t_image_data
+                    )
+                    self.visualizer.update_c(policy.cost.overlay[0].contiguous())
 
             # every second, we save a copy of the environment
             if t % 10 == 0:
@@ -279,9 +280,6 @@ class PolicyEvaluator:
             states.append(inputs["state"].contiguous()[-1])
             if done:
                 return None # we fall back to using the forward model in this case.
-
-        # if len(images) < t or done:
-        #     breakpoint()
 
         return Future(torch.stack(images), torch.stack(states))
 

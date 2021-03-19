@@ -115,19 +115,22 @@ class EvalVisualizer:
             plt.gcf().colorbar(im, orientation="vertical", ax=plt.gca())
 
         plt.subplot(2, 4, 1)
-        im = plt.imshow(self.i_data)  # show image
-        im.axes.get_xaxis().set_visible(False)
-        im.axes.get_yaxis().set_visible(False)
+        if self.i_data is not None:
+            im = plt.imshow(self.i_data)  # show image
+            im.axes.get_xaxis().set_visible(False)
+            im.axes.get_yaxis().set_visible(False)
 
         plt.subplot(2, 4, 2)
-        im = plt.imshow(self.t_data)  # show traj
-        im.axes.get_xaxis().set_visible(False)
-        im.axes.get_yaxis().set_visible(False)
+        if self.t_data is not None:
+            im = plt.imshow(self.t_data)  # show traj
+            im.axes.get_xaxis().set_visible(False)
+            im.axes.get_yaxis().set_visible(False)
 
-        plt.subplot(2, 1, 2)
-        im = plt.imshow(self.c_data)  # show planning images
-        im.axes.get_xaxis().set_visible(False)
-        im.axes.get_yaxis().set_visible(False)
+        if self.c_data is not None:
+            plt.subplot(2, 1, 2)
+            im = plt.imshow(self.c_data)  # show planning images
+            im.axes.get_xaxis().set_visible(False)
+            im.axes.get_yaxis().set_visible(False)
 
         plt.subplots_adjust(
             left=0.01,
@@ -151,8 +154,8 @@ class EvalVisualizer:
     def update_plot(self):
         if (
             self.i_data is not None
-            and self.t_data is not None
-            and self.c_data is not None
+            or self.t_data is not None
+            or self.c_data is not None
         ):
             self.costs_plot_output.clear_output(wait=True)
             with self.costs_plot_output:

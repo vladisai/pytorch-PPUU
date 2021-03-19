@@ -330,6 +330,7 @@ class PolicyCost(PolicyCostBase):
 
     def compute_combined_loss(
         self, proximity_loss, uncertainty_loss, lane_loss, action_loss, jerk_loss, offroad_loss,
+        **_kwargs,
     ):
         return (
             self.config.lambda_p * proximity_loss
