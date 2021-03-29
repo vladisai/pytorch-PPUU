@@ -39,6 +39,7 @@ class PolicyCost(PolicyCostBase):
         self.config = config
         self.forward_model = forward_model
         self.normalizer = normalizer
+        self.traj_landscape = False
 
     def compute_lane_cost(self, images, car_size):
         SCALE = 0.25
