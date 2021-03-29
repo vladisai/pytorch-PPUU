@@ -68,11 +68,9 @@ def main(config):
         distributed_backend=config.training.distributed_backend,
         callbacks=[LearningRateMonitor(logging_interval="epoch")],
         checkpoint_callback=pl.callbacks.ModelCheckpoint(
-            filepath=os.path.join(
-                logger.log_dir, "checkpoints", "{epoch}_{sample_step}"
-            ),
+            dirpath=os.path.join(logger.log_dir, "checkpoints"),
+            filename="{epoch}_{sample_step}",
             save_top_k=-1,
-            monitor=None,
         ),
         logger=logger,
         resume_from_checkpoint=config.training.resume_from_checkpoint,

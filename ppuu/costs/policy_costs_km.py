@@ -35,6 +35,7 @@ class PolicyCostKM(PolicyCostContinuous):
         lambda_o: float = field(default=0.5)
         lambda_p: float = field(default=2.15)
         curl: bool = field(default=False)
+        keep_dims: bool = False
 
     def __init__(self, config, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
@@ -312,6 +313,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         lambda_d: float = 0.0
         # Reference distance loss
         lambda_r: float = 1.0
+        keep_dims: bool = False
         # lambda_a: float = field(default=0.23)
         # lambda_j: float = field(default=2.5)
         # lambda_l: float = field(default=2.86)
@@ -647,6 +649,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
         proximity_loss = torch.mean(proximity_cost * gamma_mask[:, :npred], dim=1) * self.config.mask_coeff
 
+
         reference_distance_loss = 0.0
         if self.config.lambda_r > 0:
             # Shapes are bsize, npred, 2 for each of them.
@@ -707,6 +710,7 @@ class PolicyCostKMTaper(PolicyCostKM):
 
             self.ctr += 1
 
+
         return dict(
             proximity_cost=proximity_cost,
             lane_cost=lane_cost,
@@ -714,7 +718,7 @@ class PolicyCostKMTaper(PolicyCostKM):
             lane_loss=lane_loss,
             offroad_loss=offroad_loss,
             proximity_loss=proximity_loss,
-            collisions=collisions,
+            # collisions=collisions,
             reference_distance_loss=reference_distance_loss,
             destination_loss=destination_loss,
         )

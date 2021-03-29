@@ -144,17 +144,19 @@ class MPURModule(pl.LightningModule):
         opt = self.optimizers()
         predictions = self(batch)
         loss = self.policy_cost.calculate_cost(batch, predictions)
-        logs = loss.copy()
-        logs["action_norm"] = predictions["pred_actions"].norm(2, 2).pow(2).mean()
-        res = loss["policy_loss"]
-        for k in logs:
+        loss["action_norm"] = predictions["pred_actions"].norm(2, 2).pow(2).mean()
+        res = loss["policy_loss"].mean()
+        for k in loss:
+            v = loss[k]
+            if torch.is_tensor(v):
+                v = v.mean()
             self.log(
-                "train/" + k, logs[k], on_step=True, logger=True, prog_bar=True,
+                "train/" + k, v, on_step=True, logger=True, prog_bar=True,
             )
 
         # We retain the gradient of actions to later log it to wandb.
         predictions["pred_actions"].retain_grad()
-        self.manual_backward(res, opt)
+        self.manual_backward(res, optimizer=opt.optimizer)
         self.log_action_grads(predictions["pred_actions"].grad)
         opt.step()
 
@@ -182,10 +184,13 @@ class MPURModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         predictions = self(batch)
         loss = self.policy_cost.calculate_cost(batch, predictions)
-        res = loss["policy_loss"]
+        res = loss["policy_loss"].mean()
         for k in loss:
+            v = loss[k]
+            if torch.is_tensor(v):
+                v = v.mean()
             self.log(
-                "val/" + k, loss[k], on_epoch=True, logger=True,
+                "val/" + k, v, on_epoch=True, logger=True,
             )
         return res
 
@@ -203,7 +208,7 @@ class MPURModule(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
-            self.policy_model.parameters(),
+            [{'params': self.policy_model.parameters()}],
             self.config.training.learning_rate
             * self.config.training.gpus
             * self.config.training.num_nodes
