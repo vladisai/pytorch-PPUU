@@ -21,14 +21,14 @@ if __name__ == "__main__":
 
     # translate some params from log scale to normal scale
     log_params = [
-        # "lambda_p",
-        # "lambda_l",
-        # "lambda_o",
-        # "lambda_d",
-        # "lambda_r",
-        # "lambda_j_mpc",
-        # "mask_coeff",
-        # "lr",
+        "lambda_p",
+        "lambda_l",
+        "lambda_o",
+        "lambda_d",
+        "lambda_r",
+        "lambda_j_mpc",
+        "mask_coeff",
+        "lr",
     ]
     for k in c_dict:
         if k in log_params:
@@ -44,8 +44,8 @@ if __name__ == "__main__":
     print(c_dict)
 
     config = eval_mpc_fm.EvalMPCConfig.parse_from_flat_dict(c_dict)
-    config.test_size_cap = 50
-    config.num_processes = 7
+    config.test_size_cap = 25
+    config.num_processes = 4
     config.diffs = False
     config.forward_model_path = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_64/seed=42/checkpoints/last.ckpt"
     config.dataset = "/home/us441/nvidia-collab/vlad/traffic-data-5/state-action-cost/data_i80_v0/"
@@ -57,6 +57,9 @@ if __name__ == "__main__":
     config.cost.lambda_a = 0.0
     config.cost.lambda_j = 0.0
     config.cost.rotate = 1
+    config.cost.skip_contours = True
+
+    config.mpc.save_opt_stats = True
 
     # Debug
     # config.mpc.n_iter = 10

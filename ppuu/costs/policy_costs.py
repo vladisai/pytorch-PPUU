@@ -19,18 +19,21 @@ class PolicyCost(PolicyCostBase):
     class Config(configs.ConfigBase):
         """Configuration of cost calculation"""
 
-        u_reg: float = field(default=0.05)
-        lambda_a: float = field(default=0.0)
-        lambda_j: float = field(default=0.0)
-        lambda_l: float = field(default=0.2)
-        lambda_o: float = field(default=1.0)
-        lambda_p: float = field(default=1.0)
-        gamma: float = field(default=0.99)
-        u_hinge: float = field(default=0.5)
-        dreaming_z_reg: float = field(default=0.1)
-        uncertainty_n_pred: int = field(default=30)
-        uncertainty_n_models: int = field(default=10)
-        uncertainty_n_batches: int = field(default=100)
+        u_reg: float = 0.05
+        lambda_a: float = 0.0
+        lambda_j: float = 0.0
+        lambda_l: float = 0.2
+        lambda_o: float = 1.0
+        lambda_p: float = 1.0
+        gamma: float = 0.99
+        u_hinge: float = 0.5
+        dreaming_z_reg: float = 0.1
+        uncertainty_n_pred: int = 30
+        uncertainty_n_models: int = 10
+        uncertainty_n_batches: int = 100
+        artifact_power: int = 2
+        safe_factor: float = 1.5
+        skip_contours: bool = True
 
     def __init__(self, config, forward_model, normalizer):
         self.config = config
@@ -303,9 +306,10 @@ class PolicyCost(PolicyCostBase):
     def compute_state_costs(self, images, states, car_sizes):
         npred = images.size(1)
         gamma_mask = torch.tensor([0.99 ** t for t in range(npred + 1)]).cuda().unsqueeze(0)
-        proximity_cost = self.compute_proximity_cost(images, states.data, car_sizes, unnormalize=True,)["costs"]
-        lane_cost, prox_map_l = self.compute_lane_cost(images, car_sizes)
-        offroad_cost = self.compute_offroad_cost(images, prox_map_l)
+        artifact_reduced_images = images ** self.config.artifact_power
+        proximity_cost = self.compute_proximity_cost(artifact_reduced_images, states.data, car_sizes, unnormalize=True,)["costs"]
+        lane_cost, prox_map_l = self.compute_lane_cost(artifact_reduced_images, car_sizes)
+        offroad_cost = self.compute_offroad_cost(artifact_reduced_images, prox_map_l)
 
         lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred])
         offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred])

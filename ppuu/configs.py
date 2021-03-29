@@ -52,6 +52,7 @@ class TrainingConfig(ConfigBase):
     scripts.  Does not contain model configurations.
     """
 
+    comment: str = ''
     learning_rate: float = 0.0001
     n_epochs: int = 101
     n_steps: float = 5e5

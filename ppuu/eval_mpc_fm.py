@@ -21,7 +21,7 @@ from ppuu.data import NGSIMDataModule
 from ppuu.lightning_modules.policy import get_module
 from ppuu.lightning_modules.fm import FM
 from ppuu.eval import PolicyEvaluator
-from ppuu.costs.policy_costs import PolicyCost
+from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu import slurm
 from ppuu.modeling.mpc import MPCFMPolicy
 from ppuu.eval_mpc_visualizer import EvalVisualizer
@@ -46,7 +46,7 @@ class EvalMPCConfig(configs.ConfigBase):
     output_dir: Optional[str] = None
     test_size_cap: Optional[int] = None
     slurm: bool = False
-    cost_type: str = "km_taper"
+    cost_type: str = "vanilla"
     diffs: bool = False
     cost: PolicyCost.Config = PolicyCost.Config()
     mpc: MPCFMPolicy.Config = MPCFMPolicy.Config()
@@ -55,7 +55,6 @@ class EvalMPCConfig(configs.ConfigBase):
     seed: int = 42
     dataset_partition: str = "test"
     pass_gt_future: bool = False
-
 
 def main(config):
     if config.num_processes > 0:
@@ -113,8 +112,14 @@ def main(config):
     forward_model.model.device = torch.device('cuda')
 
 
-    cost = PolicyCost(config.cost, forward_model.model, normalizer)
+    if config.cost_type == 'vanilla':
+        Type = PolicyCost
+    elif config.cost_type == 'continuous':
+        Type = PolicyCostContinuous
+
+    cost = Type(config.cost, forward_model.model, normalizer)
     cost.estimate_uncertainty_stats(datamodule.train_dataloader())
+
     policy = MPCFMPolicy(
         forward_model, cost, normalizer, config.mpc, config.visualizer
     )
@@ -139,7 +144,7 @@ if __name__ == "__main__":
     config = EvalMPCConfig.parse_from_command_line()
     use_slurm = slurm.parse_from_command_line()
     if use_slurm:
-        executor = slurm.get_executor("mpc", 8, logs_path=config.output_dir)
+        executor = slurm.get_executor("mpc", 4, logs_path=config.output_dir)
         job = executor.submit(main, config)
         print(f"submitted to slurm with job id: {job.job_id}")
     else:

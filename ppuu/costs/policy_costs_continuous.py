@@ -38,12 +38,12 @@ class PolicyCostContinuous(PolicyCost):
         min_y = min_y.view(bsize, 1).expand(bsize, npred).contiguous().view(bsize * npred).cuda()
         x_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_h))) * crop_h / 2
 
-        x_filter = x_filter.unsqueeze(0).expand(bsize * npred, crop_h).cuda()
+        x_filter = x_filter.unsqueeze(0).expand(bsize * npred, crop_h).type(car_size.type()).cuda()
         x_filter = torch.min(x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size()))
         x_filter = (x_filter == max_x.unsqueeze(1).expand(x_filter.size())).float()
 
         y_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_w))) * crop_w / 2
-        y_filter = y_filter.view(1, crop_w).expand(bsize * npred, crop_w).cuda()
+        y_filter = y_filter.view(1, crop_w).expand(bsize * npred, crop_w).type(car_size.type()).cuda()
         #    y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
         y_filter = torch.max(y_filter, min_y.view(bsize * npred, 1))
         y_filter = (y_filter - min_y.view(bsize * npred, 1)) / (
@@ -51,6 +51,7 @@ class PolicyCostContinuous(PolicyCost):
         )
         x_filter = x_filter.cuda()
         y_filter = y_filter.cuda()
+        x_filter = x_filter.type(y_filter.type())
         proximity_mask = torch.bmm(x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w))
         proximity_mask = proximity_mask.view(bsize, npred, crop_h, crop_w)
         proximity_mask = proximity_mask ** 2

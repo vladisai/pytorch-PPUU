@@ -520,8 +520,6 @@ class MPCFMPolicy(torch.nn.Module):
         update_ref_period: int = 100
         use_fm: bool = True
         optimizer: str = "Adam"
-        optimizer_budget: Optional[int] = None
-        lbfgs_log_barrier_alpha: float = 0.01
         fm_unfold_variance: float = 1.0
         fm_unfold_samples: int = 1
         fm_unfold_samples_agg: str = "max"
@@ -530,6 +528,7 @@ class MPCFMPolicy(torch.nn.Module):
         batch_size: int = 1
         ce_repeat_step: int = 5
         unfolding_agg: str = "max"
+        save_opt_stats: bool = False
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -553,12 +552,14 @@ class MPCFMPolicy(torch.nn.Module):
     def reset(self):
         self.last_actions = None
         self.ctr = 0
+        self.optimizer_stats = None
 
-    def unfold_fm(self, images, states, actions):
+    def unfold_fm(self, images, states, actions, Z=None):
         """
         Autoregressively applies fm prediction to get reference images and states.
             states shape : batch, state_dim
             actions shape : batch, unfold_len, action_dim
+            Z shape : batch, unfold_len, 32
         Returns:
             predicted_images, shape = batch, unfold_len, images channels, images h, images w
             predicted_states, shape = batch, unfold_len, state_dim
@@ -584,7 +585,11 @@ class MPCFMPolicy(torch.nn.Module):
             images = repeat_batch(images, self.config.fm_unfold_samples)
             states = repeat_batch(states, self.config.fm_unfold_samples)
 
-            Z = torch.randn(*actions.shape[:2], 32) * self.config.fm_unfold_variance
+            if Z is None:
+                Z = torch.randn(*actions.shape[:2], 32) * self.config.fm_unfold_variance
+                print('WARN: reinitializing Z')
+            # else:
+            #     print('using the provided z', Z.view(self.config.fm_unfold_samples, self.config.batch_size, -1).sum(dim=-1))
 
             unfolding = self.forward_model.model.unfold(
                 actions_or_policy=actions,
@@ -660,16 +665,16 @@ class MPCFMPolicy(torch.nn.Module):
                 # The first action is always just zeros.
                 torch.zeros(1, self.config.unfold_len, 2, device=device),
                 # The rest are random repeated.
-                7 * torch.randn(self.config.batch_size - 1, 1, 2, device=device).repeat(1, self.config.unfold_len, 1),
+                torch.randn(self.config.batch_size - 1, 1, 2, device=device).repeat(1, self.config.unfold_len, 1),
             ],
             dim=0,
         )
         # actions[:, :, 0] = 30
         # best_actions = torch.zeros_like(actions[:1])
         actions = torch.randn_like(actions) * 0.01
+        actions[:, :, 1] = 0
         best_actions = actions[:1]
 
-        # actions[:, :, 1] = 0
         # TODO: remove the changes to init in actions
         best_cost = 1e10
 
@@ -680,7 +685,7 @@ class MPCFMPolicy(torch.nn.Module):
         self.cost.traj_landscape = False
         actions.requires_grad = True
 
-        def get_cost(actions, keep_batch_dim=False, unfolding_agg="max"):
+        def get_cost(actions, Z=None, keep_batch_dim=False, unfolding_agg="max", metadata=None):
             batch_size = actions.shape[0]
             unfoldings_size = self.config.fm_unfold_samples
 
@@ -688,7 +693,11 @@ class MPCFMPolicy(torch.nn.Module):
             rep_images = repeat_batch(full_images, batch_size)
             rep_actions = repeat_batch(actions, unfoldings_size)
 
-            pred_images, pred_states, Z = self.unfold_fm(rep_images, rep_states, rep_actions)
+            pred_images, pred_states, Z = self.unfold_fm(rep_images, rep_states, rep_actions, Z)
+
+            if metadata is not None:
+                metadata['pred_images'].append(pred_images.clone().detach())
+                metadata['pred_states'].append(pred_states.clone().detach())
 
             inputs = {
                 "input_images": repeat_batch(full_images, batch_size * unfoldings_size),
@@ -717,6 +726,10 @@ class MPCFMPolicy(torch.nn.Module):
             # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
             costs = self.cost.calculate_cost(inputs, predictions)
 
+            if metadata is not None:
+                metadata['costs'].append(costs)
+                metadata['predictions'].append(predictions)
+
             result = costs["policy_loss"] + repeat_batch(loss_j, unfoldings_size) * self.config.lambda_j_mpc
 
             # TODO: double check this is correct.
@@ -735,13 +748,21 @@ class MPCFMPolicy(torch.nn.Module):
         if self.config.optimizer in ["SGD", "Adam"]:
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer]((actions,), self.config.lr)
 
+            if (self.optimizer_stats is not None) and self.config.save_opt_stats:
+                print('loading opt stats')
+                optimizer.load_state_dict(self.optimizer_stats)
+
+            # We keep the latent constant to make optimization easier.
+            Z = torch.randn(self.config.batch_size, self.config.unfold_len, 32) * self.config.fm_unfold_variance
+            Z = repeat_batch(Z, self.config.fm_unfold_samples, interleave=True)
+
             for i in range(self.config.n_iter):
                 # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
                 optimizer.zero_grad()
                 if i == self.config.n_iter - 1 and self.visualizer is not None:
                     self.cost.traj_landscape = True
 
-                cost = get_cost(actions, keep_batch_dim=True, unfolding_agg=self.config.unfolding_agg)
+                cost = get_cost(actions, Z=Z, keep_batch_dim=True, unfolding_agg=self.config.unfolding_agg, metadata=metadata)
 
                 if i == self.config.n_iter - 1:
                     self.cost.traj_landscape = False
@@ -773,6 +794,8 @@ class MPCFMPolicy(torch.nn.Module):
                         a_grad[1].item(),
                     )
 
+                self.optimizer_stats = optimizer.state_dict()
+
         self.cost.traj_landscape = False
 
         if self.visualizer is not None:
@@ -788,5 +811,6 @@ class MPCFMPolicy(torch.nn.Module):
         print("final actions for", self.ctr, "are", actions)
 
         self.ctr += 1
+
 
         return actions.detach()

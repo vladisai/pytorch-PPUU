@@ -33,3 +33,19 @@ class MPURKMTaperV3Module(MPURModule):
     class ModelConfig(MPURModule.ModelConfig):
         model_type: str = "km_taper_v3"
         forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"
+
+
+@inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelV3)
+class GTMPURKMTaperV3Module(MPURModule):
+
+    def forward(self, batch):
+        self.forward_model.eval()
+        predictions = self.forward_model.unfold(
+            self.policy_model, batch, augmenter=self.augmenter, npred=self.config.model.n_pred
+        )
+        return predictions
+
+    @dataclass
+    class ModelConfig(MPURModule.ModelConfig):
+        model_type: str = "gt_km_taper_v3"
+        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"
