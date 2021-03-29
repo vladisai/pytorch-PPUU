@@ -150,9 +150,10 @@ class MPURModule(pl.LightningModule):
             v = loss[k]
             if torch.is_tensor(v):
                 v = v.mean()
-            self.log(
-                "train/" + k, v, on_step=True, logger=True, prog_bar=True,
-            )
+            if v is not None:
+                self.log(
+                    "train/" + k, v, on_step=True, logger=True, prog_bar=True,
+                )
 
         # We retain the gradient of actions to later log it to wandb.
         predictions["pred_actions"].retain_grad()
@@ -189,9 +190,10 @@ class MPURModule(pl.LightningModule):
             v = loss[k]
             if torch.is_tensor(v):
                 v = v.mean()
-            self.log(
-                "val/" + k, v, on_epoch=True, logger=True,
-            )
+            if v is not None:
+                self.log(
+                    "val/" + k, v, on_epoch=True, logger=True,
+                )
         return res
 
     @property
