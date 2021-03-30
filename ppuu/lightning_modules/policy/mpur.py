@@ -173,9 +173,6 @@ class MPURModule(pl.LightningModule):
         self.log("grads/0/action_acceleration", grad[..., 0, 0].abs().mean(), on_step=False, on_epoch=True, logger=True)
         self.log("grads/0/action_turn", grad[..., 0, 1].abs().mean(), on_step=False, on_epoch=True, logger=True)
 
-        # self.wandb_log_grads_plot(grad.norm(dim=-1).mean(dim=0), "all")
-        # self.wandb_log_grads_plot(grad[..., 0].abs().mean(dim=0), "acceleration")
-        # self.wandb_log_grads_plot(grad[..., 1].abs().mean(dim=0), "turning")
 
     def wandb_log_grads_plot(self, vals, title):
         data = [[x, y] for (x, y) in enumerate(vals)]

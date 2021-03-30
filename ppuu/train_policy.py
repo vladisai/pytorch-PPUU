@@ -87,6 +87,8 @@ if __name__ == "__main__":
     module = lightning_modules.policy.get_module_from_command_line()
     config = module.Config.parse_from_command_line()
     use_slurm = slurm.parse_from_command_line()
+    print('parsed config')
+    print(config)
     if use_slurm:
         executor = slurm.get_executor(
             job_name=config.training.experiment_name,
