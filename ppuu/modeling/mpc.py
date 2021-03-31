@@ -812,5 +812,4 @@ class MPCFMPolicy(torch.nn.Module):
 
         self.ctr += 1
 
-
         return actions.detach()

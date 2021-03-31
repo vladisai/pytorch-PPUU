@@ -43,7 +43,7 @@ class ConfigBase:
 @dataclass
 class ModelConfig(ConfigBase):
     model_type: str = "vanilla"
-    checkpoint: Union[str, None] = None
+    checkpoint: Optional[str] = None
 
 
 @dataclass
@@ -274,3 +274,13 @@ def omegaconf_parse(cls):
     omega_config = OmegaConf.merge(*configs)
     res = cls.parse_from_dict(OmegaConf.to_container(omega_config))
     return res
+
+
+def combine_cli_dict(cls, c_dict):
+    """ A function to load cli configs and merge them with a dictionary"""
+    config_base = cls.parse_from_command_line()
+    config_base = OmegaConf.create(dataclasses.asdict(config_base))
+    config_new = OmegaConf.create(c_dict)
+    config_together = OmegaConf.merge(config_base, config_new)
+    config = cls.parse_from_dict(OmegaConf.to_container(config_together))
+    return config

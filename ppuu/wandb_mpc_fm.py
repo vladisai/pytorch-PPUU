@@ -5,6 +5,9 @@ import torch
 import wandb
 
 from ppuu import eval_mpc_fm
+from ppuu import configs
+
+from omegaconf import OmegaConf, MISSING
 
 if __name__ == "__main__":
     torch.multiprocessing.set_start_method("spawn")
@@ -21,14 +24,14 @@ if __name__ == "__main__":
 
     # translate some params from log scale to normal scale
     log_params = [
-        "lambda_p",
-        "lambda_l",
-        "lambda_o",
-        "lambda_d",
-        "lambda_r",
-        "lambda_j_mpc",
-        "mask_coeff",
-        "lr",
+        "cost.lambda_p",
+        "cost.lambda_l",
+        "cost.lambda_o",
+        "cost.lambda_d",
+        "cost.lambda_r",
+        "mpc.lambda_j_mpc",
+        "cost.mask_coeff",
+        "mpc.lr",
     ]
     for k in c_dict:
         if k in log_params:
@@ -39,26 +42,23 @@ if __name__ == "__main__":
 
     # c_dict["lr"] = c_dict["iter_reach_value"] / c_dict["n_iter"]
     # unfold_len is how many seconds into the future we want to see
-    c_dict["unfold_len"] = int(c_dict["unfold_len"] / c_dict["timestep"])
+    if "mpc.unfold_len" in c_dict and "mpc.timestep" in c_dict:
+        c_dict["mpc.unfold_len"] = int(c_dict["mpc.unfold_len"] / c_dict["mpc.timestep"])
 
     print(c_dict)
 
-    config = eval_mpc_fm.EvalMPCConfig.parse_from_flat_dict(c_dict)
+    config = configs.combine_cli_dict(eval_mpc_fm.EvalMPCConfig, c_dict)
+
     config.test_size_cap = 25
     config.num_processes = 4
     config.diffs = False
-    config.forward_model_path = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_64/seed=42/checkpoints/last.ckpt"
-    config.dataset = "/home/us441/nvidia-collab/vlad/traffic-data-5/state-action-cost/data_i80_v0/"
     config.dataset_partition = "train"
-    config.output_dir = (
-        f"/home/us441/nvidia-collab/vlad/results/mpc_fm/grid/{wandb.run.id}"
-    )
 
     config.cost.lambda_a = 0.0
+    config.cost.u_reg = 0.0
     config.cost.lambda_j = 0.0
     config.cost.rotate = 1
     config.cost.skip_contours = True
-
     config.mpc.save_opt_stats = True
 
     # Debug

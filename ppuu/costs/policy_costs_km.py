@@ -305,9 +305,9 @@ class PolicyCostKMTaper(PolicyCostKM):
         masks_power_y: float = 2.0
         agg_func_str: str = "sum"
         curl: int = 0
-        rotate: int = 1
+        rotate: bool = True
         mask_coeff: float = 10.0
-        shifted_reference_frame: int = 0
+        shifted_reference_frame: bool = False
         reference_distance_loss: bool = True
         # Destination lambda
         lambda_d: float = 0.0
