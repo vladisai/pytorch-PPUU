@@ -1,5 +1,7 @@
 """Train a policy / controller"""
 import os
+import yaml
+import dataclasses
 
 import pytorch_lightning as pl
 import torch.multiprocessing
@@ -88,7 +90,7 @@ if __name__ == "__main__":
     config = module.Config.parse_from_command_line()
     use_slurm = slurm.parse_from_command_line()
     print('parsed config')
-    print(config)
+    print(yaml.dump(dataclasses.asdict(config)))
     if use_slurm:
         executor = slurm.get_executor(
             job_name=config.training.experiment_name,
