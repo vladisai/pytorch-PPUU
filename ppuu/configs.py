@@ -287,4 +287,4 @@ def combine_dataclass_dict(dcls, c_dict):
     config = OmegaConf.create(dataclasses.asdict(dcls))
     for k, v in c_dict.items():
         OmegaConf.update(config, k, v)
-    return config
+    return dcls.parse_from_dict(OmegaConf.to_container(config))
