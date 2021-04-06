@@ -7,7 +7,7 @@ import nevergrad as ng
 
 from ppuu import configs
 
-from ppuu.modeling.km import predict_states_seq
+from ppuu.modeling.km import predict_states_seq, predict_states
 
 
 def repeat_batch(value, times, interleave=False):
@@ -117,6 +117,8 @@ class MPCKMPolicy(torch.nn.Module):
         batch_size: int = 1
         ce_repeat_step: int = 5
         unfolding_agg: str = "max"
+        km_noise: float = 0.0
+        save_opt_stats: bool = False
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -153,17 +155,20 @@ class MPCKMPolicy(torch.nn.Module):
 
         These calculations are faster on cpu, so we transfer the data before we do it.
         """
-        return predict_states_seq(states, actions, self.normalizer, timestep=self.config.timestep,)
-        # predictions = []
-        # for i in range(self.config.unfold_len):
-        #     states = predict_states(
-        #         states,
-        #         actions[:, i],
-        #         self.normalizer,
-        #         timestep=self.config.timestep,
-        #     )
-        #     predictions.append(states)
-        # return torch.stack(predictions, dim=1)
+        if self.config.km_noise == 0:
+            return predict_states_seq(states, actions, self.normalizer, timestep=self.config.timestep,)
+        else:
+            predictions = []
+            for i in range(self.config.unfold_len):
+                states = predict_states(
+                    states,
+                    actions[:, i],
+                    self.normalizer,
+                    timestep=self.config.timestep,
+                    noise=self.config.km_noise,
+                )
+                predictions.append(states)
+            return torch.stack(predictions, dim=1)
 
     @torch.no_grad()
     def unfold_fm(self, images, states, actions):
@@ -380,7 +385,6 @@ class MPCKMPolicy(torch.nn.Module):
                     optimizer.step()
                 else:
                     print('NaN grad!')
-
 
                 values, indices = cost.min(dim=0)
                 # if cost[indices] < best_cost:

@@ -1,7 +1,7 @@
 import torch
 
 
-def predict_states(states, actions, normalizer, timestep=0.1):
+def predict_states(states, actions, normalizer, timestep=0.1, noise=0.0):
     """
     Args:
         - states : tensor of shape [batch size, 4]
@@ -42,10 +42,13 @@ def predict_states(states, actions, normalizer, timestep=0.1):
     new_states = torch.cat([new_positions, new_directions, new_speeds_norm], 1)
     new_states = normalizer.normalize_states(new_states)
 
+    if noise > 0:
+        new_states += torch.randn_like(new_states) * noise
+
     return new_states
 
 
-def predict_states_seq(states, actions, normalizer, timestep=0.1):
+def predict_states_seq(states, actions, normalizer, timestep=0.1, noise=0.0):
     """
     Args:
         - states : tensor of shape [batch size, 4]
