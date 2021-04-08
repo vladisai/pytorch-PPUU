@@ -88,6 +88,7 @@ class PolicyEvaluator:
             mean_distance=results_per_episode_df["distance_travelled"].mean(),
             mean_time=results_per_episode_df["time_travelled"].mean(),
             success_rate=results_per_episode_df["road_completed"].mean(),
+            success_rate_without_fallback=results_per_episode_df["road_completed_without_fallback"].mean(),
             success_rate_alt=results_per_episode_df[
                 "road_completed_alt"
             ].mean(),
@@ -128,6 +129,7 @@ class PolicyEvaluator:
                 "has_collided",
                 "off_screen",
                 "road_completed",
+                "road_completed_without_fallback",
                 "has_collided_ahead",
                 "has_collided_behind",
                 "mean_proximity_cost",
@@ -148,6 +150,7 @@ class PolicyEvaluator:
         has_collided_behind = False
         off_screen = False
         road_completed = False
+        road_completed_without_fallback = False
         done = False
 
         env_copies = deque(maxlen=self.rollback_seconds)
@@ -188,6 +191,11 @@ class PolicyEvaluator:
                 )
             a = a.cpu().view(1, 2).numpy()
 
+            # Here we check if the mpc had to use forward model fallback.
+            # If it did, we count this as a success.
+            if hasattr(policy, 'fm_fallback') and policy.fm_fallback:
+                road_completed_without_fallback = True
+
             # env_copy = copy.deepcopy(self.env)
             inputs, cost, done, info = env.step(a[0])
 
@@ -205,6 +213,7 @@ class PolicyEvaluator:
 
             if cost["arrived_to_dst"]:
                 road_completed = True
+                road_completed_without_fallback = True
 
             done = (
                 done
@@ -260,6 +269,7 @@ class PolicyEvaluator:
             has_collided,
             off_screen,
             road_completed,
+            road_completed_without_fallback,
             has_collided_ahead,
             has_collided_behind,
             total_cost["proximity_cost"],
@@ -302,6 +312,9 @@ class PolicyEvaluator:
             ).item(),
             road_completed=(
                 unfolding.road_completed and not unfolding.has_collided
+            ),
+            road_completed_without_fallback=(
+                unfolding.road_completed_without_fallback and not unfolding.has_collided
             ),
             road_completed_alt=(
                 unfolding.road_completed and not unfolding.has_collided_ahead
@@ -476,8 +489,10 @@ class PolicyEvaluator:
                             f" {simulation_result['distance_travelled']:.0f}"
                         ),
                         f"success: {simulation_result['road_completed']:d}",
+                        f"success_without_fm_fallback: {simulation_result['road_completed_without_fallback']:d}",
                         f"success_alt: {simulation_result['road_completed_alt']:d}",
                         f"success rate: {stats['success_rate']:.2f}",
+                        f"success rate without fallback: {stats['success_rate_without_fallback']:.2f}",
                         f"success rate alt: {stats['success_rate_alt']:.2f}",
                     )
                 )

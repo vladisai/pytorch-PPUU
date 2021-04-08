@@ -33,11 +33,11 @@ class ConfigBase:
 
     @classmethod
     def parse_from_dict(cls, inputs):
-        return DataclassArgParser(cls)._populate_dataclass_from_dict(cls, inputs.copy())
+        return DataclassArgParser._populate_dataclass_from_dict(cls, inputs.copy())
 
     @classmethod
     def parse_from_flat_dict(cls, inputs):
-        return DataclassArgParser(cls)._populate_dataclass_from_flat_dict(cls, inputs.copy())
+        return DataclassArgParser._populate_dataclass_from_flat_dict(cls, inputs.copy())
 
 
 @dataclass

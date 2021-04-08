@@ -18,6 +18,7 @@ from ppuu.lightning_modules.policy.mpur_km import (
     MPURKMModule,
     MPURKMTaperModule,
     MPURKMTaperV3Module,
+    MPURKMTaperV3Module_TargetProp,
 )
 
 
@@ -35,6 +36,7 @@ MODULES_DICT = dict(
     vanilla_v3=MPURVanillaV3Module,
     continuous_v3=MPURContinuousV3Module,
     dreaming_v3=MPURDreamingV3Module,
+    km_taper_v3_target_prop=MPURKMTaperV3Module_TargetProp,
 )
 
 

@@ -144,6 +144,7 @@ class MPCKMPolicy(torch.nn.Module):
     def reset(self):
         self.last_actions = None
         self.ctr = 0
+        self.fm_fallback = False
 
     def unfold_km(self, states, actions):
         """
@@ -180,6 +181,8 @@ class MPCKMPolicy(torch.nn.Module):
             predicted_images, shape = batch, unfold_len, images channels, images h, images w
             predicted_states, shape = batch, unfold_len, state_dim
         """
+
+        print('Running fm')
 
         actions_per_fm_timestep = int(0.1 / self.config.timestep)
         if (
@@ -233,10 +236,57 @@ class MPCKMPolicy(torch.nn.Module):
 
             return ref_images, ref_states
 
+    def get_cost_batched(self, actions, keep_batch_dim=False, unfolding_agg="max"):
+        pass
+
+    def batched(self, images, states, normalize_inputs=False, normalize_outputs=False, car_size=None, init=None, metadata=None):
+        """
+        This function is used for target prop.
+        """
+        pass
+        if normalize_inputs:
+            states = self.normalizer.normalize_states(states.clone())
+            images = self.normalizer.normalize_images(images)
+            car_size = torch.tensor(car_size).unsqueeze(0)
+
+        full_states = states.unsqueeze(0)
+        full_images = images[:, :3].unsqueeze(0)
+        states = states[..., -1, :].view(-1, 5)
+        images = images[..., -1, :, :, :].view(-1, 1, 4, 117, 24)
+
+        actions = init
+        self.cost.traj_landscape = False
+
+        if self.config.optimizer in ["SGD", "Adam"]:
+            optimizer = self.OPTIMIZER_DICT[self.config.optimizer]((actions,), self.config.lr)
+            for i in range(self.config.n_iter):
+                optimizer.zero_grad()
+
+                cost = self.get_cost_batched(actions, keep_batch_dim=True, unfolding_agg=self.config.unfolding_agg)
+
+                cost.mean().backward()
+                if not torch.isnan(actions.grad).any():
+                    # this is definitely needed, judging from some examples I saw where gradient is 50
+                    torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
+                    optimizer.step()
+                else:
+                    print('NaN grad!')
+
+                values, indices = cost.min(dim=0)
+                # if cost[indices] < best_cost:
+                #     best_actions = actions[indices].unsqueeze(0).clone()
+                #     best_cost = cost[indices]
+                best_cost = cost[indices]
+                best_actions = actions[indices].unsqueeze(0).clone()
+        else:
+            raise NotImplementedError(f"{self.config.optimizer} optimizer is not supported")
+
     def __call__(
-        self, images, states, normalize_inputs=False, normalize_outputs=False, car_size=None, init=None, metadata=None,
-        gt_future=None,
+        self, images, states, normalize_inputs=False, normalize_outputs=False, car_size=None, init=None, metadata=None, gt_future=None,
     ):
+        """
+        This function is used as a policy in the evaluator.
+        """
         device = states.device
 
         if self.ctr % self.config.planning_freq > 0:
@@ -256,6 +306,8 @@ class MPCKMPolicy(torch.nn.Module):
             if gt_future_values is not None:
                 ref_images = self.normalizer.normalize_images(gt_future_values.images.unsqueeze(0)).to(device)
                 ref_states = self.normalizer.normalize_states(gt_future_values.states.unsqueeze(0)).to(device)
+            else:
+                self.fm_fallback = True
         else:
             gt_future_values = None
 
@@ -301,7 +353,7 @@ class MPCKMPolicy(torch.nn.Module):
         best_cost = 1e10
 
         if init is not None:
-            actions[0, 0] = init
+            actions.data = init
 
         actions = self.normalizer.normalize_actions(actions)
         self.cost.traj_landscape = False

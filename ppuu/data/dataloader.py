@@ -506,6 +506,19 @@ class UnitConverter:
         return cls.pixels_to_m(x) / 1000 * 60 * 60
 
 
+def overlay_ego_car(images, ego_car):
+    ego_car_new_shape = [*images.shape]
+    ego_car_new_shape[2] = 1
+    input_ego_car = ego_car[:, 2][:, None, None].expand(
+        ego_car_new_shape
+    )
+    input_images_with_ego = torch.cat(
+        (images.clone(), input_ego_car), dim=2
+    )
+    return input_images_with_ego
+
+
 if __name__ == "__main__":
     ds = DataStore("i80")
     d = Dataset(ds, "train", 20, 30, 100)
+
