@@ -9,6 +9,8 @@ import math
 import torch
 import numpy
 
+from ppuu.data.entities import StateSequence, DatasetSample
+
 
 class DataStore:
     def __init__(self, dataset):
@@ -49,7 +51,6 @@ class DataStore:
                     Ta = fd["actions"].size(0)
                     # Tp = fd["pixel_proximity_cost"].size(0)
                     # Tl = fd["lane_cost"].size(0)
-                    # assert Ta == Tp == Tl  # TODO Check why there are more costs than actions
                     # if not(Ta == Tp == Tl): pdb.set_trace()
                     images.append(fd["images"])
                     actions.append(fd["actions"])
@@ -208,10 +209,10 @@ class Dataset(torch.utils.data.Dataset):
 
     def get_one_example(self):
         """
-        Returns one training example, which includes input staes, and images,
-        actions, and target images and states, as well as car_id and car_size.
-                 n_cond                      n_pred
-        <---------------------><---------------------------------->
+        Returns one training example, which includes input staes, and images,            # noqa
+        actions, and target images and states, as well as car_id and car_size.           # noqa
+                 n_cond                      n_pred                                      # noqa
+        <---------------------><---------------------------------->                      # noqa
         .                     ..                                  .
         +---------------------+.                                  .  ^       ^
         |i|i|i|i|i|i|i|i|i|i|i|.  3 × 117 × 24                    .  |       |
@@ -222,7 +223,7 @@ class Dataset(torch.utils.data.Dataset):
         .                   +-----------------------------------+ .  ^       |
         .                2  |a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a|a| .  |actions|
         .                   +-----------------------------------+ .  v       |
-        .                     +-----------------------------------+  ^       | tensors
+        .                     +-----------------------------------+  ^       | tensors   # noqa
         .       3 × 117 × 24  |i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|i|  |       |
         .                     +-----------------------------------+  |       |
         .                     +-----------------------------------+  |       |
@@ -232,10 +233,10 @@ class Dataset(torch.utils.data.Dataset):
         .                  2  |c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|  |       |
         .                     +-----------------------------------+  v       v
         +---------------------------------------------------------+          ^
-        |                           car_id                        |          | string
+        |                           car_id                        |          | string    # noqa
         +---------------------------------------------------------+          v
         +---------------------------------------------------------+          ^
-        |                          car_size                       |  2       | tensor
+        |                          car_size                       |  2       | tensor    # noqa
         +---------------------------------------------------------+          v
         """
         T = self.n_cond + self.n_pred
@@ -253,7 +254,7 @@ class Dataset(torch.utils.data.Dataset):
                 images = self.data_store.images[s][t : t + T]
                 actions = self.data_store.actions[s][t : t + T]
                 states = self.data_store.states[s][t : t + T, 0]
-                costs = self.data_store.costs[s][t : t + T]
+                # costs = self.data_store.costs[s][t : t + T]
                 ids = self.data_store.ids[s]
                 ego_cars = self.data_store.ego_car_images[s]
                 splits = self.data_store.ids[s].split("/")
@@ -279,7 +280,7 @@ class Dataset(torch.utils.data.Dataset):
         input_states = states[:t0].float().contiguous()
         target_images = images[t0:t1].float().contiguous()
         target_states = states[t0:t1].float().contiguous()
-        target_costs = costs[t0:t1].float().contiguous()
+        # target_costs = costs[t0:t1].float().contiguous()
 
         if not self.shift:
             t0 -= 1
@@ -291,19 +292,20 @@ class Dataset(torch.utils.data.Dataset):
         ego_cars = ego_cars.float().contiguous()
         car_sizes = car_sizes.float()
 
-        return dict(
-            input_images=input_images,
-            input_states=input_states,
-            ego_cars=ego_cars,
-            actions=actions,
-            target_images=target_images,
-            target_states=target_states,
-            target_costs=target_costs,
-            ids=ids,
-            car_sizes=car_sizes,
-            stats=self.data_store.stats,
-            s=s,
-            t=t,
+        conditional_state_seq = StateSequence(
+            input_images, input_states, car_sizes
+        )
+        target_state_seq = StateSequence(
+            target_images, target_states, car_sizes
+        )
+
+        return DatasetSample(
+            conditional_state_seq,
+            target_state_seq,
+            actions,
+            sample_split_id=ids,
+            episode_id=s,
+            timestep=t,
         )
 
 
@@ -320,7 +322,6 @@ class EvaluationDataset(torch.utils.data.Dataset):
                 val=splits.get("valid_indx"),
                 test=splits.get("test_indx"),
             )
-
 
         car_sizes_path = os.path.join(data_dir, "car_sizes.pth")
         self.car_sizes = torch.load(car_sizes_path)
@@ -409,7 +410,14 @@ class Normalizer:
 
     @classmethod
     def dummy(cls):
-        return cls(dict(s_mean=torch.zeros(5), a_mean=torch.zeros(2), s_std=torch.ones(5), a_std=torch.ones(2)))
+        return cls(
+            dict(
+                s_mean=torch.zeros(5),
+                a_mean=torch.zeros(2),
+                s_std=torch.ones(5),
+                a_std=torch.ones(2),
+            )
+        )
 
     def states_to_diffs(self, states):
         """ First two numbers are pixels"""
@@ -509,16 +517,11 @@ class UnitConverter:
 def overlay_ego_car(images, ego_car):
     ego_car_new_shape = [*images.shape]
     ego_car_new_shape[2] = 1
-    input_ego_car = ego_car[:, 2][:, None, None].expand(
-        ego_car_new_shape
-    )
-    input_images_with_ego = torch.cat(
-        (images.clone(), input_ego_car), dim=2
-    )
+    input_ego_car = ego_car[:, 2][:, None, None].expand(ego_car_new_shape)
+    input_images_with_ego = torch.cat((images.clone(), input_ego_car), dim=2)
     return input_images_with_ego
 
 
 if __name__ == "__main__":
     ds = DataStore("i80")
     d = Dataset(ds, "train", 20, 30, 100)
-

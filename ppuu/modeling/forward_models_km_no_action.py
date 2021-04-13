@@ -3,6 +3,7 @@ from typing import Union
 import torch
 import torch.nn as nn
 import random
+#a
 
 from ppuu.modeling.forward_models import FMResult, FwdCNN
 from ppuu.modeling.km import predict_states
@@ -41,9 +42,7 @@ class FwdCNNKMNoAction(FwdCNN):
         self.actual_n_actions = 2
         self.state_predictor = state_predictor
 
-    def forward_single_step(
-        self, input_images, input_state, action, z
-    ):
+    def forward_single_step(self, input_images, input_state, action, z):
         pred_state = self.state_predictor(input_states[:, -1], action)
 
         h = self.encode(input_images, input_states, pred_state)
@@ -55,9 +54,7 @@ class FwdCNNKMNoAction(FwdCNN):
 
         return pred_image, pred_state
 
-    def forward(
-        self, inputs, actions, target, sampling=None, z_dropout=None
-    ):
+    def forward(self, inputs, actions, target, sampling=None, z_dropout=None):
         npred = actions.size(1)
         input_images, input_states = inputs
         pred_images, pred_states = [], []
@@ -228,9 +225,7 @@ class FwdCNNKMNoAction_VAE(FwdCNNKMNoAction):
         z = torch.randn(bsize, self.nz)
         return z
 
-    def forward_single_step(
-        self, input_images, input_states, action, z
-    ):
+    def forward_single_step(self, input_images, input_states, action, z):
         # encode the inputs (without the action)
         if not self.enable_latent:
             return super().forward_single_step(
@@ -241,7 +236,10 @@ class FwdCNNKMNoAction_VAE(FwdCNNKMNoAction):
 
         batch_size = input_images.size(0)
         z_exp = self.z_expander(z).view(
-            batch_size, self.nfeature, self.h_height, self.h_width,
+            batch_size,
+            self.nfeature,
+            self.h_height,
+            self.h_width,
         )
         h = self.encode(input_images, input_states, pred_state) + z_exp
         pred_image = self.decoder(h)
@@ -263,7 +261,11 @@ class FwdCNNKMNoAction_VAE(FwdCNNKMNoAction):
     ):
         if not self.enable_latent:
             return super().forward(
-                inputs, actions, targets, sampling, z_dropout,
+                inputs,
+                actions,
+                targets,
+                sampling,
+                z_dropout,
             )
         input_images, input_states = inputs
         bsize = input_images.size(0)

@@ -1,4 +1,5 @@
 """Train a policy / controller"""
+import torch
 
 from dataclasses import dataclass
 from collections import namedtuple
@@ -44,21 +45,28 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
     class ModelConfig(MPURKMTaperV3Module.ModelConfig):
         model_type: str = "km_taper_v3_target_prop"
         mpc: MPCKMPolicy.Config = MPCKMPolicy.Config()
+        mpc_cost: PolicyCostKMTaper.Config = PolicyCostKMTaper.Config()
 
     def on_train_start(self):
         super().on_train_start()
-        self.mpc = MPCKMPolicy(self.forward_model, self.policy_cost, self.normalizer, self.config.model.mpc)
+        self.mpc_cost = PolicyCostKMTaper(self.config.model.mpc_cost, None, self.normalizer)
+        self.mpc = MPCKMPolicy(self.forward_model, self.mpc_cost, self.normalizer, self.config.model.mpc)
 
     def training_step(self, batch, batch_idx):
         opt = self.optimizers()
         predictions = self(batch)
         input_images = overlay_ego_car(batch['input_images'], batch['ego_cars'])
-        mpc_actions = self.mpc(input_images,
+        metadata = {}
+        mpc_actions = self.mpc.batched(
+                               input_images,
                                batch['input_states'],
                                car_size=batch['car_sizes'],
                                init=predictions['pred_actions'],
-                               gt_future=lambda : namedtuple("Future", ["images", "states"])(predictions['pred_images'], predictions['pred_states']),
-                               )
+                               pred_images=predictions['pred_images'],
+                               pred_states=predictions['pred_states'],
+                               metadata=metadata,
+                      )
+        print(metadata['costs'])
 
         loss = self.policy_cost.calculate_cost(batch, predictions)
         loss["action_norm"] = predictions["pred_actions"].norm(2, 2).pow(2).mean()
