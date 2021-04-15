@@ -1,15 +1,15 @@
 """Contains a class used for clustering and dimensionality reduction
 of episode features for failure analysis."""
+import os
+import pickle
+import traceback
+
+import numpy as np
 import sklearn
+import sklearn.cluster
 import sklearn.decomposition
 import sklearn.manifold
 import sklearn.preprocessing
-import sklearn.cluster
-import numpy as np
-import pickle
-import os
-import traceback
-
 from DataReader import DataReader
 
 
@@ -80,7 +80,7 @@ class DimensionalityReduction:
 
     @staticmethod
     def get_episode_features(experiment, seed, checkpoint, episode):
-        """ Get features for one episode
+        """Get features for one episode
         This is used for dimensionality reduction, which is later used for
         scatter plotting.
         """
@@ -107,7 +107,7 @@ class DimensionalityReduction:
 
     @staticmethod
     def get_model_failing_features(experiment, seed, checkpoint):
-        """ Get features for one model
+        """Get features for one model
         This is used for dimensionality reduction, which is later used for
         scatter plotting.
         """
@@ -159,7 +159,7 @@ class DimensionalityReduction:
 
     @staticmethod
     def get_dimensionality_reduction_data():
-        """ Get features for all models
+        """Get features for all models
         This is used for dimensionality reduction, which is later used for
         scatter plotting.
         """

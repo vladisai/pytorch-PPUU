@@ -9,29 +9,16 @@ from typing import Optional
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 
-import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
+import torch  # noqa
+import torch.nn.functional as F  # noqa
+from torch.utils.data import DataLoader  # noqa
+from tqdm import tqdm  # noqa
 
-from tqdm import tqdm
-
-from ppuu.data import dataloader
-from ppuu import configs
-from ppuu.wrappers import ForwardModel
-from ppuu.lightning_modules.fm import FM
-from ppuu.modeling.km import predict_states, predict_states_diff
-
-FM_PATH = "/misc/vlgscratch4/LecunGroup/nvidia-collab/vlad/models/offroad/model=fwd-cnn-vae-fp-layers=3-bsize=64-ncond=20-npred=20-lrt=0.0001-nfeature=256-dropout=0.1-nz=32-beta=1e-06-zdropout=0.5-gclip=5.0-warmstart=1-seed=1.step400000.model"
-
-# FM_PATH = "/home/us441/nvidia-collab/vlad/models/fixed_fm/model=fwd-cnn-vae-fp-layers=3-bsize=64-ncond=20-npred=20-lrt=0.0001-nfeature=256-dropout=0.1-nz=32-beta=0.0-zdropout=0.0-gclip=5.0-warmstart=1-seed=1.step120000.model"
-
-MFM_PATH = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_20_long/seed=42/checkpoints/epoch=499_success_rate=0.ckpt"
-
-MFM_PATH = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_long/seed=42/checkpoints/epoch=420_success_rate=0.ckpt"
-
-MFM_PATH = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong/seed=42/checkpoints/epoch=999_success_rate=0.ckpt"
-
-MFM_PATH = "/home/us441/nvidia-collab/vlad/results/refactored_debug/test_no_shift_30_vlong_groupnorm/seed=42_2/checkpoints/epoch=999_success_rate=0.ckpt"
+from ppuu import configs  # noqa
+from ppuu.data import dataloader  # noqa
+from ppuu.lightning_modules.fm import FM  # noqa
+from ppuu.modeling.km import predict_states, predict_states_diff  # noqa
+from ppuu.wrappers import ForwardModel  # noqa
 
 
 @dataclass
@@ -47,15 +34,12 @@ class Config(configs.ConfigBase):
     diff: bool = False
 
 
-
 def predict_all_states(predictor, states, actions, normalizer):
     last_state = states[:, -1]
     predicted_states = []
     for i in range(actions.shape[1]):
         next_action = actions[:, i]
-        predicted_state = predictor(
-            last_state, next_action, normalizer 
-        )
+        predicted_state = predictor(last_state, next_action, normalizer)
         last_state = predicted_state
         predicted_states.append(predicted_state.squeeze(1))
     return torch.stack(predicted_states, dim=1)
@@ -99,23 +83,27 @@ def main(config):
     )
     normalizer = dataloader.Normalizer(data_store.stats)
     dataset.random.seed(24)
-    loader = DataLoader(dataset, batch_size=1, num_workers=0,)
+    loader = DataLoader(
+        dataset,
+        batch_size=1,
+        num_workers=0,
+    )
 
     model = None
     if config.model:
-        model = ForwardModel(FM_PATH)
+        model = ForwardModel(None)
         model = model.cuda()
         model = model.eval()
 
     if config.mmodel:
-        model = FM.load_from_checkpoint(MFM_PATH)
+        model = FM.load_from_checkpoint(None)
         model = model.cuda()
         model = model.eval()
         model = model.model
 
     if config.path is not None:
         m_config = FM.Config()
-        m_config.model.fm_type = 'km'
+        m_config.model.fm_type = "km"
         m_config.model.checkpoint = config.path
         m_config.training.enable_latent = True
         m_config.training.diffs = False
@@ -193,7 +181,8 @@ def main(config):
                     1 - cos_loss(predicted_directions, target_directions)
                 ).mean()
                 pos += F.mse_loss(
-                    predicted_states[:, :, 0:2], b["target_states"][:, :, 0:2],
+                    predicted_states[:, :, 0:2],
+                    b["target_states"][:, :, 0:2],
                 ).mean()
                 cntr += 1
 

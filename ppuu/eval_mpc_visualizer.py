@@ -1,17 +1,12 @@
 import io
-from pathlib import Path
-import subprocess
 import shutil
-import os
+import subprocess
+from pathlib import Path
 
 import ipywidgets as widgets
-import torch
-import PIL
-from IPython.display import display
-import numpy as np
-import bqplot
-from matplotlib import pyplot as plt
 import matplotlib as mpl
+import torch
+from matplotlib import pyplot as plt
 from torchvision import transforms
 
 

@@ -1,17 +1,15 @@
 """Train a policy / controller"""
-import os
-import yaml
 import dataclasses
+import os
 
 import pytorch_lightning as pl
 import torch.multiprocessing
-
-from ppuu import lightning_modules
-from ppuu import slurm
-from ppuu.data import NGSIMDataModule
-
-from ppuu.train_utils import CustomLoggerWB, ModelCheckpoint
+import yaml
 from pytorch_lightning.callbacks import LearningRateMonitor
+
+from ppuu import lightning_modules, slurm
+from ppuu.data import NGSIMDataModule
+from ppuu.train_utils import CustomLoggerWB
 
 
 def main(config):
@@ -28,9 +26,7 @@ def main(config):
         config.training.n_epochs = 10
         config.cost.uncertainty_n_batches = 10
 
-    module = lightning_modules.policy.get_module(
-        config.model.model_type
-    )
+    module = lightning_modules.policy.get_module(config.model.model_type)
     datamodule = NGSIMDataModule(
         config.training.dataset,
         config.training.epoch_size,
@@ -53,9 +49,7 @@ def main(config):
 
     n_checkpoints = 5
     if config.training.n_steps is not None:
-        n_checkpoints = max(
-            n_checkpoints, int(config.training.n_steps / 1e5)
-        )
+        n_checkpoints = max(n_checkpoints, int(config.training.n_steps / 1e5))
 
     period = max(1, config.training.n_epochs // n_checkpoints)
 
@@ -89,7 +83,7 @@ if __name__ == "__main__":
     module = lightning_modules.policy.get_module_from_command_line()
     config = module.Config.parse_from_command_line()
     use_slurm = slurm.parse_from_command_line()
-    print('parsed config')
+    print("parsed config")
     print(yaml.dump(dataclasses.asdict(config)))
     if use_slurm:
         executor = slurm.get_executor(

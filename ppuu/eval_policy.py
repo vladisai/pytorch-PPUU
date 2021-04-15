@@ -11,14 +11,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 import torch.multiprocessing
-
-from ppuu import configs
-from ppuu.data import dataloader
-from ppuu.lightning_modules.policy import get_module
-from ppuu.eval import PolicyEvaluator
-from ppuu import slurm
-
 from omegaconf import MISSING
+
+from ppuu import configs, slurm
+from ppuu.data import dataloader
+from ppuu.eval import PolicyEvaluator
+from ppuu.lightning_modules.policy import get_module
 
 
 def get_optimal_pool_size():
@@ -78,7 +76,6 @@ def main(config):
         else:
             config.model_type = checkpoint["hyper_parameters"]["model"][
                 "model_type"
-
             ]
 
     test_dataset = dataloader.EvaluationDataset(

@@ -1,8 +1,7 @@
 """The main class that contains all the tabs in the visualization"""
 import ipywidgets as widgets
-from IPython.display import display
-
 import Tabs
+from IPython.display import display
 
 
 class Visualization:

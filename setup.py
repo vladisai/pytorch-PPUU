@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="ppuu",
@@ -9,6 +9,19 @@ setup(
     author="",
     author_email="",
     url="https://github.com/vladisai/pytorch-PPUU",
-    install_requires=["pytorch-lightning", "torch", "numpy", "pandas", "omegaconf", "wandb", "gym", "submitit", "pygame", "imageio", "torchvision", "nevergrad"],
+    install_requires=[
+        "pytorch-lightning",
+        "torch",
+        "numpy",
+        "pandas",
+        "omegaconf",
+        "wandb",
+        "gym",
+        "submitit",
+        "pygame",
+        "imageio",
+        "torchvision",
+        "nevergrad",
+    ],
     packages=find_packages(),
 )

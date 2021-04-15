@@ -1,16 +1,16 @@
 import argparse
 
 from ppuu.lightning_modules.policy.mpur import (
-    MPURModule,
-    MPURVanillaV2Module,
-    MPURVanillaV3Module,
     MPURContinuousModule,
     MPURContinuousV2Module,
     MPURContinuousV3Module,
+    MPURModule,
+    MPURVanillaV2Module,
+    MPURVanillaV3Module,
 )
 from ppuu.lightning_modules.policy.mpur_dreaming import (
-    MPURDreamingModule,
     MPURDreamingLBFGSModule,
+    MPURDreamingModule,
     MPURDreamingV2Module,
     MPURDreamingV3Module,
 )
@@ -20,7 +20,6 @@ from ppuu.lightning_modules.policy.mpur_km import (
     MPURKMTaperV3Module,
     MPURKMTaperV3Module_TargetProp,
 )
-
 
 MODULES_DICT = dict(
     vanilla=MPURModule,

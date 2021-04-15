@@ -1,15 +1,15 @@
-import random
-import os
-import re
-import logging
 import glob
-import pickle
+import logging
 import math
+import os
+import pickle
+import random
+import re
 
-import torch
 import numpy
+import torch
 
-from ppuu.data.entities import StateSequence, DatasetSample
+from ppuu.data.entities import DatasetSample, StateSequence
 
 
 class DataStore:
@@ -293,10 +293,10 @@ class Dataset(torch.utils.data.Dataset):
         car_sizes = car_sizes.float()
 
         conditional_state_seq = StateSequence(
-            input_images, input_states, car_sizes
+            input_images, input_states, car_sizes, ego_cars,
         )
         target_state_seq = StateSequence(
-            target_images, target_states, car_sizes
+            target_images, target_states, car_sizes, ego_cars,
         )
 
         return DatasetSample(

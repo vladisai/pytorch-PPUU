@@ -1,16 +1,15 @@
-import time
-import os
 import argparse
-import numpy as np
+import os
+import time
 
+import numpy as np
 import pytorch_lightning as pl
 import torch.multiprocessing
 
-from ppuu.lightning_modules import MPURKMTaperModule as Module
-from ppuu.train_policy import CustomLogger
 from ppuu.dataloader import EvaluationDataset
 from ppuu.eval import PolicyEvaluator
-
+from ppuu.lightning_modules import MPURKMTaperModule as Module
+from ppuu.train_policy import CustomLogger
 
 EPOCHS = 21
 

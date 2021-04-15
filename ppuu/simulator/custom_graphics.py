@@ -1,6 +1,7 @@
-import pygame
 import math
+
 import numpy as np
+import pygame
 
 
 class Point:

@@ -1,15 +1,16 @@
 """Train a policy / controller"""
 
 from dataclasses import dataclass
+
 import torch
 import torch.optim as optim
 
 from ppuu.costs.policy_costs_continuous import PolicyCostContinuous
 from ppuu.lightning_modules.policy.mpur import (
-    MPURModule,
-    inject,
     ForwardModelV2,
     ForwardModelV3,
+    MPURModule,
+    inject,
 )
 
 
@@ -30,14 +31,12 @@ class MPURDreamingModule(MPURModule):
     def get_adversarial_z(self, batch):
         if self.config.training.init_z_with_zero:
             z = torch.zeros(
-                self.config.model.n_pred
-                * self.config.training.batch_size,
+                self.config.model.n_pred * self.config.training.batch_size,
                 32,
             ).to(self.device)
         else:
             z = self.forward_model.sample_z(
-                self.config.model.n_pred
-                * self.config.training.batch_size
+                self.config.model.n_pred * self.config.training.batch_size
             ).to(self.device)
         z = z.view(
             self.config.training.batch_size,
@@ -123,7 +122,7 @@ class MPURDreamingModule(MPURModule):
             if optimizer_idx != 0:
                 # We don't use extra optimizers unless we're doing adversarial
                 # z.
-                print('zero')
+                print("zero")
                 return {"loss": torch.tensor(0.0, requires_grad=True)}
             predictions = self(batch)
             cost, components = self.policy_cost.calculate_z_cost(
@@ -133,7 +132,11 @@ class MPURDreamingModule(MPURModule):
         loss = self.policy_cost.calculate_cost(batch, predictions)
         for k in loss:
             self.log(
-                "train_" + k, loss[k], on_step=True, logger=True, prog_bar=True,
+                "train_" + k,
+                loss[k],
+                on_step=True,
+                logger=True,
+                prog_bar=True,
             )
         return loss["policy_loss"]
 
@@ -142,17 +145,14 @@ class MPURDreamingModule(MPURModule):
             self.policy_model.parameters(),
             self.config.training.learning_rate,
         )
-        return [
-            optimizer
-        ] * self.config.training.n_adversarial_policy_updates
+        return [optimizer] * self.config.training.n_adversarial_policy_updates
 
 
 @inject(cost_type=PolicyCostContinuous)
 class MPURDreamingLBFGSModule(MPURDreamingModule):
     def get_adversarial_z(self, batch):
         z = self.forward_model.sample_z(
-            self.config.model.n_pred
-            * self.config.training.batch_size
+            self.config.model.n_pred * self.config.training.batch_size
         )
         z = z.view(
             self.config.training.batch_size,
@@ -205,11 +205,17 @@ class MPURDreamingV2Module(MPURDreamingModule):
 
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/fm_km_5_states_resume_lower_lr/seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
+        forward_model_path: str = (
+            "/home/us441/nvidia-collab/vlad/results/fm/fm_km_5_states_resume_lower_lr/"
+            "seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
+        )
 
 
 @inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV3)
 class MPURDreamingV3Module(MPURDreamingV2Module):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
-        forward_model_path: str = "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"
+        forward_model_path: str = (
+            "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/"
+            "fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"
+        )

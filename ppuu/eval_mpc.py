@@ -1,31 +1,28 @@
+import dataclasses
+import logging
 import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Optional
+
+import torch.multiprocessing
+import yaml
+from omegaconf import MISSING
 
 # These environment variables need to be set before
 # import numpy to prevent numpy from spawning a lot of processes
 # which end up clogging up the system.
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"  # noqa
+os.environ["OMP_NUM_THREADS"] = "1"  # noqa
 
-import logging
-from pathlib import Path
-import yaml
-from dataclasses import dataclass
-import dataclasses
-from typing import Optional, Any
-
-import torch.multiprocessing
-
-from ppuu import configs
-from ppuu.data import dataloader
-from ppuu.lightning_modules.policy import get_module
-from ppuu.lightning_modules.fm import FM
-from ppuu.eval import PolicyEvaluator
-from ppuu.costs.policy_costs_km import PolicyCostKMTaper
-from ppuu import slurm
-from ppuu.modeling.mpc import MPCKMPolicy
-from ppuu.eval_mpc_visualizer import EvalVisualizer
-
-from omegaconf import MISSING
+from ppuu import configs, slurm  # noqa
+from ppuu.costs.policy_costs_km import PolicyCostKMTaper  # noqa
+from ppuu.data import dataloader  # noqa
+from ppuu.eval import PolicyEvaluator  # noqa
+from ppuu.eval_mpc_visualizer import EvalVisualizer  # noqa
+from ppuu.lightning_modules.fm import FM  # noqa
+from ppuu.lightning_modules.policy import get_module  # noqa
+from ppuu.modeling.mpc import MPCKMPolicy  # noqa
 
 
 def get_optimal_pool_size():

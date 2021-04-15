@@ -1,9 +1,8 @@
 import pytorch_lightning as pl
-
 import torch
 from torch.utils.data import DataLoader
 
-from ppuu.data.dataloader import DataStore, Dataset
+from ppuu.data.dataloader import Dataset, DataStore
 
 
 def _worker_init_fn(index):

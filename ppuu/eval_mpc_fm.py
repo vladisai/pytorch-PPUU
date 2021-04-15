@@ -1,4 +1,13 @@
+import dataclasses
+import logging
 import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Optional
+
+import torch.multiprocessing
+import yaml
+from omegaconf import MISSING
 
 # These environment variables need to be set before
 # import numpy to prevent numpy from spawning a lot of processes
@@ -6,27 +15,14 @@ import os
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 
-import logging
-from pathlib import Path
-import yaml
-from dataclasses import dataclass
-import dataclasses
-from typing import Optional, Any
-
-import torch.multiprocessing
-
-from ppuu import configs
-from ppuu.data import dataloader
-from ppuu.data import NGSIMDataModule
-from ppuu.lightning_modules.policy import get_module
-from ppuu.lightning_modules.fm import FM
-from ppuu.eval import PolicyEvaluator
-from ppuu.costs import PolicyCost, PolicyCostContinuous
-from ppuu import slurm
-from ppuu.modeling.mpc import MPCFMPolicy
-from ppuu.eval_mpc_visualizer import EvalVisualizer
-
-from omegaconf import MISSING
+from ppuu import configs, slurm  # noqa
+from ppuu.costs import PolicyCost, PolicyCostContinuous  # noqa
+from ppuu.data import NGSIMDataModule, dataloader  # noqa
+from ppuu.eval import PolicyEvaluator  # noqa
+from ppuu.eval_mpc_visualizer import EvalVisualizer  # noqa
+from ppuu.lightning_modules.fm import FM  # noqa
+from ppuu.lightning_modules.policy import get_module  # noqa
+from ppuu.modeling.mpc import MPCFMPolicy  # noqa
 
 
 def get_optimal_pool_size():
@@ -55,6 +51,7 @@ class EvalMPCConfig(configs.ConfigBase):
     seed: int = 42
     dataset_partition: str = "test"
     pass_gt_future: bool = False
+
 
 def main(config):
     if config.num_processes > 0:
@@ -109,12 +106,11 @@ def main(config):
 
     normalizer = dataloader.Normalizer(test_dataset.stats)
 
-    forward_model.model.device = torch.device('cuda')
+    forward_model.model.device = torch.device("cuda")
 
-
-    if config.cost_type == 'vanilla':
+    if config.cost_type == "vanilla":
         Type = PolicyCost
-    elif config.cost_type == 'continuous':
+    elif config.cost_type == "continuous":
         Type = PolicyCostContinuous
 
     cost = Type(config.cost, forward_model.model, normalizer)

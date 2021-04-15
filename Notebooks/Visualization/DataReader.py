@@ -4,17 +4,16 @@ This includes reading logs to parse success cases, reading images, costs
 and speed.
 """
 
-from glob import glob
-from io import BytesIO
-import re
 import json
 import os
+import re
 from functools import lru_cache
+from glob import glob
+from io import BytesIO
 
-import torch
 import numpy as np
+import torch
 from torchvision.transforms import ToPILImage
-
 
 EPISODES = 561
 
@@ -35,7 +34,7 @@ class DataReader:
     #     return x
 
     checkpoint_re = re.compile(
-        "epoch=(?P<epoch>\d+)(_sample_step=(?P<sample_step>\d+).ckpt)?"
+        r"epoch=(?P<epoch>\d+)(_sample_step=(?P<sample_step>\d+).ckpt)?"
     )
 
     @staticmethod
@@ -325,7 +324,6 @@ class DataReader:
         """
         results = {}
         results_lines = {}
-        results_lines_checkpoints = {}
         for version in DataReader.find_experiment_versions(experiment):
             success_rates = DataReader.get_version_success_rates(
                 experiment, version
@@ -342,7 +340,12 @@ class DataReader:
         mx = [float(np.min(results[x])) for x in keys]
         mn = [float(np.max(results[x])) for x in keys]
         values = [list(zip(*sorted(v))) for _, v in results_lines.items()]
-        result = dict(checkpoints=keys, mx=mx, mn=mn, values=values,)
+        result = dict(
+            checkpoints=keys,
+            mx=mx,
+            mn=mn,
+            values=values,
+        )
         return result
 
     @staticmethod
@@ -413,8 +416,8 @@ class DataReader:
 
     @staticmethod
     def get_episode_costs(experiment, seed, checkpoint, episode):
-        """ Returns an array of data frames with all the costs for
-        given evaluation """
+        """Returns an array of data frames with all the costs for
+        given evaluation"""
         costs = DataReader.get_model_costs(experiment, seed, checkpoint)
         if costs is not None:
             return costs[episode - 1]

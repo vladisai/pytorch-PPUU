@@ -28,13 +28,21 @@ def predict_states(states, actions, normalizer, timestep=0.1, noise=0.0):
 
     new_positions = positions + timestep * directions * speeds_norm
 
-    ortho_directions = torch.stack([directions[:, 1], -directions[:, 0]], axis=1)
+    ortho_directions = torch.stack(
+        [directions[:, 1], -directions[:, 0]], axis=1
+    )
 
-    new_directions_unnormed = directions + ortho_directions * b * speeds_norm * timestep
+    new_directions_unnormed = (
+        directions + ortho_directions * b * speeds_norm * timestep
+    )
     # + torch.tensor([1e-6, 0]).unsqueeze(0).to(directions.device)
 
     new_directions = new_directions_unnormed / (
-        torch.clamp(new_directions_unnormed.norm(dim=1).view(positions.shape[0], 1), min=1e-8, max=1e6,)
+        torch.clamp(
+            new_directions_unnormed.norm(dim=1).view(positions.shape[0], 1),
+            min=1e-8,
+            max=1e6,
+        )
     )
 
     new_speeds_norm = speeds_norm + a.unsqueeze(1) * timestep
@@ -79,18 +87,30 @@ def predict_states_seq(states, actions, normalizer, timestep=0.1, noise=0.0):
     for i in range(n_actions):
         new_positions = positions + timestep * directions * speeds_norm
 
-        ortho_directions = torch.stack([directions[:, 1], -directions[:, 0]], axis=1)
+        ortho_directions = torch.stack(
+            [directions[:, 1], -directions[:, 0]], axis=1
+        )
 
-        new_directions_unnormed = directions + ortho_directions * b[:, :, i] * speeds_norm * timestep
+        new_directions_unnormed = (
+            directions + ortho_directions * b[:, :, i] * speeds_norm * timestep
+        )
         # + torch.tensor([1e-6, 0]).unsqueeze(0).to(directions.device)
 
         new_directions = new_directions_unnormed / (
-            torch.clamp(new_directions_unnormed.norm(dim=1).view(positions.shape[0], 1), min=1e-8, max=1e6,)
+            torch.clamp(
+                new_directions_unnormed.norm(dim=1).view(
+                    positions.shape[0], 1
+                ),
+                min=1e-8,
+                max=1e6,
+            )
         )
 
         new_speeds_norm = speeds_norm + a[:, i].unsqueeze(1) * timestep
 
-        result.append(torch.cat([new_positions, new_directions, new_speeds_norm], 1))
+        result.append(
+            torch.cat([new_positions, new_directions, new_speeds_norm], 1)
+        )
 
         positions = new_positions
         directions = new_directions
@@ -98,7 +118,6 @@ def predict_states_seq(states, actions, normalizer, timestep=0.1, noise=0.0):
 
     result = torch.stack(result, dim=1)
     return normalizer.normalize_states(result)
-
 
 
 def predict_states_diff(states, actions, normalizer, timestep=0.1):
@@ -131,13 +150,21 @@ def predict_states_diff(states, actions, normalizer, timestep=0.1):
 
     new_positions = positions + timestep * directions * speeds_norm
 
-    ortho_directions = torch.stack([directions[:, 1], -directions[:, 0]], axis=1)
+    ortho_directions = torch.stack(
+        [directions[:, 1], -directions[:, 0]], axis=1
+    )
 
-    new_directions_unnormed = directions + ortho_directions * b * speeds_norm * timestep
+    new_directions_unnormed = (
+        directions + ortho_directions * b * speeds_norm * timestep
+    )
     # + torch.tensor([1e-6, 0]).unsqueeze(0).to(directions.device)
 
     new_directions = new_directions_unnormed / (
-        torch.clamp(new_directions_unnormed.norm(dim=1).view(positions.shape[0], 1), min=1e-12, max=1e6,)
+        torch.clamp(
+            new_directions_unnormed.norm(dim=1).view(positions.shape[0], 1),
+            min=1e-12,
+            max=1e6,
+        )
     )
 
     new_speeds_norm = speeds_norm + a.unsqueeze(1) * timestep
@@ -154,8 +181,12 @@ class StatePredictor:
         self.normalizer = normalizer
 
     def __call__(self, *args, **kwargs):
-        assert self.normalizer is not None, "Normalizer is not set for state predictor"
+        assert (
+            self.normalizer is not None
+        ), "Normalizer is not set for state predictor"
         if self.diff:
-            return predict_states_diff(*args, normalizer=self.normalizer, **kwargs)
+            return predict_states_diff(
+                *args, normalizer=self.normalizer, **kwargs
+            )
         else:
             return predict_states(*args, normalizer=self.normalizer, **kwargs)

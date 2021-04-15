@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-
 import torch.nn.functional as F
 
 
@@ -31,7 +30,13 @@ class Augmenter:
     def random_blur(self, batch):
         f = self.get_gaussian_filter(np.random.rand() * 0.8 + 0.1, 3)
         f = f.to(device=batch.device)
-        return F.conv2d(batch, f, groups=4, stride=1, padding=1,)
+        return F.conv2d(
+            batch,
+            f,
+            groups=4,
+            stride=1,
+            padding=1,
+        )
 
     def random_noise(self, batch):
         return batch + torch.normal(

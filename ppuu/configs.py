@@ -1,14 +1,13 @@
 import argparse
 import dataclasses
-from dataclasses import dataclass
-from enum import Enum
 import math
 import os
-from typing import Tuple, Iterable, Union, NewType, Any, Optional
-
-from omegaconf import OmegaConf, MISSING
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Iterable, NewType, Optional, Tuple, Union
 
 import torch
+from omegaconf import MISSING, OmegaConf
 
 DataClass = NewType("DataClass", Any)
 DataClassType = NewType("DataClassType", Any)
@@ -26,18 +25,26 @@ class ConfigBase:
 
     @classmethod
     def parse_from_command_line_deprecated(cls):
-        result = DataclassArgParser(cls, fromfile_prefix_chars="@").parse_args_into_dataclasses()
+        result = DataclassArgParser(
+            cls, fromfile_prefix_chars="@"
+        ).parse_args_into_dataclasses()
         if len(result) > 1:
-            raise RuntimeError(f"The following arguments were not recognized: {result[1:]}")
+            raise RuntimeError(
+                f"The following arguments were not recognized: {result[1:]}"
+            )
         return result[0]
 
     @classmethod
     def parse_from_dict(cls, inputs):
-        return DataclassArgParser._populate_dataclass_from_dict(cls, inputs.copy())
+        return DataclassArgParser._populate_dataclass_from_dict(
+            cls, inputs.copy()
+        )
 
     @classmethod
     def parse_from_flat_dict(cls, inputs):
-        return DataclassArgParser._populate_dataclass_from_flat_dict(cls, inputs.copy())
+        return DataclassArgParser._populate_dataclass_from_flat_dict(
+            cls, inputs.copy()
+        )
 
 
 @dataclass
@@ -52,7 +59,7 @@ class TrainingConfig(ConfigBase):
     scripts.  Does not contain model configurations.
     """
 
-    comment: str = ''
+    comment: str = ""
     learning_rate: float = 0.0001
     n_epochs: int = 101
     n_steps: float = 5e5
@@ -95,12 +102,18 @@ class TrainingConfig(ConfigBase):
 
     def auto_n_epochs(self):
         if self.n_steps != 0:
-            self.n_epochs = math.ceil(self.n_steps / self.batch_size / self.epoch_size)
+            self.n_epochs = math.ceil(
+                self.n_steps / self.batch_size / self.epoch_size
+            )
             print("auto set n_epochs to", self.n_epochs)
 
     @property
     def slurm_logs_path(self):
-        return os.path.join(self.output_dir, self.experiment_name, f"seed={self.seed}_slurm_logs",)
+        return os.path.join(
+            self.output_dir,
+            self.experiment_name,
+            f"seed={self.seed}_slurm_logs",
+        )
 
 
 @dataclass
@@ -122,7 +135,9 @@ class DataclassArgParser(argparse.ArgumentParser):
     """
 
     def __init__(
-        self, dataclass_types: Union[DataClassType, Iterable[DataClassType]], **kwargs,
+        self,
+        dataclass_types: Union[DataClassType, Iterable[DataClassType]],
+        **kwargs,
     ):
         """
         Args:
@@ -154,7 +169,9 @@ class DataclassArgParser(argparse.ArgumentParser):
                 if f.default is not dataclasses.MISSING:
                     kwargs["default"] = f.default
             elif f.type is bool:
-                kwargs["action"] = "store_false" if f.default is True else "store_true"
+                kwargs["action"] = (
+                    "store_false" if f.default is True else "store_true"
+                )
                 if f.default is True:
                     field_name = f"--no-{f.name}"
                     kwargs["dest"] = f.name
@@ -168,7 +185,10 @@ class DataclassArgParser(argparse.ArgumentParser):
                     kwargs["required"] = True
             self.add_argument(field_name, **kwargs)
 
-    def parse_args_into_dataclasses(self, args=None,) -> Tuple[DataClass, ...]:
+    def parse_args_into_dataclasses(
+        self,
+        args=None,
+    ) -> Tuple[DataClass, ...]:
         """
         Parse command-line args into instances of the specified dataclass
         types.  This relies on argparse's `ArgumentParser.parse_known_args`.
@@ -201,12 +221,18 @@ class DataclassArgParser(argparse.ArgumentParser):
         return outputs
 
     @staticmethod
-    def _populate_dataclass(dtype: DataClassType, namespace: argparse.Namespace):
+    def _populate_dataclass(
+        dtype: DataClassType, namespace: argparse.Namespace
+    ):
         keys = {f.name for f in dataclasses.fields(dtype)}
         inputs = {k: v for k, v in vars(namespace).items() if k in keys}
         for k in keys:
             delattr(namespace, k)
-        sub_dataclasses = {f.name: f.type for f in dataclasses.fields(dtype) if dataclasses.is_dataclass(f.type)}
+        sub_dataclasses = {
+            f.name: f.type
+            for f in dataclasses.fields(dtype)
+            if dataclasses.is_dataclass(f.type)
+        }
         for k, s in sub_dataclasses.items():
             inputs[k] = DataclassArgParser._populate_dataclass(s, namespace)
         obj = dtype(**inputs)
@@ -220,9 +246,15 @@ class DataclassArgParser(argparse.ArgumentParser):
         for k in keys:
             if k in d:
                 del d[k]
-        sub_dataclasses = {f.name: f.type for f in dataclasses.fields(dtype) if dataclasses.is_dataclass(f.type)}
+        sub_dataclasses = {
+            f.name: f.type
+            for f in dataclasses.fields(dtype)
+            if dataclasses.is_dataclass(f.type)
+        }
         for k, s in sub_dataclasses.items():
-            inputs[k] = DataclassArgParser._populate_dataclass_from_dict(s, inputs[k])
+            inputs[k] = DataclassArgParser._populate_dataclass_from_dict(
+                s, inputs[k]
+            )
         obj = dtype(**inputs)
         return obj
 
@@ -234,7 +266,11 @@ class DataclassArgParser(argparse.ArgumentParser):
         for k in keys:
             if k in d:
                 del d[k]
-        sub_dataclasses = {f.name: f.type for f in dataclasses.fields(dtype) if dataclasses.is_dataclass(f.type)}
+        sub_dataclasses = {
+            f.name: f.type
+            for f in dataclasses.fields(dtype)
+            if dataclasses.is_dataclass(f.type)
+        }
         for k, s in sub_dataclasses.items():
             inputs[k] = DataclassArgParser._populate_dataclass_from_dict(s, d)
         obj = dtype(**inputs)
@@ -260,10 +296,16 @@ class DataclassArgParser(argparse.ArgumentParser):
 def omegaconf_parse(cls):
     parser = argparse.ArgumentParser(fromfile_prefix_chars="@")
     parser.add_argument(
-        "--configs", nargs="*", default=[], help="Configs to load",
+        "--configs",
+        nargs="*",
+        default=[],
+        help="Configs to load",
     )
     parser.add_argument(
-        "--values", nargs="*", default=[], help="Dot values to change configs",
+        "--values",
+        nargs="*",
+        default=[],
+        help="Dot values to change configs",
     )
     args, _unknown = parser.parse_known_args()
 

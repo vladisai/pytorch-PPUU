@@ -1,8 +1,9 @@
-import torch
-import torch.nn as nn
 import random
 
-from ppuu.modeling.common_models import Encoder, UNetwork, Decoder
+import torch
+import torch.nn as nn
+
+from ppuu.modeling.common_models import Decoder, Encoder, UNetwork
 
 
 class encoder(nn.Module):

@@ -1,31 +1,27 @@
 """Train a policy / controller"""
 import dataclasses
-from dataclasses import dataclass
 import hashlib
+from dataclasses import dataclass
 
-import wandb
-
+import pytorch_lightning as pl
 import torch
 import torch.optim as optim
-import pytorch_lightning as pl
-
+import wandb
 from omegaconf import MISSING
 
-from ppuu.data import EvaluationDataset
-from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu import configs
-from ppuu.modeling import policy_models
-from ppuu.wrappers import ForwardModel
-from ppuu.eval import PolicyEvaluator
-from ppuu.data import Augmenter
-from ppuu.modeling.mixout import MixoutWrapper
-from ppuu.lightning_modules.fm import FM
-
+from ppuu.costs import PolicyCost, PolicyCostContinuous
+from ppuu.data import Augmenter, EvaluationDataset
 from ppuu.data.dataloader import Normalizer
+from ppuu.eval import PolicyEvaluator
+from ppuu.lightning_modules.fm import FM
+from ppuu.modeling import policy_models
+from ppuu.modeling.mixout import MixoutWrapper
+from ppuu.wrappers import ForwardModel
 
 
 def inject(cost_type=PolicyCost, fm_type=ForwardModel):
-    """ This injector allows to customize lightning modules with custom cost
+    """This injector allows to customize lightning modules with custom cost
     class and forward model class (or more, if extended).  It injects these
     types and creates a config dataclass that contains configs for all the
     components of this lightning module. Any new module has to be injected
@@ -39,7 +35,9 @@ def inject(cost_type=PolicyCost, fm_type=ForwardModel):
     """
 
     def wrapper(cls_):
-        h = hashlib.md5((cost_type.__qualname__ + fm_type.__qualname__).encode()).hexdigest()[:7]
+        h = hashlib.md5(
+            (cost_type.__qualname__ + fm_type.__qualname__).encode()
+        ).hexdigest()[:7]
         suffix = f"{cls_.__name__}_{cost_type.__name__}_{fm_type.__name__}_{h}"
         config_name = f"config_{suffix}"
 
@@ -90,7 +88,9 @@ class MPURModule(pl.LightningModule):
         super().__init__()
         self.set_hparams(hparams)
 
-        self.forward_model = self.ForwardModelType(self.config.model.forward_model_path, self.config.training.diffs)
+        self.forward_model = self.ForwardModelType(
+            self.config.model.forward_model_path, self.config.training.diffs
+        )
 
         # exclude fm from the graph
         for p in self.forward_model.parameters():
@@ -119,7 +119,8 @@ class MPURModule(pl.LightningModule):
                     p.requires_grad = False
 
         self.augmenter = Augmenter(
-            self.config.training.noise_augmentation_std, self.config.training.noise_augmentation_p,
+            self.config.training.noise_augmentation_std,
+            self.config.training.noise_augmentation_p,
         )
         self.nan_ctr = 0
 
@@ -136,7 +137,10 @@ class MPURModule(pl.LightningModule):
     def forward(self, batch):
         self.forward_model.eval()
         predictions = self.forward_model.unfold(
-            self.policy_model, batch, augmenter=self.augmenter, npred=self.config.model.n_pred
+            self.policy_model,
+            batch,
+            augmenter=self.augmenter,
+            npred=self.config.model.n_pred,
         )
         return predictions
 
@@ -144,7 +148,9 @@ class MPURModule(pl.LightningModule):
         opt = self.optimizers()
         predictions = self(batch)
         loss = self.policy_cost.calculate_cost(batch, predictions)
-        loss["action_norm"] = predictions["pred_actions"].norm(2, 2).pow(2).mean()
+        loss["action_norm"] = (
+            predictions["pred_actions"].norm(2, 2).pow(2).mean()
+        )
         res = loss["policy_loss"].mean()
         for k in loss:
             v = loss[k]
@@ -152,7 +158,11 @@ class MPURModule(pl.LightningModule):
                 v = v.mean()
             if v is not None:
                 self.log(
-                    "train/" + k, v, on_step=True, logger=True, prog_bar=True,
+                    "train/" + k,
+                    v,
+                    on_step=True,
+                    logger=True,
+                    prog_bar=True,
                 )
 
         # We retain the gradient of actions to later log it to wandb.
@@ -165,19 +175,60 @@ class MPURModule(pl.LightningModule):
 
     def log_action_grads(self, grad):
         # Mean across all timesteps
-        self.log("grads/all/action", grad.norm(2, dim=-1).mean(), on_step=False, on_epoch=True, logger=True)
-        self.log("grads/all/action_acceleration", grad[..., 0].abs().mean(), on_step=False, on_epoch=True, logger=True)
-        self.log("grads/all/action_turn", grad[..., 1].abs().mean(), on_step=False, on_epoch=True, logger=True)
+        self.log(
+            "grads/all/action",
+            grad.norm(2, dim=-1).mean(),
+            on_step=False,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "grads/all/action_acceleration",
+            grad[..., 0].abs().mean(),
+            on_step=False,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "grads/all/action_turn",
+            grad[..., 1].abs().mean(),
+            on_step=False,
+            on_epoch=True,
+            logger=True,
+        )
         # The first timestep
-        self.log("grads/0/action", grad[..., 0, :].norm(2, dim=-1).mean(), on_step=False, on_epoch=True, logger=True)
-        self.log("grads/0/action_acceleration", grad[..., 0, 0].abs().mean(), on_step=False, on_epoch=True, logger=True)
-        self.log("grads/0/action_turn", grad[..., 0, 1].abs().mean(), on_step=False, on_epoch=True, logger=True)
-
+        self.log(
+            "grads/0/action",
+            grad[..., 0, :].norm(2, dim=-1).mean(),
+            on_step=False,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "grads/0/action_acceleration",
+            grad[..., 0, 0].abs().mean(),
+            on_step=False,
+            on_epoch=True,
+            logger=True,
+        )
+        self.log(
+            "grads/0/action_turn",
+            grad[..., 0, 1].abs().mean(),
+            on_step=False,
+            on_epoch=True,
+            logger=True,
+        )
 
     def wandb_log_grads_plot(self, vals, title):
         data = [[x, y] for (x, y) in enumerate(vals)]
         table = wandb.Table(data=data, columns=["x", "y"])
-        self.logger.experiment.log({f"grads/plots/{title}": wandb.plot.line(table, "x", "y", title=title)})
+        self.logger.experiment.log(
+            {
+                f"grads/plots/{title}": wandb.plot.line(
+                    table, "x", "y", title=title
+                )
+            }
+        )
 
     def validation_step(self, batch, batch_idx):
         predictions = self(batch)
@@ -189,7 +240,10 @@ class MPURModule(pl.LightningModule):
                 v = v.mean()
             if v is not None:
                 self.log(
-                    "val/" + k, v, on_epoch=True, logger=True,
+                    "val/" + k,
+                    v,
+                    on_epoch=True,
+                    logger=True,
                 )
         return res
 
@@ -207,7 +261,7 @@ class MPURModule(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
-            [{'params': self.policy_model.parameters()}],
+            [{"params": self.policy_model.parameters()}],
             self.config.training.learning_rate
             * self.config.training.gpus
             * self.config.training.num_nodes
@@ -217,11 +271,15 @@ class MPURModule(pl.LightningModule):
             if self.config.training.scheduler == "step":
                 # we want to have 0.1 learning rate after 70% of training
                 scheduler = torch.optim.lr_scheduler.StepLR(
-                    optimizer, step_size=int(self.config.training.n_epochs * 0.7), gamma=0.1,
+                    optimizer,
+                    step_size=int(self.config.training.n_epochs * 0.7),
+                    gamma=0.1,
                 )
             elif self.config.training.scheduler == "cosine":
-                scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                    optimizer, T_0=int(self.config.training.n_epochs / 5)
+                scheduler = (
+                    torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                        optimizer, T_0=int(self.config.training.n_epochs / 5)
+                    )
                 )
 
             return [optimizer], [scheduler]
@@ -239,12 +297,12 @@ class MPURModule(pl.LightningModule):
         self._setup_policy_cost()
         self._setup_episode_evaluator()
 
-    def _setup_normalizer(self, stats = None):
+    def _setup_normalizer(self, stats=None):
         if stats is None:
             stats = self.trainer.datamodule.data_store.stats
         self.normalizer = Normalizer(stats)
         self.policy_model.normalizer = self.normalizer
-        if hasattr(self.forward_model, 'state_predictor'):
+        if hasattr(self.forward_model, "state_predictor"):
             self.forward_model.state_predictor.normalizer = self.normalizer
 
     def _setup_forward_model(self):
@@ -253,7 +311,9 @@ class MPURModule(pl.LightningModule):
         self.forward_model.to(self.device)
 
     def _setup_policy_cost(self):
-        self.policy_cost = self.CostType(self.config.cost, self.forward_model, self.normalizer)
+        self.policy_cost = self.CostType(
+            self.config.cost, self.forward_model, self.normalizer
+        )
         self.policy_cost.estimate_uncertainty_stats(self.train_dataloader())
 
     def _setup_mixout(self):
@@ -262,14 +322,20 @@ class MPURModule(pl.LightningModule):
             #     self.policy_model, p=self.config.training.mixout_p
             # )
             self.mixout_wrapper = MixoutWrapper(self.config.training.mixout_p)
-            self.policy_model = self.policy_model.apply(lambda x: self.mixout_wrapper(x))
+            self.policy_model = self.policy_model.apply(
+                lambda x: self.mixout_wrapper(x)
+            )
 
     def _setup_episode_evaluator(self):
         self.eval_dataset = EvaluationDataset.from_data_store(
             self.trainer.datamodule.data_store, split="val", size_cap=25
         )
         self.evaluator = PolicyEvaluator(
-            self.eval_dataset, num_processes=5, build_gradients=False, return_episode_data=False, enable_logging=False,
+            self.eval_dataset,
+            num_processes=5,
+            build_gradients=False,
+            return_episode_data=False,
+            enable_logging=False,
         )
 
     # @classmethod

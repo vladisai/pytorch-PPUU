@@ -1,6 +1,7 @@
-from ppuu.simulator.traffic_gym import Simulator, Car
-from ppuu.simulator.map_i80 import I80
 import pygame
+
+from ppuu.simulator.map_i80 import I80
+from ppuu.simulator.traffic_gym import Car, Simulator
 
 # Conversion LANE_W from real world to pixels
 # A US highway lane width is 3.7 metres, here 50 pixels

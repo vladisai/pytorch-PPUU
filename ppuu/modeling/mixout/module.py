@@ -1,16 +1,15 @@
-##++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: Cheolhyoung Lee
-## Department of Mathematical Sciences, KAIST
-## Email: cheolhyoung.lee@kaist.ac.kr
-## Implementation of mixout from https://arxiv.org/abs/1909.11299
-## "Mixout: Effective Regularization to Finetune Large-scale Pretrained Language Models"
-##++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Created by: Cheolhyoung Lee
+# Department of Mathematical Sciences, KAIST
+# Email: cheolhyoung.lee@kaist.ac.kr
+# Implementation of mixout from https://arxiv.org/abs/1909.11299
+# "Mixout: Effective Regularization to Finetune Large-scale Pretrained Language Models"
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 import math
-import torch
-import torch.nn as nn
-import torch.nn.init as init
-import torch.nn.functional as F
 
+import torch
+import torch.nn.functional as F
+import torch.nn.init as init
 from torch.nn import Parameter
 
 from .mixout import mixout
@@ -18,6 +17,7 @@ from .mixout import mixout
 
 class MixLinear(torch.nn.Module):
     __constants__ = ["bias", "in_features", "out_features"]
+
     # If target is None, nn.Sequential(nn.Linear(m, n), MixLinear(m', n', p))
     # is equivalent to nn.Sequential(nn.Linear(m, n), nn.Dropout(p), nn.Linear(m', n')).
     # If you want to change a dropout layer to a mixout layer,

@@ -1,13 +1,13 @@
 """Train a forward model"""
 import os
+
 import pytorch_lightning as pl
 import torch.multiprocessing
 
-from ppuu.lightning_modules import fm
 from ppuu import slurm
-
-from ppuu.train_utils import CustomLoggerWB
 from ppuu.data import NGSIMDataModule
+from ppuu.lightning_modules import fm
+from ppuu.train_utils import CustomLoggerWB
 
 
 def main(config):
@@ -51,7 +51,8 @@ def main(config):
         fast_dev_run=config.training.fast_dev_run,
         checkpoint_callback=(
             pl.callbacks.ModelCheckpoint(
-                filepath=os.path.join(logger.log_dir, "checkpoints", "{epoch}_{success_rate}"),
+                dirpath=os.path.join(logger.log_dir, "checkpoints"),
+                filename=os.path.join("{epoch}"),
                 save_top_k=None,
                 monitor=None,
             )

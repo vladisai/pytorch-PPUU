@@ -1,11 +1,10 @@
-##++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: Cheolhyoung Lee
-## Department of Mathematical Sciences, KAIST
-## Email: cheolhyoung.lee@kaist.ac.kr
-## Implementation of mixout from https://arxiv.org/abs/1909.11299
-## "Mixout: Effective Regularization to Finetune Large-scale Pretrained Language Models"
-##++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-import torch
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Created by: Cheolhyoung Lee
+# Department of Mathematical Sciences, KAIST
+# Email: cheolhyoung.lee@kaist.ac.kr
+# Implementation of mixout from https://arxiv.org/abs/1909.11299
+# "Mixout: Effective Regularization to Finetune Large-scale Pretrained Language Models"
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 from torch.autograd.function import InplaceFunction
 
 

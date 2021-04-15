@@ -1,9 +1,6 @@
-from ppuu.modeling.forward_models import FwdCNN, FwdCNN_VAE
-from ppuu.modeling.forward_models_km import FwdCNNKM, FwdCNNKM_VAE
-from ppuu.modeling.forward_models_km_no_action import (
-    FwdCNNKMNoAction,
-    FwdCNNKMNoAction_VAE,
-)
+from ppuu.modeling.forward_models import FwdCNN_VAE
+from ppuu.modeling.forward_models_km import FwdCNNKM_VAE
+from ppuu.modeling.forward_models_km_no_action import FwdCNNKMNoAction_VAE
 
 FM_MAPPING = {
     "vanilla": FwdCNN_VAE,

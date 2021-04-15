@@ -1,14 +1,11 @@
-import unittest
 import tempfile
-
-from ppuu.lightning_modules.fm import FM
-from ppuu.lightning_modules.policy import MPURVanillaV3Module
-
-from ppuu import train_fm
-from ppuu import train_policy
-from ppuu import eval_policy
+import unittest
 
 from omegaconf import OmegaConf
+
+from ppuu import eval_policy, train_fm, train_policy
+from ppuu.lightning_modules.fm import FM
+from ppuu.lightning_modules.policy import MPURVanillaV3Module
 
 
 class TestTrainFM(unittest.TestCase):
@@ -53,12 +50,16 @@ class TestTrainPolicy(unittest.TestCase):
         return omega_config
 
     def test_train_policy(self):
-        with tempfile.TemporaryDirectory(prefix="ppuu_policy_test_") as tempdir:
+        with tempfile.TemporaryDirectory(
+            prefix="ppuu_policy_test_"
+        ) as tempdir:
             config = MPURVanillaV3Module.Config()
             # config.training.fast_dev_run = True
             file_config = self.load_file_configs()
             config.training.dataset = file_config.training.dataset
-            config.model.forward_model_path = file_config.model.forward_model_path
+            config.model.forward_model_path = (
+                file_config.model.forward_model_path
+            )
             config.training.diffs = file_config.training.diffs
             config.training.experiment_name = "debug"
             config.training.output_dir = tempdir

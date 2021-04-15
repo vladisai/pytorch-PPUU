@@ -1,18 +1,15 @@
 """Contains the tabs for different visualizations.
 Each tab is a standalone visualization."""
 import ipywidgets as widgets
-
 from DataReader import DataReader
-
+from Widgets import DimensionalityReductionPlot  # ExperimentEntryView,
 from Widgets import (
-    Picker,
     EpisodeReview,
-    DimensionalityReductionPlot,
-    PiePlot,
     HeatMap,
     HeatMapComparison,
+    Picker,
+    PiePlot,
     PolicyComparison,
-    # ExperimentEntryView,
 )
 
 

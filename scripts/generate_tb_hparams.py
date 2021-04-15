@@ -1,10 +1,9 @@
-import os
 import argparse
-import yaml
 import json
+import os
 
 import torch
-
+import yaml
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -31,13 +30,13 @@ def get_hparams(path):
 def get_results(path):
     success_rate = get_success_rate(path)
 
-    ckpt_path = os.path.join(path, 'last.ckpt')
+    ckpt_path = os.path.join(path, "last.ckpt")
     if not os.path.exists(ckpt_path):
         return None, None
     x = torch.load(ckpt_path)
 
     # hparams = get_hparams(path)
-    hparams = x['hyper_parameters']
+    hparams = x["hyper_parameters"]
 
     hparams_to_report = hparams["cost_config"]
     hparams_to_report["seed"] = hparams["training_config"]["seed"]
@@ -68,9 +67,11 @@ def main():
             hparams, success_rate = get_results(root)
             if success_rate is not None:
                 writer.add_hparams(
-                    hparams, {"hparam/success_rate": success_rate},
+                    hparams,
+                    {"hparam/success_rate": success_rate},
                 )
-                print(f'wrote {root}')
+                print(f"wrote {root}")
+
 
 if __name__ == "__main__":
     main()

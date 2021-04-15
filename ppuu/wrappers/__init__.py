@@ -1,1 +1,1 @@
-from ppuu.wrappers.wrappers import ForwardModel, ForwardModelKM
+from ppuu.wrappers.wrappers import ForwardModel, ForwardModelKM  # noqa

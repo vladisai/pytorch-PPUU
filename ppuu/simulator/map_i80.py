@@ -1,15 +1,15 @@
 # from os import getpid, system
+import bisect
+import os
+import pickle
 from os.path import isfile
 
+import numpy as np
+import pandas as pd
+import pygame
 import torch
 
-from ppuu.simulator.traffic_gym import Simulator, Car, colours
-import pygame
-import pandas as pd
-import numpy as np
-import bisect
-import pickle
-import os
+from ppuu.simulator.traffic_gym import Car, Simulator, colours
 
 # Conversion LANE_W from real world to pixels
 # A US highway lane width is 3.7 metres, here 50 pixels

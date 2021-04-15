@@ -1,30 +1,34 @@
-import argparse, pdb
+import argparse
+import os
+import random
+
 import gym
 import numpy as np
-import os
-import pickle
-import random
 import torch
-import scipy.misc
 from gym.envs.registration import register
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-display', type=int, default=0)
-parser.add_argument('-seed', type=int, default=1)
-parser.add_argument('-lanes', type=int, default=3)
-parser.add_argument('-traffic_rate', type=int, default=15)
-parser.add_argument('-state_image', type=int, default=1)
-parser.add_argument('-save_images', type=int, default=0)
-parser.add_argument('-store', type=int, default=1)
-parser.add_argument('-data_dir', type=str, required=True)
-parser.add_argument('-fps', type=int, default=30)
-parser.add_argument('-time_slot', type=int, default=0)
-parser.add_argument('-map', type=str, default='i80', choices={'ai', 'i80', 'us101', 'lanker', 'peach'})
-parser.add_argument('-delta_t', type=float, default=0.1)
+parser.add_argument("-display", type=int, default=0)
+parser.add_argument("-seed", type=int, default=1)
+parser.add_argument("-lanes", type=int, default=3)
+parser.add_argument("-traffic_rate", type=int, default=15)
+parser.add_argument("-state_image", type=int, default=1)
+parser.add_argument("-save_images", type=int, default=0)
+parser.add_argument("-store", type=int, default=1)
+parser.add_argument("-data_dir", type=str, required=True)
+parser.add_argument("-fps", type=int, default=30)
+parser.add_argument("-time_slot", type=int, default=0)
+parser.add_argument(
+    "-map",
+    type=str,
+    default="i80",
+    choices={"ai", "i80", "us101", "lanker", "peach"},
+)
+parser.add_argument("-delta_t", type=float, default=0.1)
 opt = parser.parse_args()
 
-opt.state_image = (opt.state_image == 1)
-opt.store = (opt.store == 1)
+opt.state_image = opt.state_image == 1
+opt.store = opt.store == 1
 
 random.seed(opt.seed)
 np.random.seed(opt.seed)
@@ -44,44 +48,40 @@ kwargs = dict(
 )
 
 register(
-    id='Traffic-v0',
-    entry_point='ppuu.simulator.traffic_gym:Simulator',
-    kwargs=kwargs
+    id="Traffic-v0",
+    entry_point="ppuu.simulator.traffic_gym:Simulator",
+    kwargs=kwargs,
 )
 
-register(
-    id='I-80-v0',
-    entry_point='ppuu.simulator.map_i80:I80',
-    kwargs=kwargs
-)
+register(id="I-80-v0", entry_point="ppuu.simulator.map_i80:I80", kwargs=kwargs)
 
 gym.envs.registration.register(
-    id='US-101-v0',
-    entry_point='ppuu.simulator.map_us101:US101',
+    id="US-101-v0",
+    entry_point="ppuu.simulator.map_us101:US101",
     kwargs=kwargs,
 )
 
 gym.envs.registration.register(
-    id='Lankershim-v0',
-    entry_point='ppuu.simulator.map_lanker:Lankershim',
+    id="Lankershim-v0",
+    entry_point="ppuu.simulator.map_lanker:Lankershim",
     kwargs=kwargs,
 )
 
 gym.envs.registration.register(
-    id='Peachtree-v0',
-    entry_point='ppuu.simulator.map_peach:Peachtree',
+    id="Peachtree-v0",
+    entry_point="ppuu.simulator.map_peach:Peachtree",
     kwargs=kwargs,
 )
 
 env_names = {
-    'ai': 'Traffic-v0',
-    'i80': 'I-80-v0',
-    'us101': 'US-101-v0',
-    'lanker': 'Lankershim-v0',
-    'peach': 'Peachtree-v0',
+    "ai": "Traffic-v0",
+    "i80": "I-80-v0",
+    "us101": "US-101-v0",
+    "lanker": "Lankershim-v0",
+    "peach": "Peachtree-v0",
 }
 
-print('Building the environment (loading data, if any)')
+print("Building the environment (loading data, if any)")
 env = gym.make(env_names[opt.map])
 
 env.reset(frame=0, time_slot=opt.time_slot)
@@ -90,4 +90,4 @@ while not done:
     observation, reward, done, info = env.step()
     env.render()
 
-print(f'Data generation for <{opt.map}, time slot {opt.time_slot}> completed')
+print(f"Data generation for <{opt.map}, time slot {opt.time_slot}> completed")
