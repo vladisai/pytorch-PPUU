@@ -80,7 +80,7 @@ class DimensionalityReduction:
 
     @staticmethod
     def get_episode_features(experiment, seed, checkpoint, episode):
-        """ Get features for one episode
+        """Get features for one episode
         This is used for dimensionality reduction, which is later used for
         scatter plotting.
         """
@@ -107,7 +107,7 @@ class DimensionalityReduction:
 
     @staticmethod
     def get_model_failing_features(experiment, seed, checkpoint):
-        """ Get features for one model
+        """Get features for one model
         This is used for dimensionality reduction, which is later used for
         scatter plotting.
         """
@@ -159,7 +159,7 @@ class DimensionalityReduction:
 
     @staticmethod
     def get_dimensionality_reduction_data():
-        """ Get features for all models
+        """Get features for all models
         This is used for dimensionality reduction, which is later used for
         scatter plotting.
         """

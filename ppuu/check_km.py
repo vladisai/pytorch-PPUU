@@ -47,15 +47,12 @@ class Config(configs.ConfigBase):
     diff: bool = False
 
 
-
 def predict_all_states(predictor, states, actions, normalizer):
     last_state = states[:, -1]
     predicted_states = []
     for i in range(actions.shape[1]):
         next_action = actions[:, i]
-        predicted_state = predictor(
-            last_state, next_action, normalizer 
-        )
+        predicted_state = predictor(last_state, next_action, normalizer)
         last_state = predicted_state
         predicted_states.append(predicted_state.squeeze(1))
     return torch.stack(predicted_states, dim=1)
@@ -99,7 +96,11 @@ def main(config):
     )
     normalizer = dataloader.Normalizer(data_store.stats)
     dataset.random.seed(24)
-    loader = DataLoader(dataset, batch_size=1, num_workers=0,)
+    loader = DataLoader(
+        dataset,
+        batch_size=1,
+        num_workers=0,
+    )
 
     model = None
     if config.model:
@@ -115,7 +116,7 @@ def main(config):
 
     if config.path is not None:
         m_config = FM.Config()
-        m_config.model.fm_type = 'km'
+        m_config.model.fm_type = "km"
         m_config.model.checkpoint = config.path
         m_config.training.enable_latent = True
         m_config.training.diffs = False
@@ -193,7 +194,8 @@ def main(config):
                     1 - cos_loss(predicted_directions, target_directions)
                 ).mean()
                 pos += F.mse_loss(
-                    predicted_states[:, :, 0:2], b["target_states"][:, :, 0:2],
+                    predicted_states[:, :, 0:2],
+                    b["target_states"][:, :, 0:2],
                 ).mean()
                 cntr += 1
 

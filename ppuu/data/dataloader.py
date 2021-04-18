@@ -321,7 +321,6 @@ class EvaluationDataset(torch.utils.data.Dataset):
                 test=splits.get("test_indx"),
             )
 
-
         car_sizes_path = os.path.join(data_dir, "car_sizes.pth")
         self.car_sizes = torch.load(car_sizes_path)
         self.split = split
@@ -409,7 +408,14 @@ class Normalizer:
 
     @classmethod
     def dummy(cls):
-        return cls(dict(s_mean=torch.zeros(5), a_mean=torch.zeros(2), s_std=torch.ones(5), a_std=torch.ones(2)))
+        return cls(
+            dict(
+                s_mean=torch.zeros(5),
+                a_mean=torch.zeros(2),
+                s_std=torch.ones(5),
+                a_std=torch.ones(2),
+            )
+        )
 
     def states_to_diffs(self, states):
         """ First two numbers are pixels"""
@@ -505,20 +511,19 @@ class UnitConverter:
     def pixels_per_s_to_kmph(cls, x):
         return cls.pixels_to_m(x) / 1000 * 60 * 60
 
+    @classmethod
+    def kmph_to_pixels_per_s(cls, x):
+        return cls.m_to_pixels(1000 * x) / 60 / 60
+
 
 def overlay_ego_car(images, ego_car):
     ego_car_new_shape = [*images.shape]
     ego_car_new_shape[2] = 1
-    input_ego_car = ego_car[:, 2][:, None, None].expand(
-        ego_car_new_shape
-    )
-    input_images_with_ego = torch.cat(
-        (images.clone(), input_ego_car), dim=2
-    )
+    input_ego_car = ego_car[:, 2][:, None, None].expand(ego_car_new_shape)
+    input_images_with_ego = torch.cat((images.clone(), input_ego_car), dim=2)
     return input_images_with_ego
 
 
 if __name__ == "__main__":
     ds = DataStore("i80")
     d = Dataset(ds, "train", 20, 30, 100)
-

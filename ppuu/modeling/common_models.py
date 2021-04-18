@@ -118,9 +118,7 @@ class Encoder(nn.Module):
                 h.size()
             )
         if actions is not None:
-            a = self.a_encoder(
-                actions.contiguous().view(bsize, self.a_size)
-            )
+            a = self.a_encoder(actions.contiguous().view(bsize, self.a_size))
             h = h + a.view(h.size())
         return h
 
@@ -204,7 +202,11 @@ class Decoder(nn.Module):
             nn.Dropout2d(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
             nn.ConvTranspose2d(
-                self.feature_maps[1], self.feature_maps[2], (5, 5), 2, (0, 1),
+                self.feature_maps[1],
+                self.feature_maps[2],
+                (5, 5),
+                2,
+                (0, 1),
             ),
             nn.Dropout2d(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
@@ -216,7 +218,13 @@ class Decoder(nn.Module):
             # nn.GroupNorm(self.n_feature // GROUP_NORM_ELEMENTS, self.n_feature),
             nn.Dropout2d(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(self.n_feature, self.n_feature, (4, 1), (2, 1), 0,),
+            nn.Conv2d(
+                self.n_feature,
+                self.n_feature,
+                (4, 1),
+                (2, 1),
+                0,
+            ),
             nn.Dropout2d(p=self.dropout, inplace=True),
             nn.LeakyReLU(0.2, inplace=True),
         )

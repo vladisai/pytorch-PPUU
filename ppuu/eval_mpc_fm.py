@@ -56,6 +56,7 @@ class EvalMPCConfig(configs.ConfigBase):
     dataset_partition: str = "test"
     pass_gt_future: bool = False
 
+
 def main(config):
     if config.num_processes > 0:
         try:
@@ -109,12 +110,11 @@ def main(config):
 
     normalizer = dataloader.Normalizer(test_dataset.stats)
 
-    forward_model.model.device = torch.device('cuda')
+    forward_model.model.device = torch.device("cuda")
 
-
-    if config.cost_type == 'vanilla':
+    if config.cost_type == "vanilla":
         Type = PolicyCost
-    elif config.cost_type == 'continuous':
+    elif config.cost_type == "continuous":
         Type = PolicyCostContinuous
 
     cost = Type(config.cost, forward_model.model, normalizer)

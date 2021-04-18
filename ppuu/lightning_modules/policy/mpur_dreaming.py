@@ -30,14 +30,12 @@ class MPURDreamingModule(MPURModule):
     def get_adversarial_z(self, batch):
         if self.config.training.init_z_with_zero:
             z = torch.zeros(
-                self.config.model.n_pred
-                * self.config.training.batch_size,
+                self.config.model.n_pred * self.config.training.batch_size,
                 32,
             ).to(self.device)
         else:
             z = self.forward_model.sample_z(
-                self.config.model.n_pred
-                * self.config.training.batch_size
+                self.config.model.n_pred * self.config.training.batch_size
             ).to(self.device)
         z = z.view(
             self.config.training.batch_size,
@@ -123,7 +121,7 @@ class MPURDreamingModule(MPURModule):
             if optimizer_idx != 0:
                 # We don't use extra optimizers unless we're doing adversarial
                 # z.
-                print('zero')
+                print("zero")
                 return {"loss": torch.tensor(0.0, requires_grad=True)}
             predictions = self(batch)
             cost, components = self.policy_cost.calculate_z_cost(
@@ -133,7 +131,11 @@ class MPURDreamingModule(MPURModule):
         loss = self.policy_cost.calculate_cost(batch, predictions)
         for k in loss:
             self.log(
-                "train_" + k, loss[k], on_step=True, logger=True, prog_bar=True,
+                "train_" + k,
+                loss[k],
+                on_step=True,
+                logger=True,
+                prog_bar=True,
             )
         return loss["policy_loss"]
 
@@ -142,17 +144,14 @@ class MPURDreamingModule(MPURModule):
             self.policy_model.parameters(),
             self.config.training.learning_rate,
         )
-        return [
-            optimizer
-        ] * self.config.training.n_adversarial_policy_updates
+        return [optimizer] * self.config.training.n_adversarial_policy_updates
 
 
 @inject(cost_type=PolicyCostContinuous)
 class MPURDreamingLBFGSModule(MPURDreamingModule):
     def get_adversarial_z(self, batch):
         z = self.forward_model.sample_z(
-            self.config.model.n_pred
-            * self.config.training.batch_size
+            self.config.model.n_pred * self.config.training.batch_size
         )
         z = z.view(
             self.config.training.batch_size,

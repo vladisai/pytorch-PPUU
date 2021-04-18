@@ -77,18 +77,21 @@ class Picker(widgets.VBox):
         if level >= Picker.MODEL_LEVEL:
 
             self.version_dropdown = widgets.Dropdown(
-                description="Seed:", disabled=True,
+                description="Seed:",
+                disabled=True,
             )
             children.append(self.version_dropdown)
 
             self.checkpoint_dropdown = widgets.Dropdown(
-                description="Checkpoint:", disabled=True,
+                description="Checkpoint:",
+                disabled=True,
             )
             children.append(self.checkpoint_dropdown)
 
         if level >= Picker.EPISODE_LEVEL:
             self.episode_dropdown = widgets.Dropdown(
-                description="Episode:", disabled=True,
+                description="Episode:",
+                disabled=True,
             )
             children.append(self.episode_dropdown)
 
@@ -98,8 +101,10 @@ class Picker(widgets.VBox):
             if change.name == "value" and change.new is not None:
                 self.ignore_updates = True
                 if level >= Picker.MODEL_LEVEL:
-                    self.version_dropdown.options = DataReader.find_experiment_versions(  # noqa: E501
-                        experiment=self.experiment_dropdown.value,
+                    self.version_dropdown.options = (
+                        DataReader.find_experiment_versions(  # noqa: E501
+                            experiment=self.experiment_dropdown.value,
+                        )
                     )
                     self.version_dropdown.value = None
                     self.version_dropdown.disabled = False
@@ -114,9 +119,11 @@ class Picker(widgets.VBox):
                 return
             if change.name == "value" and change.new is not None:
                 self.ignore_updates = True
-                self.checkpoint_dropdown.options = DataReader.find_version_checkpoints(  # noqa: E501
-                    experiment=self.experiment_dropdown.value,
-                    version=self.version_dropdown.value,
+                self.checkpoint_dropdown.options = (
+                    DataReader.find_version_checkpoints(  # noqa: E501
+                        experiment=self.experiment_dropdown.value,
+                        version=self.version_dropdown.value,
+                    )
                 )
                 self.checkpoint_dropdown.value = None
                 self.checkpoint_dropdown.disabled = False
@@ -129,10 +136,12 @@ class Picker(widgets.VBox):
             if change.name == "value" and change.new is not None:
                 self.ignore_updates = True
                 if level >= Picker.EPISODE_LEVEL:
-                    self.episode_dropdown.options = DataReader.find_checkpoint_episodes(  # noqa: E501
-                        experiment=self.experiment_dropdown.value,
-                        version=self.version_dropdown.value,
-                        checkpoint=self.checkpoint_dropdown.value,
+                    self.episode_dropdown.options = (
+                        DataReader.find_checkpoint_episodes(  # noqa: E501
+                            experiment=self.experiment_dropdown.value,
+                            version=self.version_dropdown.value,
+                            checkpoint=self.checkpoint_dropdown.value,
+                        )
                     )
                     self.episode_dropdown.value = None
                     self.episode_dropdown.disabled = False
@@ -254,10 +263,10 @@ class PolicyComparison(widgets.VBox):
             #     scales=self.scales,
             # )
             # marks.append(between_fill)
-            for i in range(len(result['values'])):
+            for i in range(len(result["values"])):
                 line = Lines(
-                    x=result['values'][i][0],
-                    y=result['values'][i][1],
+                    x=result["values"][i][0],
+                    y=result["values"][i][1],
                     scales=self.scales,
                     colors=[c],
                     display_legend=(i == 0),
@@ -286,7 +295,9 @@ class EpisodeReview(widgets.VBox):
             interval=10,
         )
         self.update_interval_slider = widgets.IntSlider(
-            min=1, max=300, value=30,
+            min=1,
+            max=300,
+            value=30,
         )
         self.update_interval_box = widgets.HBox(
             [
@@ -318,10 +329,14 @@ class EpisodeReview(widgets.VBox):
         )
 
         self.episode_gradient_image = widgets.Image(
-            format="png", width=120, height=600,
+            format="png",
+            width=120,
+            height=600,
         )
         self.episode_image = widgets.Image(
-            format="png", width=120, height=600,
+            format="png",
+            width=120,
+            height=600,
         )
 
         x_sc = bq.LinearScale()
@@ -419,9 +434,9 @@ class EpisodeReview(widgets.VBox):
                 )
                 if change.new >= gradient_shift:
                     if len(self.gradient_images) > change.new - gradient_shift:
-                        self.episode_gradient_image.value = self.gradient_images[
-                            change.new - gradient_shift
-                        ]
+                        self.episode_gradient_image.value = (
+                            self.gradient_images[change.new - gradient_shift]
+                        )
                 self.episode_image.value = self.images[change.new]
                 self.update_timestamp_line(change.new)
 
@@ -563,7 +578,7 @@ class DimensionalityReductionPlot(widgets.VBox):
 
     def update(self, experiment, version, step):
         """updates the scatter plot.
-        This method is called by the model picker """
+        This method is called by the model picker"""
         self.experiment = experiment
         self.version = version
         self.step = step
@@ -694,7 +709,9 @@ class HeatMapComparison(widgets.VBox):
                 "row": OrdinalScale(),
                 "column": OrdinalScale(),
                 "color": ColorScale(
-                    colors=["orange", "red", "green", "blue"], min=0, max=3,
+                    colors=["orange", "red", "green", "blue"],
+                    min=0,
+                    max=3,
                 ),
             },
             display_legend=False,
@@ -791,7 +808,9 @@ class EpisodeVisualizer(widgets.VBox):
             interval=10,
         )
         self.update_interval_slider = widgets.IntSlider(
-            min=1, max=300, value=30,
+            min=1,
+            max=300,
+            value=30,
         )
         self.update_interval_box = widgets.HBox(
             [
@@ -829,7 +848,9 @@ class EpisodeVisualizer(widgets.VBox):
         )
 
         self.episode_image = widgets.Image(
-            format="png", width=120, height=600,
+            format="png",
+            width=120,
+            height=600,
         )
 
         def episode_slider_callback(change):

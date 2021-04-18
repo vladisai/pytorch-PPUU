@@ -43,7 +43,9 @@ if __name__ == "__main__":
     # c_dict["lr"] = c_dict["iter_reach_value"] / c_dict["n_iter"]
     # unfold_len is how many seconds into the future we want to see
     if "mpc.unfold_len" in c_dict and "mpc.timestep" in c_dict:
-        c_dict["mpc.unfold_len"] = int(c_dict["mpc.unfold_len"] / c_dict["mpc.timestep"])
+        c_dict["mpc.unfold_len"] = int(
+            c_dict["mpc.unfold_len"] / c_dict["mpc.timestep"]
+        )
 
     print(c_dict)
 
@@ -74,7 +76,9 @@ if __name__ == "__main__":
         "mean_time": results["stats"]["mean_time"],
         "mean_distance": results["stats"]["mean_distance"],
         "mean_proximity_cost": results["stats"]["mean_proximity_cost"],
-        "mean_pixel_proximity_cost": results["stats"]["mean_pixel_proximity_cost"],
+        "mean_pixel_proximity_cost": results["stats"][
+            "mean_pixel_proximity_cost"
+        ],
         "mean_lane_cost": results["stats"]["mean_lane_cost"],
     }
 

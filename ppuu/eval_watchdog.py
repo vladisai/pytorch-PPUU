@@ -34,9 +34,13 @@ def should_run(checkpoint, contains_filter):
             if i in checkpoint:
                 res = True
     # check if evaluation result file is already there
-    results_path = os.path.join(checkpoint.replace("checkpoints", "evaluation_results"), "evaluation_results.json",)
+    results_path = os.path.join(
+        checkpoint.replace("checkpoints", "evaluation_results"),
+        "evaluation_results.json",
+    )
     alt_results_path = os.path.join(
-        checkpoint.replace("checkpoints", "evaluation_results"), "evaluation_results_symbolic.json",
+        checkpoint.replace("checkpoints", "evaluation_results"),
+        "evaluation_results_symbolic.json",
     )
     if os.path.exists(results_path):
         res = False
@@ -51,7 +55,11 @@ def should_run(checkpoint, contains_filter):
 
 def submit(executor, path, config):
     print("submitting", path)
-    config = eval_policy.EvalConfig(checkpoint_path=path, num_processes=8, dataset=config.dataset,)
+    config = eval_policy.EvalConfig(
+        checkpoint_path=path,
+        num_processes=8,
+        dataset=config.dataset,
+    )
     return executor.submit(eval_policy.main, config)
 
 
@@ -70,7 +78,9 @@ def main():
     contains_filter = config.contains_filter.split(",")
     print(contains_filter)
 
-    executor = slurm.get_executor(job_name="eval", cpus_per_task=8, cluster=config.cluster)
+    executor = slurm.get_executor(
+        job_name="eval", cpus_per_task=8, cluster=config.cluster
+    )
     executor.update_parameters(slurm_time="2:00:00")
 
     already_run = []

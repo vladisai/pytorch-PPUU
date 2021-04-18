@@ -294,7 +294,10 @@ class FwdCNN_VAE(FwdCNN):
             )
         batch_size = input_images.size(0)
         z_exp = self.z_expander(z).view(
-            batch_size, self.nfeature, self.h_height, self.h_width,
+            batch_size,
+            self.nfeature,
+            self.h_height,
+            self.h_width,
         )
         h = self.encode(input_images, input_states, action) + z_exp
         pred_image, pred_state = self.decoder(h)
@@ -317,7 +320,11 @@ class FwdCNN_VAE(FwdCNN):
     ):
         if not self.enable_latent:
             return super().forward(
-                inputs, actions, targets, sampling, z_dropout,
+                inputs,
+                actions,
+                targets,
+                sampling,
+                z_dropout,
             )
         input_images, input_states = inputs
         bsize = input_images.size(0)

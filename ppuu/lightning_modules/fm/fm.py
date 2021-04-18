@@ -10,9 +10,14 @@ from torch.nn import functional as F
 
 from ppuu.modeling import get_fm
 from ppuu import configs
-from ppuu.modeling.km import predict_states_diff, predict_states, StatePredictor
+from ppuu.modeling.km import (
+    predict_states_diff,
+    predict_states,
+    StatePredictor,
+)
 
 from ppuu.data.dataloader import Normalizer
+
 
 @dataclass
 class ModelConfig(configs.ConfigBase):
@@ -99,7 +104,8 @@ class FM(pl.LightningModule):
         training: TrainingConfig = TrainingConfig()
 
     def __init__(
-        self, hparams=None,
+        self,
+        hparams=None,
     ):
         super().__init__()
         self.set_hparams(hparams)
@@ -149,14 +155,24 @@ class FM(pl.LightningModule):
     def shared_step(self, batch):
         predictions = self(batch)
         if self.config.model.huber_loss:
-            states_loss = F.smooth_l1_loss(batch["target_states"], predictions.pred_states)
+            states_loss = F.smooth_l1_loss(
+                batch["target_states"], predictions.pred_states
+            )
         else:
-            states_loss = F.mse_loss(batch["target_states"], predictions.pred_states)
+            states_loss = F.mse_loss(
+                batch["target_states"], predictions.pred_states
+            )
         images_loss = (
-            ((batch["target_images"] - predictions.pred_images) ** 2).view(*batch["actions"].shape[:2], -1).mean(dim=-1)
+            ((batch["target_images"] - predictions.pred_images) ** 2)
+            .view(*batch["actions"].shape[:2], -1)
+            .mean(dim=-1)
         )
         if self.config.training.rebalance:
-            ranking = torch.clamp(torch.exp(0.5 * batch["actions"].abs()[:, :, 1].pow(2)), min=1, max=10,)
+            ranking = torch.clamp(
+                torch.exp(0.5 * batch["actions"].abs()[:, :, 1].pow(2)),
+                min=1,
+                max=10,
+            )
             rebalanced_images_loss = (images_loss * ranking).mean()
         else:
             rebalanced_images_loss = -1
@@ -176,9 +192,18 @@ class FM(pl.LightningModule):
         )
 
     def training_step(self, batch, batch_idx):
-        (states_loss, images_loss, rebalanced_images_loss, p_loss,) = self.shared_step(batch)
+        (
+            states_loss,
+            images_loss,
+            rebalanced_images_loss,
+            p_loss,
+        ) = self.shared_step(batch)
         if self.config.training.rebalance:
-            loss = rebalanced_images_loss + states_loss + self.config.model.beta * p_loss
+            loss = (
+                rebalanced_images_loss
+                + states_loss
+                + self.config.model.beta * p_loss
+            )
         else:
             loss = images_loss + states_loss + self.config.model.beta * p_loss
 
@@ -204,8 +229,12 @@ class FM(pl.LightningModule):
         shared_losses = self.shared_step(batch)
 
         predictions = self.model.unfold(batch["actions"], batch)
-        states_loss = F.mse_loss(batch["target_states"], predictions["pred_states"])
-        images_loss = F.mse_loss(batch["target_images"], predictions["pred_images"])
+        states_loss = F.mse_loss(
+            batch["target_states"], predictions["pred_states"]
+        )
+        images_loss = F.mse_loss(
+            batch["target_images"], predictions["pred_images"]
+        )
         loss = images_loss + states_loss
         logs = {
             "val_unfold_states_loss": states_loss,
@@ -231,10 +260,18 @@ class FM(pl.LightningModule):
     @pl.loggers.base.rank_zero_only
     def _check_plateau(self, value):
         self.plateau_detector.update(value)
-        if self.config.training.auto_enable_latent and self.plateau_detector.detected():
+        if (
+            self.config.training.auto_enable_latent
+            and self.plateau_detector.detected()
+        ):
             self.model.set_enable_latent(True)
             print("enabled the latent!")
-        self.logger.experiment.log({"latent_enabled": float(self.model.enable_latent) + torch.rand(1).item() * 0.05})
+        self.logger.experiment.log(
+            {
+                "latent_enabled": float(self.model.enable_latent)
+                + torch.rand(1).item() * 0.05
+            }
+        )
 
     def set_hparams(self, hparams=None):
         if hparams is None:
@@ -255,6 +292,8 @@ class FM(pl.LightningModule):
             * (64 / self.config.training.batch_size),
         )
         scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, self.config.training.decay_period, self.config.training.decay,
+            optimizer,
+            self.config.training.decay_period,
+            self.config.training.decay,
         )
         return [optimizer], [scheduler]

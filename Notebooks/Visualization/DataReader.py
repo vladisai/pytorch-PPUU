@@ -342,7 +342,12 @@ class DataReader:
         mx = [float(np.min(results[x])) for x in keys]
         mn = [float(np.max(results[x])) for x in keys]
         values = [list(zip(*sorted(v))) for _, v in results_lines.items()]
-        result = dict(checkpoints=keys, mx=mx, mn=mn, values=values,)
+        result = dict(
+            checkpoints=keys,
+            mx=mx,
+            mn=mn,
+            values=values,
+        )
         return result
 
     @staticmethod
@@ -413,8 +418,8 @@ class DataReader:
 
     @staticmethod
     def get_episode_costs(experiment, seed, checkpoint, episode):
-        """ Returns an array of data frames with all the costs for
-        given evaluation """
+        """Returns an array of data frames with all the costs for
+        given evaluation"""
         costs = DataReader.get_model_costs(experiment, seed, checkpoint)
         if costs is not None:
             return costs[episode - 1]

@@ -42,8 +42,6 @@ if __name__ == "__main__":
         c_dict["masks_power_y"] = c_dict["powers"]
         del c_dict["powers"]
 
-
-
     c_dict["lr"] = c_dict["iter_reach_value"] / c_dict["n_iter"]
     # unfold_len is how many seconds into the future we want to see
     c_dict["unfold_len"] = int(c_dict["unfold_len"] / c_dict["timestep"])
@@ -81,7 +79,9 @@ if __name__ == "__main__":
         "mean_time": results["stats"]["mean_time"],
         "mean_distance": results["stats"]["mean_distance"],
         "mean_proximity_cost": results["stats"]["mean_proximity_cost"],
-        "mean_pixel_proximity_cost": results["stats"]["mean_pixel_proximity_cost"],
+        "mean_pixel_proximity_cost": results["stats"][
+            "mean_pixel_proximity_cost"
+        ],
         "mean_lane_cost": results["stats"]["mean_lane_cost"],
     }
 

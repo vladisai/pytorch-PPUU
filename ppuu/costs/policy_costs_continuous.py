@@ -32,18 +32,52 @@ class PolicyCostContinuous(PolicyCost):
         max_x = torch.ceil((crop_h - length) / 2)
         #    max_y = torch.ceil((crop_w - width) / 2)
         max_y = torch.ceil(torch.zeros(width.size()).fill_(crop_w) / 2)
-        max_x = max_x.view(bsize, 1).expand(bsize, npred).contiguous().view(bsize * npred).cuda()
-        max_y = max_y.view(bsize, 1).expand(bsize, npred).contiguous().view(bsize * npred).cuda()
-        min_y = torch.ceil(crop_w / 2 - width)  # assumes other._width / 2 = self._width / 2
-        min_y = min_y.view(bsize, 1).expand(bsize, npred).contiguous().view(bsize * npred).cuda()
+        max_x = (
+            max_x.view(bsize, 1)
+            .expand(bsize, npred)
+            .contiguous()
+            .view(bsize * npred)
+            .cuda()
+        )
+        max_y = (
+            max_y.view(bsize, 1)
+            .expand(bsize, npred)
+            .contiguous()
+            .view(bsize * npred)
+            .cuda()
+        )
+        min_y = torch.ceil(
+            crop_w / 2 - width
+        )  # assumes other._width / 2 = self._width / 2
+        min_y = (
+            min_y.view(bsize, 1)
+            .expand(bsize, npred)
+            .contiguous()
+            .view(bsize * npred)
+            .cuda()
+        )
         x_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_h))) * crop_h / 2
 
-        x_filter = x_filter.unsqueeze(0).expand(bsize * npred, crop_h).type(car_size.type()).cuda()
-        x_filter = torch.min(x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size()))
-        x_filter = (x_filter == max_x.unsqueeze(1).expand(x_filter.size())).float()
+        x_filter = (
+            x_filter.unsqueeze(0)
+            .expand(bsize * npred, crop_h)
+            .type(car_size.type())
+            .cuda()
+        )
+        x_filter = torch.min(
+            x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size())
+        )
+        x_filter = (
+            x_filter == max_x.unsqueeze(1).expand(x_filter.size())
+        ).float()
 
         y_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_w))) * crop_w / 2
-        y_filter = y_filter.view(1, crop_w).expand(bsize * npred, crop_w).type(car_size.type()).cuda()
+        y_filter = (
+            y_filter.view(1, crop_w)
+            .expand(bsize * npred, crop_w)
+            .type(car_size.type())
+            .cuda()
+        )
         #    y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
         y_filter = torch.max(y_filter, min_y.view(bsize * npred, 1))
         y_filter = (y_filter - min_y.view(bsize * npred, 1)) / (
@@ -52,18 +86,31 @@ class PolicyCostContinuous(PolicyCost):
         x_filter = x_filter.cuda()
         y_filter = y_filter.cuda()
         x_filter = x_filter.type(y_filter.type())
-        proximity_mask = torch.bmm(x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w))
+        proximity_mask = torch.bmm(
+            x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w)
+        )
         proximity_mask = proximity_mask.view(bsize, npred, crop_h, crop_w)
         proximity_mask = proximity_mask ** 2
         mask_sum = proximity_mask.sum(dim=(-1, -2))
         images = images.view(bsize, npred, nchannels, crop_h, crop_w)
-        costs = torch.sum((proximity_mask * images[:, :, 0].float()).view(bsize, npred, -1), 2,) / mask_sum
+        costs = (
+            torch.sum(
+                (proximity_mask * images[:, :, 0].float()).view(
+                    bsize, npred, -1
+                ),
+                2,
+            )
+            / mask_sum
+        )
         return costs.view(bsize, npred), proximity_mask
 
     def compute_offroad_cost(self, images, proximity_mask):
         bsize, npred, nchannels, crop_h, crop_w = images.size()
         images = images.view(bsize, npred, nchannels, crop_h, crop_w)
-        costs = torch.sum((proximity_mask * images[:, :, 2].float()).view(bsize, npred, -1), 2,)
+        costs = torch.sum(
+            (proximity_mask * images[:, :, 2].float()).view(bsize, npred, -1),
+            2,
+        )
         return costs.view(bsize, npred)
 
     def compute_contours(self, images):
@@ -74,12 +121,19 @@ class PolicyCostContinuous(PolicyCost):
         if self.config.skip_contours:
             return images[:, 1]
         device = images.device
-        horizontal_filter = torch.tensor([[[0.0], [0.0]], [[-1.0], [1.0]], [[0.0], [0.0]]], device=device,)
+        horizontal_filter = torch.tensor(
+            [[[0.0], [0.0]], [[-1.0], [1.0]], [[0.0], [0.0]]],
+            device=device,
+        )
         horizontal_filter = horizontal_filter.expand(1, 3, 2, 1)
-        vertical_filter = torch.tensor([[0.0, 0.0], [1.0, -1.0], [0.0, 0.0]], device=device).view(3, 1, 2)
+        vertical_filter = torch.tensor(
+            [[0.0, 0.0], [1.0, -1.0], [0.0, 0.0]], device=device
+        ).view(3, 1, 2)
         vertical_filter = vertical_filter.expand(1, 3, 1, 2)
 
-        horizontal = F.conv2d(images, horizontal_filter, stride=1, padding=(1, 0))
+        horizontal = F.conv2d(
+            images, horizontal_filter, stride=1, padding=(1, 0)
+        )
         horizontal = horizontal[:, :, :-1, :]
 
         vertical = F.conv2d(images, vertical_filter, stride=1, padding=(0, 1))
@@ -100,7 +154,13 @@ class PolicyCostContinuous(PolicyCost):
         return result
 
     def compute_proximity_cost(
-        self, images, states, car_size=(6.4, 14.3), green_channel=1, unnormalize=False, clip=False,
+        self,
+        images,
+        states,
+        car_size=(6.4, 14.3),
+        green_channel=1,
+        unnormalize=False,
+        clip=False,
     ):
         device = images.device
 
@@ -130,25 +190,57 @@ class PolicyCostContinuous(PolicyCost):
         max_x = torch.ceil((crop_h - torch.clamp(length - alpha, min=0)) / 2)
         max_y = torch.ceil((crop_w - torch.clamp(width - alpha, min=0)) / 2)
         max_x = (
-            max_x.view(bsize, 1).expand(bsize, npred).contiguous().view(bsize * npred).type(car_size.type()).to(device)
+            max_x.view(bsize, 1)
+            .expand(bsize, npred)
+            .contiguous()
+            .view(bsize * npred)
+            .type(car_size.type())
+            .to(device)
         )
         max_y = (
-            max_y.view(bsize, 1).expand(bsize, npred).contiguous().view(bsize * npred).type(car_size.type()).to(device)
+            max_y.view(bsize, 1)
+            .expand(bsize, npred)
+            .contiguous()
+            .view(bsize * npred)
+            .type(car_size.type())
+            .to(device)
         )
 
         min_x = torch.clamp(max_x - safe_distance, min=0)
-        min_y = torch.ceil(crop_w / 2 - width)  # assumes other._width / 2 = self._width / 2
-        min_y = min_y.view(bsize, 1).expand(bsize, npred).contiguous().view(bsize * npred).to(device)
+        min_y = torch.ceil(
+            crop_w / 2 - width
+        )  # assumes other._width / 2 = self._width / 2
+        min_y = (
+            min_y.view(bsize, 1)
+            .expand(bsize, npred)
+            .contiguous()
+            .view(bsize * npred)
+            .to(device)
+        )
         torch.set_default_tensor_type(torch.FloatTensor)
 
         x_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_h))) * crop_h / 2
-        x_filter = x_filter.unsqueeze(0).expand(bsize * npred, crop_h).type(car_size.type()).to(device)
-        x_filter = torch.min(x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size()))
+        x_filter = (
+            x_filter.unsqueeze(0)
+            .expand(bsize * npred, crop_h)
+            .type(car_size.type())
+            .to(device)
+        )
+        x_filter = torch.min(
+            x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size())
+        )
         x_filter = torch.max(x_filter, min_x.view(bsize * npred, 1))
 
-        x_filter = (x_filter - min_x.view(bsize * npred, 1)) / (max_x - min_x).view(bsize * npred, 1)
+        x_filter = (x_filter - min_x.view(bsize * npred, 1)) / (
+            max_x - min_x
+        ).view(bsize * npred, 1)
         y_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_w))) * crop_w / 2
-        y_filter = y_filter.view(1, crop_w).expand(bsize * npred, crop_w).type(car_size.type()).to(device)
+        y_filter = (
+            y_filter.view(1, crop_w)
+            .expand(bsize * npred, crop_w)
+            .type(car_size.type())
+            .to(device)
+        )
         y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
         y_filter = torch.max(y_filter, min_y.view(bsize * npred, 1))
         y_filter = (y_filter - min_y.view(bsize * npred, 1)) / (
@@ -156,7 +248,9 @@ class PolicyCostContinuous(PolicyCost):
         )
         x_filter = x_filter.type(car_size.type()).to(device)
         y_filter = y_filter.type(car_size.type()).to(device)
-        proximity_mask = torch.bmm(x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w))
+        proximity_mask = torch.bmm(
+            x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w)
+        )
         proximity_mask = proximity_mask.view(bsize, npred, crop_h, crop_w)
         if clip:
             proximity_mask[:, :, 60:] = 0
@@ -187,13 +281,23 @@ class PolicyCostContinuous(PolicyCost):
 
     def compute_state_costs(self, pred_images, pred_states, car_sizes):
         npred = pred_images.size(1)
-        gamma_mask = torch.tensor([0.99 ** t for t in range(npred + 1)]).cuda().unsqueeze(0)
+        gamma_mask = (
+            torch.tensor([0.99 ** t for t in range(npred + 1)])
+            .cuda()
+            .unsqueeze(0)
+        )
         proximity_cost = self.compute_proximity_cost(
-            pred_images, pred_states.data, car_sizes, unnormalize=True, clip=False,
+            pred_images,
+            pred_states.data,
+            car_sizes,
+            unnormalize=True,
+            clip=False,
         )["costs"]
         lane_cost, prox_map_l = self.compute_lane_cost(pred_images, car_sizes)
         mask_sum = prox_map_l.sum(dim=(-1, -2))
-        offroad_cost = self.compute_offroad_cost(pred_images, prox_map_l) / mask_sum
+        offroad_cost = (
+            self.compute_offroad_cost(pred_images, prox_map_l) / mask_sum
+        )
 
         lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred])
         offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred])

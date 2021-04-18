@@ -55,9 +55,7 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
                 *args, name=name, save_dir=save_dir, version=version, **kwargs
             )
         else:
-            super().__init__(
-                *args, offline=True, **kwargs
-            )
+            super().__init__(*args, offline=True, **kwargs)
 
     @pl.loggers.base.rank_zero_only
     def log_metrics(self, metrics, step=None):
@@ -79,7 +77,9 @@ class CustomLoggerWB(pl.loggers.WandbLogger):
         super().save()
         if self.log_dir is not None:
             os.makedirs(self.log_dir, exist_ok=True)
-            logs_json_save_path = os.path.join(self.log_dir, self.json_filename)
+            logs_json_save_path = os.path.join(
+                self.log_dir, self.json_filename
+            )
             dict_to_save = dict(custom=self.custom_logs, logs=self.logs)
             with open(logs_json_save_path, "w") as f:
                 json.dump(dict_to_save, f, indent=4)

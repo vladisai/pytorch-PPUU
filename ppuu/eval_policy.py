@@ -78,7 +78,6 @@ def main(config):
         else:
             config.model_type = checkpoint["hyper_parameters"]["model"][
                 "model_type"
-
             ]
 
     test_dataset = dataloader.EvaluationDataset(

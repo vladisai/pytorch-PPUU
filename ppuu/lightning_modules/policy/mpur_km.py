@@ -21,7 +21,12 @@ from ppuu.data.dataloader import overlay_ego_car
 class MPURKMModule(MPURModule):
     def forward(self, batch):
         self.forward_model.eval()
-        predictions = self.forward_model.unfold_km(self.policy_model, batch, augmenter=self.augmenter, npred=self.config.model.n_pred)
+        predictions = self.forward_model.unfold_km(
+            self.policy_model,
+            batch,
+            augmenter=self.augmenter,
+            npred=self.config.model.n_pred,
+        )
         return predictions
 
 
@@ -47,21 +52,33 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
 
     def on_train_start(self):
         super().on_train_start()
-        self.mpc = MPCKMPolicy(self.forward_model, self.policy_cost, self.normalizer, self.config.model.mpc)
+        self.mpc = MPCKMPolicy(
+            self.forward_model,
+            self.policy_cost,
+            self.normalizer,
+            self.config.model.mpc,
+        )
 
     def training_step(self, batch, batch_idx):
         opt = self.optimizers()
         predictions = self(batch)
-        input_images = overlay_ego_car(batch['input_images'], batch['ego_cars'])
-        mpc_actions = self.mpc(input_images,
-                               batch['input_states'],
-                               car_size=batch['car_sizes'],
-                               init=predictions['pred_actions'],
-                               gt_future=lambda : namedtuple("Future", ["images", "states"])(predictions['pred_images'], predictions['pred_states']),
-                               )
+        input_images = overlay_ego_car(
+            batch["input_images"], batch["ego_cars"]
+        )
+        mpc_actions = self.mpc(
+            input_images,
+            batch["input_states"],
+            car_size=batch["car_sizes"],
+            init=predictions["pred_actions"],
+            gt_future=lambda: namedtuple("Future", ["images", "states"])(
+                predictions["pred_images"], predictions["pred_states"]
+            ),
+        )
 
         loss = self.policy_cost.calculate_cost(batch, predictions)
-        loss["action_norm"] = predictions["pred_actions"].norm(2, 2).pow(2).mean()
+        loss["action_norm"] = (
+            predictions["pred_actions"].norm(2, 2).pow(2).mean()
+        )
         res = loss["policy_loss"].mean()
         for k in loss:
             v = loss[k]
@@ -69,7 +86,11 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
                 v = v.mean()
             if v is not None:
                 self.log(
-                    "train/" + k, v, on_step=True, logger=True, prog_bar=True,
+                    "train/" + k,
+                    v,
+                    on_step=True,
+                    logger=True,
+                    prog_bar=True,
                 )
 
         # We retain the gradient of actions to later log it to wandb.
@@ -80,13 +101,16 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
 
         return res
 
+
 @inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelV3)
 class GTMPURKMTaperV3Module(MPURModule):
-
     def forward(self, batch):
         self.forward_model.eval()
         predictions = self.forward_model.unfold(
-            self.policy_model, batch, augmenter=self.augmenter, npred=self.config.model.n_pred
+            self.policy_model,
+            batch,
+            augmenter=self.augmenter,
+            npred=self.config.model.n_pred,
         )
         return predictions
 

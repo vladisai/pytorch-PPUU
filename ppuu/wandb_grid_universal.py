@@ -20,7 +20,6 @@ from ppuu.data import NGSIMDataModule
 from ppuu import configs
 
 
-
 EPOCHS = 21
 
 
@@ -49,7 +48,9 @@ def run_trial(config, run):
 
         n_checkpoints = 5
         if config.training.n_steps is not None:
-            n_checkpoints = max(n_checkpoints, int(config.training.n_steps / 1e5))
+            n_checkpoints = max(
+                n_checkpoints, int(config.training.n_steps / 1e5)
+            )
 
         period = max(1, config.training.n_epochs // n_checkpoints)
 
@@ -63,7 +64,9 @@ def run_trial(config, run):
             fast_dev_run=config.training.fast_dev_run,
             distributed_backend=config.training.distributed_backend,
             checkpoint_callback=pl.callbacks.ModelCheckpoint(
-                filename="{epoch}_{sample_step}", dirpath=os.path.join(logger.log_dir, "checkpoints"), save_top_k=-1,
+                filename="{epoch}_{sample_step}",
+                dirpath=os.path.join(logger.log_dir, "checkpoints"),
+                save_top_k=-1,
             ),
             logger=logger,
             weights_save_path=logger.log_dir,
@@ -84,10 +87,16 @@ def run_trial(config, run):
 
         trainer.fit(model, datamodule)
 
-        eval_dataset = EvaluationDataset.from_data_store(datamodule.data_store, split="val", size_cap=200)
+        eval_dataset = EvaluationDataset.from_data_store(
+            datamodule.data_store, split="val", size_cap=200
+        )
         model = model.eval()
         evaluator = PolicyEvaluator(
-            eval_dataset, num_processes=0, build_gradients=False, return_episode_data=False, enable_logging=False,
+            eval_dataset,
+            num_processes=0,
+            build_gradients=False,
+            return_episode_data=False,
+            enable_logging=False,
         )
         eval_results = evaluator.evaluate(model)
         logger.save()
@@ -106,7 +115,16 @@ if __name__ == "__main__":
     c_dict = dict(wandb.config)
 
     # translate some params from log scale to normal scale
-    log_params = ["lambda_p", "lambda_l", "lambda_o", "lambda_a", "lambda_j", "u_reg", "mask_coeff", "learning_rate"]
+    log_params = [
+        "lambda_p",
+        "lambda_l",
+        "lambda_o",
+        "lambda_a",
+        "lambda_j",
+        "u_reg",
+        "mask_coeff",
+        "learning_rate",
+    ]
     for k in c_dict:
         if k in log_params:
             if c_dict[k] == -100:
@@ -126,7 +144,9 @@ if __name__ == "__main__":
     config_base = OmegaConf.create(dataclasses.asdict(config_base))
     config_new = OmegaConf.create({"cost": c_dict})
     config_together = OmegaConf.merge(config_base, config_new)
-    config = Module.Config.parse_from_dict(OmegaConf.to_container(config_together))
+    config = Module.Config.parse_from_dict(
+        OmegaConf.to_container(config_together)
+    )
 
     success_rate = run_trial(config, run)
 

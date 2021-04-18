@@ -51,7 +51,9 @@ def main(config):
         fast_dev_run=config.training.fast_dev_run,
         checkpoint_callback=(
             pl.callbacks.ModelCheckpoint(
-                filepath=os.path.join(logger.log_dir, "checkpoints", "{epoch}_{success_rate}"),
+                filepath=os.path.join(
+                    logger.log_dir, "checkpoints", "{epoch}_{success_rate}"
+                ),
                 save_top_k=None,
                 monitor=None,
             )

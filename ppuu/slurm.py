@@ -18,7 +18,9 @@ class SlurmConfig(configs.ConfigBase):
 def parse_from_command_line():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--slurm", action="store_true", help="make this run on slurm",
+        "--slurm",
+        action="store_true",
+        help="make this run on slurm",
     )
     args, _ = parser.parse_known_args()
     return args.slurm

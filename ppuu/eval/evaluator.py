@@ -88,7 +88,9 @@ class PolicyEvaluator:
             mean_distance=results_per_episode_df["distance_travelled"].mean(),
             mean_time=results_per_episode_df["time_travelled"].mean(),
             success_rate=results_per_episode_df["road_completed"].mean(),
-            success_rate_without_fallback=results_per_episode_df["road_completed_without_fallback"].mean(),
+            success_rate_without_fallback=results_per_episode_df[
+                "road_completed_without_fallback"
+            ].mean(),
             success_rate_alt=results_per_episode_df[
                 "road_completed_alt"
             ].mean(),
@@ -177,7 +179,7 @@ class PolicyEvaluator:
                     car_size=car_size,
                     normalize_inputs=True,
                     normalize_outputs=True,
-                    gt_future=lambda : self._get_future_with_no_action(
+                    gt_future=lambda: self._get_future_with_no_action(
                         env, t=policy.config.unfold_len
                     ),
                 )
@@ -193,7 +195,7 @@ class PolicyEvaluator:
 
             # Here we check if the mpc had to use forward model fallback.
             # If it did, we count this as a success.
-            if hasattr(policy, 'fm_fallback') and policy.fm_fallback:
+            if hasattr(policy, "fm_fallback") and policy.fm_fallback:
                 road_completed_without_fallback = True
 
             # env_copy = copy.deepcopy(self.env)
@@ -224,11 +226,14 @@ class PolicyEvaluator:
 
             if self.visualizer is not None:
                 self.visualizer.update(inputs["context"][-1].contiguous())
-                if hasattr(policy.cost, 't_image'):
+                if hasattr(policy.cost, "t_image"):
                     self.visualizer.update_t(
-                        policy.cost.t_image.contiguous(), policy.cost.t_image_data
+                        policy.cost.t_image.contiguous(),
+                        policy.cost.t_image_data,
                     )
-                    self.visualizer.update_c(policy.cost.overlay[0].contiguous())
+                    self.visualizer.update_c(
+                        policy.cost.overlay[0].contiguous()
+                    )
 
             # every second, we save a copy of the environment
             if t % 10 == 0:
@@ -289,7 +294,7 @@ class PolicyEvaluator:
             images.append(inputs["context"].contiguous()[-1])
             states.append(inputs["state"].contiguous()[-1])
             if done:
-                return None # we fall back to using the forward model in this case.
+                return None  # we fall back to using the forward model in this case.
 
         return Future(torch.stack(images), torch.stack(states))
 
@@ -314,7 +319,8 @@ class PolicyEvaluator:
                 unfolding.road_completed and not unfolding.has_collided
             ),
             road_completed_without_fallback=(
-                unfolding.road_completed_without_fallback and not unfolding.has_collided
+                unfolding.road_completed_without_fallback
+                and not unfolding.has_collided
             ),
             road_completed_alt=(
                 unfolding.road_completed and not unfolding.has_collided_ahead
