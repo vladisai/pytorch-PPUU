@@ -1,20 +1,41 @@
 """Costs calculation for policy. Calculates uncertainty and state costs.
 """
-from abc import ABC, abstractmethod
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import torch
 
 from ppuu import configs
+from ppuu.data.entities import StateSequence
 
 
-class PolicyCostBase(ABC):
-    @abstractmethod
-    def calculate_cost(inputs, predictions):
-        pass
+def repeat_expand(x: torch.Tensor, k: int) -> torch.Tensor:
+    """Similar to repeat function along the first dimenstion, but
+    implemented using expand. Used in the uncertainty estimation.
+    """
+    return (
+        x.unsqueeze(0).expand(k, *x.shape).contiguous().view(-1, *x.shape[1:])
+    )
+
+
+class PolicyCostBase:
+    """Base class for policy costs"""
+
+    def calculate_cost(
+        self,
+        conditional_state_seq: StateSequence,
+        actions: torch.Tensor,
+        predicted_state_seq: StateSequence,
+    ):
+        """Base function used to calculate the cost"""
+        raise NotImplementedError()
 
 
 class PolicyCost(PolicyCostBase):
+    """Vanilla cost function. Uses max to get the closest point to the ego car."""
+
     @dataclass
     class Config(configs.ConfigBase):
         """Configuration of cost calculation"""
@@ -35,121 +56,58 @@ class PolicyCost(PolicyCostBase):
         safe_factor: float = 1.5
         skip_contours: bool = True
 
+    class StateCosts(NamedTuple):
+        """Tuple to store the result of state cost calculation.
+        Total costs are tensors of shape bsize.
+        The rest are of shape bsize, npred.
+        """
+
+        total_proximity: torch.Tensor
+        total_lane: torch.Tensor
+        total_offroad: torch.Tensor
+        proximity: torch.Tensor
+        lane: torch.Tensor
+        offroad: torch.Tensor
+
+    class Cost(NamedTuple):
+        """Tuple to store the full result of the cost calculation."""
+
+        state: PolicyCost.StateCosts
+        uncertainty: torch.Tensor
+        action: torch.Tensor
+        jerk: torch.Tensor
+        total: torch.Tensor
+
     def __init__(self, config, forward_model, normalizer):
         self.config = config
         self.forward_model = forward_model
         self.normalizer = normalizer
         self.traj_landscape = False
 
-    def compute_lane_cost(self, images, car_size):
-        SCALE = 0.25
-        bsize, npred, nchannels, crop_h, crop_w = images.size()
-        images = images.view(bsize * npred, nchannels, crop_h, crop_w)
-
-        width, length = car_size[:, 0], car_size[:, 1]  # feet
-        width = width * SCALE * (0.3048 * 24 / 3.7)  # pixels
-        length = length * SCALE * (0.3048 * 24 / 3.7)  # pixels
-
-        # Create separable proximity mask
-        width.fill_(24 * SCALE / 2)
-
-        max_x = torch.ceil((crop_h - length) / 2)
-        #    max_y = torch.ceil((crop_w - width) / 2)
-        max_y = torch.ceil(torch.zeros(width.size()).fill_(crop_w) / 2)
-        max_x = (
-            max_x.view(bsize, 1)
-            .expand(bsize, npred)
-            .contiguous()
-            .view(bsize * npred)
-            .cuda()
-        )
-        max_y = (
-            max_y.view(bsize, 1)
-            .expand(bsize, npred)
-            .contiguous()
-            .view(bsize * npred)
-            .cuda()
-        )
-        min_y = torch.ceil(
-            crop_w / 2 - width
-        )  # assumes other._width / 2 = self._width / 2
-        min_y = (
-            min_y.view(bsize, 1)
-            .expand(bsize, npred)
-            .contiguous()
-            .view(bsize * npred)
-            .cuda()
-        )
-        x_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_h))) * crop_h / 2
-
-        x_filter = (
-            x_filter.unsqueeze(0)
-            .expand(bsize * npred, crop_h)
-            .type(car_size.type())
-            .cuda()
-        )
-
-        x_filter = torch.min(
-            x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size())
-        )
-        x_filter = (
-            x_filter == max_x.unsqueeze(1).expand(x_filter.size())
-        ).float()
-
-        y_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_w))) * crop_w / 2
-        y_filter = (
-            y_filter.view(1, crop_w)
-            .expand(bsize * npred, crop_w)
-            .type(car_size.type())
-            .cuda()
-        )
-        #    y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
-        y_filter = torch.max(y_filter, min_y.view(bsize * npred, 1))
-        y_filter = (y_filter - min_y.view(bsize * npred, 1)) / (
-            max_y.view(bsize * npred, 1) - min_y.view(bsize * npred, 1)
-        )
-        x_filter = x_filter.cuda()
-        y_filter = y_filter.cuda()
-        x_filter = x_filter.type(y_filter.type())
-        proximity_mask = torch.bmm(
-            x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w)
-        )
-        proximity_mask = proximity_mask.view(bsize, npred, crop_h, crop_w)
-        images = images.view(bsize, npred, nchannels, crop_h, crop_w)
-        costs = torch.max(
-            (proximity_mask * images[:, :, 0].float()).view(bsize, npred, -1),
-            2,
-        )[0]
-        return costs.view(bsize, npred), proximity_mask
-
-    def compute_offroad_cost(self, images, proximity_mask):
-        bsize, npred, nchannels, crop_h, crop_w = images.size()
-        images = images.view(bsize, npred, nchannels, crop_h, crop_w)
-        costs = torch.max(
-            (proximity_mask * images[:, :, 2].float()).view(bsize, npred, -1),
-            2,
-        )[0]
-        return costs.view(bsize, npred)
-
-    def compute_proximity_cost(
+    def build_car_proximity_mask(
         self,
-        images,
-        states,
-        car_size=(6.4, 14.3),
-        green_channel=1,
-        unnormalize=False,
-    ):
+        state_seq: StateSequence,
+        unnormalize: bool = False,
+    ) -> torch.Tensor:
+        """Builds mask used for car proximity cost.
+        Returns a tensor (bsize, npred, crop_h, crop_w).
+        """
         SCALE = 0.25
         safe_factor = 1.5
-        bsize, npred, nchannels, crop_h, crop_w = images.size()
-        images = images.view(bsize * npred, nchannels, crop_h, crop_w)
-        states = states.view(bsize * npred, 5).clone()
+        bsize, npred, nchannels, crop_h, crop_w = state_seq.images.size()
+        images = state_seq.images.view(
+            bsize * npred, nchannels, crop_h, crop_w
+        )
+        states = state_seq.states.view(bsize * npred, 5).clone()
 
         if unnormalize:
             states = self.normalizer.unnormalize_states(states)
 
         speed = states[:, 4] * SCALE  # pixel/s
-        width, length = car_size[:, 0], car_size[:, 1]  # feet
+        width, length = (
+            state_seq.car_size[:, 0],
+            state_seq.car_size[:, 1],
+        )  # feet
         width = width * SCALE * (0.3048 * 24 / 3.7)  # pixels
         length = length * SCALE * (0.3048 * 24 / 3.7)  # pixels
 
@@ -195,7 +153,7 @@ class PolicyCost(PolicyCostBase):
         x_filter = (
             x_filter.unsqueeze(0)
             .expand(bsize * npred, crop_h)
-            .type(car_size.type())
+            .type(state_seq.car_size.type())
             .to(images.device)
         )
         x_filter = torch.min(
@@ -210,7 +168,7 @@ class PolicyCost(PolicyCostBase):
         y_filter = (
             y_filter.view(1, crop_w)
             .expand(bsize * npred, crop_w)
-            .type(car_size.type())
+            .type(state_seq.car_size.type())
             .to(images.device)
         )
         y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
@@ -224,129 +182,184 @@ class PolicyCost(PolicyCostBase):
             x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w)
         )
         proximity_mask = proximity_mask.view(bsize, npred, crop_h, crop_w)
-        images = images.view(bsize, npred, nchannels, crop_h, crop_w)
-        costs = torch.max(
-            (proximity_mask * images[:, :, green_channel].float()).view(
-                bsize, npred, -1
-            ),
-            2,
-        )[0]
-        return dict(costs=costs, masks=proximity_mask)
+        return proximity_mask
+
+    def build_lane_offroad_mask(
+        self, state_seq: StateSequence
+    ) -> torch.Tensor:
+        """Builds mask used for calculating lane and offroad costs."""
+        SCALE = 0.25
+        bsize, npred, nchannels, crop_h, crop_w = state_seq.images.size()
+        device = state_seq.images.device
+
+        width, length = (
+            state_seq.car_size[:, 0],
+            state_seq.car_size[:, 1],
+        )  # feet
+        width = width * SCALE * (0.3048 * 24 / 3.7)  # pixels
+        length = length * SCALE * (0.3048 * 24 / 3.7)  # pixels
+
+        # Create separable proximity mask
+        width.fill_(24 * SCALE / 2)
+
+        max_x = torch.ceil((crop_h - length) / 2)
+        #    max_y = torch.ceil((crop_w - width) / 2)
+        max_y = torch.ceil(torch.zeros(width.size()).fill_(crop_w) / 2)
+        max_x = (
+            max_x.view(bsize, 1)
+            .expand(bsize, npred)
+            .contiguous()
+            .view(bsize * npred)
+            .to(device)
+        )
+        max_y = (
+            max_y.view(bsize, 1)
+            .expand(bsize, npred)
+            .contiguous()
+            .view(bsize * npred)
+            .to(device)
+        )
+        min_y = torch.ceil(
+            crop_w / 2 - width
+        )  # assumes other._width / 2 = self._width / 2
+        min_y = (
+            min_y.view(bsize, 1)
+            .expand(bsize, npred)
+            .contiguous()
+            .view(bsize * npred)
+            .to(device)
+        )
+        x_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_h))) * crop_h / 2
+
+        x_filter = (
+            x_filter.unsqueeze(0)
+            .expand(bsize * npred, crop_h)
+            .type(state_seq.car_size.type())
+            .to(device)
+        )
+
+        x_filter = torch.min(
+            x_filter, max_x.view(bsize * npred, 1).expand(x_filter.size())
+        )
+        x_filter = (
+            x_filter == max_x.unsqueeze(1).expand(x_filter.size())
+        ).float()
+
+        y_filter = (1 - torch.abs(torch.linspace(-1, 1, crop_w))) * crop_w / 2
+        y_filter = (
+            y_filter.view(1, crop_w)
+            .expand(bsize * npred, crop_w)
+            .type(state_seq.car_size.type())
+            .to(device)
+        )
+        #    y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
+        y_filter = torch.max(y_filter, min_y.view(bsize * npred, 1))
+        y_filter = (y_filter - min_y.view(bsize * npred, 1)) / (
+            max_y.view(bsize * npred, 1) - min_y.view(bsize * npred, 1)
+        )
+        x_filter = x_filter.to(device)
+        y_filter = y_filter.to(device)
+        x_filter = x_filter.type(y_filter.type())
+        proximity_mask = torch.bmm(
+            x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w)
+        )
+        proximity_mask = proximity_mask.view(bsize, npred, crop_h, crop_w)
+        return proximity_mask
+
+    def _multiply_masks(
+        self, images: torch.Tensor, proximity_mask: torch.Tensor
+    ) -> torch.Tensor:
+        """Given an image of shape bsize, npred, height, width and a mask
+        of same shape, multiplies them, and finds max across images.
+        Returns tensor of shape bsize, npred.
+        """
+        return torch.max(
+            (proximity_mask * images.float()).view(*images.shape[:2], -1), 2
+        )[0].view(*images.shape[:2])
+
+    def compute_lane_cost(
+        self, state_seq: StateSequence, proximity_mask: torch.Tensor
+    ) -> torch.Tensor:
+        """Calculates lane cost for each predicted image.
+        Returns a tensor of shape (batch size, npred).
+        """
+        return self._multiply_masks(state_seq.images[:, :, 0], proximity_mask)
+
+    def compute_offroad_cost(
+        self, state_seq: StateSequence, proximity_mask: torch.Tensor
+    ) -> torch.Tensor:
+        """Calculates the offroad cost using the provided mask
+        Returns a tensor of shape (batch_size, npred).
+        """
+        return self._multiply_masks(state_seq.images[:, :, 2], proximity_mask)
+
+    def compute_proximity_cost(
+        self,
+        state_seq: StateSequence,
+        proximity_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Calculates the proximity cost using the provided mask
+        Returns a tensor of shape (batch_size, npred).
+        """
+        return self._multiply_masks(state_seq.images[:, :, 1], proximity_mask)
 
     def compute_uncertainty_batch(
         self,
-        batch,
-        Z=None,
-        estimation=True,
+        conditional_state_seq: StateSequence,
+        actions: torch.Tensor,
+        Z: torch.Tensor = None,
+        estimation: bool = True,
     ):
         """Estimates prediction uncertainty using dropout."""
         if estimation:
             torch.set_grad_enabled(False)
-        input_images = batch["input_images"]
-        input_states = batch["input_states"]
-        actions = batch["actions"][..., : self.config.uncertainty_n_pred, :]
-        car_sizes = batch["car_sizes"]
 
-        bsize, ncond, channels, height, width = input_images.shape
+        actions = actions[..., : self.config.uncertainty_n_pred, :]
+        (
+            bsize,
+            ncond,
+            channels,
+            height,
+            width,
+        ) = conditional_state_seq.images.shape
+        device = actions.device
 
         if Z is None:
             Z = self.forward_model.sample_z(
-                bsize * self.config.uncertainty_n_pred, method="fp"
-            )
-            if type(Z) is list:
-                Z = Z[0]
+                bsize, self.config.uncertainty_n_pred
+            ).to(device)
             Z = Z.view(bsize, self.config.uncertainty_n_pred, -1)
-        Z_rep = Z.unsqueeze(0)
-        Z_rep = Z_rep.expand(
-            self.config.uncertainty_n_models,
-            bsize,
-            self.config.uncertainty_n_pred,
-            -1,
-        )
 
-        input_images = input_images.unsqueeze(0)
-        input_states = input_states.unsqueeze(0)
-        actions = actions.unsqueeze(0)
-        input_images = input_images.expand(
-            self.config.uncertainty_n_models,
-            bsize,
-            ncond,
-            channels,
-            height,
-            width,
+        # We repeat everything to run multiple prediction in the forward model.
+        # Dropout will make the predictions different, giving us a way
+        # to estimate uncertainty.
+        Z_rep = Z.unsqueeze(0)
+        Z_rep = repeat_expand(Z, self.config.uncertainty_n_models)
+        rep_conditional_state_seq = conditional_state_seq.map(
+            lambda x: repeat_expand(
+                x, self.config.uncertainty_n_models
+            ).clone()
         )
-        input_states = input_states.expand(
-            self.config.uncertainty_n_models, bsize, ncond, 5
-        )
-        actions = actions.expand(
-            self.config.uncertainty_n_models,
-            bsize,
-            self.config.uncertainty_n_pred,
-            2,
-        )
-        input_images = input_images.contiguous().view(
-            bsize * self.config.uncertainty_n_models,
-            ncond,
-            channels,
-            height,
-            width,
-        )
-        input_states = input_states.contiguous().view(
-            bsize * self.config.uncertainty_n_models, ncond, 5
-        )
-        actions = actions.contiguous().view(
-            bsize * self.config.uncertainty_n_models,
-            self.config.uncertainty_n_pred,
-            2,
-        )
-        Z_rep = Z_rep.contiguous().view(
-            self.config.uncertainty_n_models * bsize,
-            self.config.uncertainty_n_pred,
-            -1,
-        )
+        actions = repeat_expand(actions, self.config.uncertainty_n_models)
 
         original_value = self.forward_model.training  # to switch back later
         # turn on dropout, for uncertainty estimation
         self.forward_model.train()
         predictions = self.forward_model.unfold(
+            rep_conditional_state_seq,
             actions.clone(),
-            dict(
-                input_images=input_images,
-                input_states=input_states,
-            ),
             Z=Z_rep.clone(),
         )
         self.forward_model.train(original_value)
 
-        car_sizes_temp = (
-            car_sizes.unsqueeze(0)
-            .expand(self.config.uncertainty_n_models, bsize, 2)
-            .contiguous()
-            .view(self.config.uncertainty_n_models * bsize, 2)
-        )
         costs = self.compute_state_costs_for_uncertainty(
-            predictions["pred_images"],
-            predictions["pred_states"],
-            car_sizes_temp,
+            predictions.state_seq,
         )
 
         pred_costs = (
-            self.config.lambda_p * costs["proximity_cost"]
-            + self.config.lambda_l * costs["lane_cost"]
-            + self.config.lambda_o * costs["offroad_cost"]
-        )
-
-        pred_images = predictions["pred_images"].view(
-            self.config.uncertainty_n_models,
-            bsize,
-            self.config.uncertainty_n_pred,
-            -1,
-        )
-        pred_states = predictions["pred_states"].view(
-            self.config.uncertainty_n_models,
-            bsize,
-            self.config.uncertainty_n_pred,
-            -1,
+            self.config.lambda_p * costs.proximity
+            + self.config.lambda_l * costs.lane
+            + self.config.lambda_o * costs.offroad
         )
         pred_costs = pred_costs.view(
             self.config.uncertainty_n_models,
@@ -354,25 +367,28 @@ class PolicyCost(PolicyCostBase):
             self.config.uncertainty_n_pred,
             -1,
         )
+
+        predicted_state_seq = predictions.state_seq.map(
+            lambda x: x.view(
+                self.config.uncertainty_n_models, bsize, *x.shape[1:]
+            ).clone()
+        )
         # use variance rather than standard deviation, since it is not
         # differentiable at 0 due to sqrt
-        pred_images_var = torch.var(pred_images, 0).mean(2)
-        pred_states_var = torch.var(pred_states, 0).mean(2)
+        flat_shape = (
+            self.config.uncertainty_n_models,
+            bsize,
+            self.config.uncertainty_n_pred,
+            -1,
+        )
+        pred_images_var = torch.var(
+            predicted_state_seq.images.view(*flat_shape), 0
+        ).mean(2)
+        pred_states_var = torch.var(
+            predicted_state_seq.states.view(*flat_shape), 0
+        ).mean(2)
         pred_costs_var = torch.var(pred_costs, 0).mean(2)
         pred_costs_mean = torch.mean(pred_costs, 0)
-        pred_images = pred_images.view(
-            self.config.uncertainty_n_models * bsize,
-            self.config.uncertainty_n_pred,
-            channels,
-            height,
-            width,
-        )
-
-        pred_states = pred_states.view(
-            self.config.uncertainty_n_models * bsize,
-            self.config.uncertainty_n_pred,
-            5,
-        )
 
         if not estimation:
             # This is the uncertainty loss of different terms together.
@@ -406,30 +422,33 @@ class PolicyCost(PolicyCostBase):
             total_u_loss=total_u_loss,
         )
 
-    def calculate_uncertainty_cost(self, inputs, predictions):
+    def calculate_uncertainty_cost(
+        self,
+        conditional_state_seq: StateSequence,
+        actions: torch.Tensor,
+        Z: torch.Tensor = None,
+    ) -> torch.Tensor:
         if self.config.u_reg > 0:
             result = self.compute_uncertainty_batch(
-                dict(
-                    inputs,
-                    actions=predictions["pred_actions"],
-                    # input_images=inputs['input_images'],
-                    # input_states=inputs['input_states'],
-                    # car_sizes=inputs['car_sizes'],
-                ),
-                Z=predictions["Z"],
+                conditional_state_seq,
+                actions,
+                Z=Z,
                 estimation=False,
             )["total_u_loss"]
         else:
             result = torch.tensor(0.0)
         return result
 
-    def estimate_uncertainty_stats(self, dataloader):
+    def estimate_uncertainty_stats(
+        self, dataloader: torch.utils.data.DataLoader
+    ) -> None:
         """Computes uncertainty estimates for the ground truth actions in the
         training set. This will give us an idea of what normal ranges are using
         actions the forward model was trained on.
         """
         u_images, u_states, u_costs = [], [], []
         data_iter = iter(dataloader)
+        device = next(self.forward_model.parameters()).device
         for i in range(self.config.uncertainty_n_batches):
             print(
                 (
@@ -444,11 +463,10 @@ class PolicyCost(PolicyCostBase):
                 data_iter = iter(dataloader)
                 batch = next(data_iter)
 
-            for k in batch:
-                if torch.is_tensor(batch[k]):
-                    batch[k] = batch[k].to(self.forward_model.device)
+            batch = batch.to(device)
             result = self.compute_uncertainty_batch(
-                batch=batch,
+                batch.conditional_state_seq,
+                batch.target_action_seq,
                 estimation=True,
             )
             u_images.append(result["pred_images_var"])
@@ -473,157 +491,169 @@ class PolicyCost(PolicyCostBase):
         self.u_states_std = u_states.std(0)
         self.u_costs_std = u_costs.std(0)
 
-    def compute_state_costs(self, images, states, car_sizes):
-        npred = images.size(1)
+    def compute_state_costs(
+        self, state_seq: StateSequence
+    ) -> PolicyCost.StateCosts:
+        npred = state_seq.images.size(1)
+        device = state_seq.images.device
         gamma_mask = (
             torch.tensor([0.99 ** t for t in range(npred + 1)])
-            .cuda()
+            .to(device)
             .unsqueeze(0)
         )
-        artifact_reduced_images = images ** self.config.artifact_power
+        artifact_reduced_state_seq = StateSequence(
+            state_seq.images ** self.config.artifact_power, *state_seq[1:]
+        )
+        car_proximity_mask = self.build_car_proximity_mask(
+            artifact_reduced_state_seq, unnormalize=True
+        )
+        lane_offroad_mask = self.build_lane_offroad_mask(
+            artifact_reduced_state_seq
+        )
         proximity_cost = self.compute_proximity_cost(
-            artifact_reduced_images,
-            states.data,
-            car_sizes,
-            unnormalize=True,
-        )["costs"]
-        lane_cost, prox_map_l = self.compute_lane_cost(
-            artifact_reduced_images, car_sizes
+            artifact_reduced_state_seq,
+            car_proximity_mask,
+        )
+        lane_cost = self.compute_lane_cost(
+            artifact_reduced_state_seq,
+            lane_offroad_mask,
         )
         offroad_cost = self.compute_offroad_cost(
-            artifact_reduced_images, prox_map_l
+            artifact_reduced_state_seq,
+            lane_offroad_mask,
         )
 
-        lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred])
-        offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred])
-        proximity_loss = torch.mean(proximity_cost * gamma_mask[:, :npred])
-        return dict(
-            proximity_cost=proximity_cost,
-            lane_cost=lane_cost,
-            offroad_cost=offroad_cost,
-            lane_loss=lane_loss,
-            offroad_loss=offroad_loss,
-            proximity_loss=proximity_loss,
+        lane_total = torch.mean(lane_cost * gamma_mask[:, :npred])
+        offroad_total = torch.mean(offroad_cost * gamma_mask[:, :npred])
+        proximity_total = torch.mean(proximity_cost * gamma_mask[:, :npred])
+        return PolicyCost.StateCosts(
+            total_proximity=proximity_total,
+            total_lane=lane_total,
+            total_offroad=offroad_total,
+            proximity=proximity_cost,
+            offroad=offroad_cost,
+            lane=lane_cost,
         )
 
-    def compute_state_costs_for_uncertainty(self, images, states, car_sizes):
-        return self.compute_state_costs(images, states, car_sizes)
+    def compute_state_costs_for_uncertainty(
+        self, state_seq: StateSequence
+    ) -> PolicyCost.StateCost:
+        return self.compute_state_costs(state_seq)
 
     def compute_state_costs_for_training(
-        self, _inputs, images, states, actions, car_sizes
+        self,
+        conditional_state_seq: StateSequence,
+        actions: torch.Tensor,
+        predicted_state_seq: StateSequence,
     ):
-        return self.compute_state_costs(images, states, car_sizes)
+        return self.compute_state_costs(predicted_state_seq)
 
-    def compute_state_costs_for_z(self, images, states, car_sizes):
-        return self.compute_state_costs(images, states, car_sizes)
+    def compute_state_costs_for_z(self, state_seq: StateSequence):
+        return self.compute_state_costs(state_seq)
 
     def compute_combined_loss(
         self,
-        proximity_loss,
-        uncertainty_loss,
-        lane_loss,
-        action_loss,
-        jerk_loss,
-        offroad_loss,
-        **_kwargs,
-    ):
+        state: PolicyCost.StateCosts,
+        uncertainty: torch.Tensor,
+        action: torch.Tensor,
+        jerk: torch.Tensor,
+    ) -> torch.Tensor:
+        """Uses the config coefficients to calculated combined loss from
+        the components.
+        """
         return (
-            self.config.lambda_p * proximity_loss
-            + self.config.u_reg * uncertainty_loss
-            + self.config.lambda_l * lane_loss
-            + self.config.lambda_a * action_loss
-            + self.config.lambda_o * offroad_loss
-            + self.config.lambda_j * jerk_loss
+            self.config.lambda_p * state.total_proximity
+            + self.config.lambda_l * state.total_lane
+            + self.config.lambda_o * state.total_offroad
+            + self.config.u_reg * uncertainty
+            + self.config.lambda_a * action
+            + self.config.lambda_j * jerk
         )
 
-    def calculate_cost(self, inputs, predictions):
-        u_loss = self.calculate_uncertainty_cost(inputs, predictions)
-        if predictions["pred_actions"].shape[1] > 1:
+    def calculate_cost(
+        self,
+        conditional_state_seq: StateSequence,
+        actions: torch.Tensor,
+        predicted_state_seq: StateSequence,
+    ):
+        u_loss = self.calculate_uncertainty_cost(
+            conditional_state_seq, actions
+        )
+        if actions.shape[1] > 1:
             loss_j = (
-                (
-                    predictions["pred_actions"][:, 1:]
-                    - predictions["pred_actions"][:, :-1]
-                )
-                .norm(2, 2)
-                .pow(2)
-                .mean()
+                (actions[:, 1:] - actions[:, :-1]).norm(2, 2).pow(2).mean()
             )
         else:
             loss_j = 0.0
-        loss_a = (predictions["pred_actions"]).norm(2, 2).pow(2).mean()
-        state_losses = self.compute_state_costs_for_training(
-            inputs,
-            predictions["pred_images"],
-            predictions["pred_states"],
-            predictions["pred_actions"],
-            inputs["car_sizes"],
+        loss_a = (actions).norm(2, 2).pow(2).mean()
+        state_cost = self.compute_state_costs_for_training(
+            conditional_state_seq,
+            actions,
+            predicted_state_seq,
         )
-        result = dict(
-            **state_losses,
-            uncertainty_loss=u_loss,
-            action_loss=loss_a,
-            jerk_loss=loss_j,
+        total = self.compute_combined_loss(
+            state=state_cost, uncertainty=u_loss, action=loss_a, jerk=loss_j
         )
-        result["policy_loss"] = self.compute_combined_loss(**result)
-        result["collisions"] = (
-            state_losses["collisions"]
-            if "collisions" in state_losses
-            else None
+        return PolicyCost.Cost(
+            state=state_cost,
+            uncertainty=u_loss,
+            action=loss_a,
+            jerk=loss_j,
+            total=total,
         )
-        return result
 
-    def calculate_z_cost(self, inputs, predictions, original_z=None):
-        u_loss = self.calculate_uncertainty_cost(inputs, predictions)
-        proximity_loss = self.compute_state_costs_for_z(
-            predictions["pred_images"],
-            predictions["pred_states"],
-            inputs["car_sizes"],
-        )["proximity_loss"]
-        result = self.compute_combined_loss(
-            proximity_loss=-1 * proximity_loss,
-            uncertainty_loss=u_loss,
-            lane_loss=0,
-            action_loss=0,
-            jerk_loss=0,
-            offroad_loss=0,
-        )
-        z_reg = torch.tensor(0)
-        if original_z is not None:
-            z_reg = self.config.dreaming_z_reg * (
-                (predictions["Z"] - original_z).norm(2, -1).mean()
-                / predictions["Z"].shape[-1]
-            )
-            result += z_reg
-        components = dict(
-            proximity_loss=proximity_loss, u_loss=u_loss, z_reg=z_reg
-        )
-        return result, components
+    # def calculate_z_cost(self, inputs, predictions, original_z=None):
+    #     u_loss = self.calculate_uncertainty_cost(inputs, predictions)
+    #     proximity_loss = self.compute_state_costs_for_z(
+    #         predictions["pred_images"],
+    #         predictions["pred_states"],
+    #         inputs["car_sizes"],
+    #     )["proximity_loss"]
+    #     result = self.compute_combined_loss(
+    #         proximity_loss=-1 * proximity_loss,
+    #         uncertainty_loss=u_loss,
+    #         lane_loss=0,
+    #         action_loss=0,
+    #         jerk_loss=0,
+    #         offroad_loss=0,
+    #     )
+    #     z_reg = torch.tensor(0)
+    #     if original_z is not None:
+    #         z_reg = self.config.dreaming_z_reg * (
+    #             (predictions["Z"] - original_z).norm(2, -1).mean()
+    #             / predictions["Z"].shape[-1]
+    #         )
+    #         result += z_reg
+    #     components = dict(
+    #         proximity_loss=proximity_loss, u_loss=u_loss, z_reg=z_reg
+    #     )
+    #     return result, components
 
-    def get_grad_vid(self, policy_model, batch, device="cuda"):
-        input_images = batch["input_images"].clone()
-        input_states = batch["input_states"].clone()
-        car_sizes = batch["car_sizes"].clone()
+    # def get_grad_vid(self, policy_model, batch, device="cuda"):
+    #     input_images = batch["input_images"].clone()
+    #     input_states = batch["input_states"].clone()
+    #     car_sizes = batch["car_sizes"].clone()
 
-        input_images = input_images.clone().float().div_(255.0)
-        input_states = self.normalizer.normalize_states(input_states)
-        if input_images.dim() == 4:  # if processing single vehicle
-            input_images = input_images.to(device).unsqueeze(0)
-            input_states = input_states.to(device).unsqueeze(0)
-            car_sizes = car_sizes.to(device).unsqueeze(0)
+    #     input_images = input_images.clone().float().div_(255.0)
+    #     input_states = self.normalizer.normalize_states(input_states)
+    #     if input_images.dim() == 4:  # if processing single vehicle
+    #         input_images = input_images.to(device).unsqueeze(0)
+    #         input_states = input_states.to(device).unsqueeze(0)
+    #         car_sizes = car_sizes.to(device).unsqueeze(0)
 
-        input_images.requires_grad = True
-        input_states.requires_grad = True
-        input_images.retain_grad()
-        input_states.retain_grad()
+    #     input_images.requires_grad = True
+    #     input_states.requires_grad = True
+    #     input_images.retain_grad()
+    #     input_states.retain_grad()
 
-        costs = self.compute_state_costs(input_images, input_states, car_sizes)
-        combined_loss = self.compute_combined_loss(
-            proximity_loss=costs["proximity_loss"],
-            uncertainty_loss=0,
-            lane_loss=costs["lane_loss"],
-            action_loss=0,
-            jerk_loss=0,
-            offroad_loss=costs["offroad_loss"],
-        )
-        combined_loss.backward()
-        return input_images.grad[:, :, :3].abs().clamp(max=1.0)
+    #     costs = self.compute_state_costs(input_images, input_states, car_sizes)
+    #     combined_loss = self.compute_combined_loss(
+    #         proximity_loss=costs["proximity_loss"],
+    #         uncertainty_loss=0,
+    #         lane_loss=costs["lane_loss"],
+    #         action_loss=0,
+    #         jerk_loss=0,
+    #         offroad_loss=costs["offroad_loss"],
+    #     )
+    #     combined_loss.backward()
+    #     return input_images.grad[:, :, :3].abs().clamp(max=1.0)

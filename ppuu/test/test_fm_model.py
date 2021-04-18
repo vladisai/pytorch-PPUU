@@ -1,12 +1,11 @@
 import unittest
 
+from ppuu.data.dataloader import Normalizer
 from ppuu.modeling.forward_models import FwdCNN_VAE
 from ppuu.modeling.forward_models_km import FwdCNNKM_VAE
 from ppuu.modeling.forward_models_km_no_action import FwdCNNKMNoAction_VAE
-from ppuu.test.mock_dataset import get_mock_dataloader
-
 from ppuu.modeling.km import StatePredictor
-from ppuu.data.dataloader import Normalizer
+from ppuu.test.mock_dataset import get_mock_dataloader
 
 
 class TestFMModels(unittest.TestCase):
@@ -45,24 +44,6 @@ class TestFMModels(unittest.TestCase):
         self.run_forward_unfold(m)
         m.enable_latent = False
         self.run_forward_unfold(m)
-
-    # def test_FwdCNNKM(self):
-    #     m = FwdCNNKM(
-    #         layers=3,
-    #         nfeature=256,
-    #         dropout=0.1,
-    #         h_height=14,
-    #         h_width=3,
-    #         height=117,
-    #         width=24,
-    #         n_actions=2,
-    #         hidden_size=256 * 14 * 3,
-    #         ncond=20,
-    #         state_predictor=StatePredictor(
-    #             diff=False, normalizer=Normalizer.dummy()
-    #         ),
-    #     )
-    #     self.run_forward_unfold(m)
 
     def test_FwdCNNKM_VAE(self):
         m = FwdCNNKM_VAE(

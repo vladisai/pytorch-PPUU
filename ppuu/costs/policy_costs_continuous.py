@@ -7,6 +7,7 @@ import torch
 import torch.nn.functional as F
 
 from ppuu.costs.policy_costs import PolicyCost
+from ppuu.data.entities import StateSequence
 
 
 class PolicyCostContinuous(PolicyCost):
@@ -18,12 +19,17 @@ class PolicyCostContinuous(PolicyCost):
         u_reg: float = 0.2
         lambda_a: float = 0.001
 
-    def compute_lane_cost(self, images, car_size):
+    def build_lane_offroad_mask(
+        self,
+        state_seq: StateSequence,
+    ):
         SCALE = 0.25
-        bsize, npred, nchannels, crop_h, crop_w = images.size()
-        images = images.view(bsize * npred, nchannels, crop_h, crop_w)
+        bsize, npred, nchannels, crop_h, crop_w = state_seq.images.size()
 
-        width, length = car_size[:, 0], car_size[:, 1]  # feet
+        width, length = (
+            state_seq.car_size[:, 0],
+            state_seq.car_size[:, 1],
+        )  # feet
         width = width * SCALE * (0.3048 * 24 / 3.7)  # pixels
         length = length * SCALE * (0.3048 * 24 / 3.7)  # pixels
 
@@ -62,7 +68,7 @@ class PolicyCostContinuous(PolicyCost):
         x_filter = (
             x_filter.unsqueeze(0)
             .expand(bsize * npred, crop_h)
-            .type(car_size.type())
+            .type(state_seq.car_size.type())
             .cuda()
         )
         x_filter = torch.min(
@@ -76,7 +82,7 @@ class PolicyCostContinuous(PolicyCost):
         y_filter = (
             y_filter.view(1, crop_w)
             .expand(bsize * npred, crop_w)
-            .type(car_size.type())
+            .type(state_seq.car_size.type())
             .cuda()
         )
         #    y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
@@ -92,90 +98,43 @@ class PolicyCostContinuous(PolicyCost):
         )
         proximity_mask = proximity_mask.view(bsize, npred, crop_h, crop_w)
         proximity_mask = proximity_mask ** 2
-        mask_sum = proximity_mask.sum(dim=(-1, -2))
-        images = images.view(bsize, npred, nchannels, crop_h, crop_w)
-        costs = (
-            torch.sum(
-                (proximity_mask * images[:, :, 0].float()).view(
-                    bsize, npred, -1
-                ),
-                2,
-            )
-            / mask_sum
-        )
-        return costs.view(bsize, npred), proximity_mask
+        # mask_sum = proximity_mask.sum(dim=(-1, -2))
+        # images = images.view(bsize, npred, nchannels, crop_h, crop_w)
+        # costs = (
+        #     torch.sum(
+        #         (proximity_mask * images[:, :, 0].float()).view(
+        #             bsize, npred, -1
+        #         ),
+        #         2,
+        #     )
+        #     / mask_sum
+        # )
+        return proximity_mask
+        # return costs.view(bsize, npred), proximity_mask
 
-    def compute_offroad_cost(self, images, proximity_mask):
-        bsize, npred, nchannels, crop_h, crop_w = images.size()
-        images = images.view(bsize, npred, nchannels, crop_h, crop_w)
-        costs = torch.sum(
-            (proximity_mask * images[:, :, 2].float()).view(bsize, npred, -1),
-            2,
-        )
-        return costs.view(bsize, npred)
-
-    def compute_contours(self, images):
-        """Computes contours of the green channel.
-        The idea is to get only edges of the cars so that later
-        when we do summing the size of the cars doesn't affect our behavior.
-        """
-        if self.config.skip_contours:
-            return images[:, 1]
-        device = images.device
-        horizontal_filter = torch.tensor(
-            [[[0.0], [0.0]], [[-1.0], [1.0]], [[0.0], [0.0]]],
-            device=device,
-        )
-        horizontal_filter = horizontal_filter.expand(1, 3, 2, 1)
-        vertical_filter = torch.tensor(
-            [[0.0, 0.0], [1.0, -1.0], [0.0, 0.0]], device=device
-        ).view(3, 1, 2)
-        vertical_filter = vertical_filter.expand(1, 3, 1, 2)
-
-        horizontal = F.conv2d(
-            images, horizontal_filter, stride=1, padding=(1, 0)
-        )
-        horizontal = horizontal[:, :, :-1, :]
-
-        vertical = F.conv2d(images, vertical_filter, stride=1, padding=(0, 1))
-        vertical = vertical[:, :, :, :-1]
-
-        _, _, height, width = horizontal.shape
-
-        horizontal_mask = torch.ones((1, 1, height, width), device=device)
-        horizontal_mask[:, :, : (height // 2), :] = -1
-        horizontal_masked = F.relu(horizontal_mask * horizontal)
-
-        vertical_mask = torch.ones((1, 1, height, width), device=device)
-        vertical_mask[:, :, :, (width // 2) :] = -1
-        vertical_masked = F.relu(vertical_mask * vertical)
-
-        result = vertical_masked[:][:] + horizontal_masked[:][:]
-        # result = horizontal.abs() + vertical.abs()
-        return result
-
-    def compute_proximity_cost(
+    def build_car_proximity_mask(
         self,
-        images,
-        states,
-        car_size=(6.4, 14.3),
-        green_channel=1,
-        unnormalize=False,
-        clip=False,
-    ):
-        device = images.device
+        state_seq: StateSequence,
+        unnormalize: bool = False,
+    ) -> torch.Tensor:
+        device = state_seq.images.device
 
         SCALE = 0.25
-        bsize, npred, nchannels, crop_h, crop_w = images.size()
+        bsize, npred, nchannels, crop_h, crop_w = state_seq.images.size()
 
-        images = images.view(bsize * npred, nchannels, crop_h, crop_w)
-        states = states.view(bsize * npred, 5).clone()
+        images = state_seq.images.view(
+            bsize * npred, nchannels, crop_h, crop_w
+        )
+        states = state_seq.states.view(bsize * npred, 5).clone()
 
         if unnormalize:
             states = self.normalizer.unnormalize_states(states)
 
         speed = states[:, 4] * SCALE  # pixel/s
-        width, length = car_size[:, 0], car_size[:, 1]  # feet
+        width, length = (
+            state_seq.car_size[:, 0],
+            state_seq.car_size[:, 1],
+        )  # feet
         width = width * SCALE * (0.3048 * 24 / 3.7)  # pixels
         length = length * SCALE * (0.3048 * 24 / 3.7)  # pixels
 
@@ -195,7 +154,7 @@ class PolicyCostContinuous(PolicyCost):
             .expand(bsize, npred)
             .contiguous()
             .view(bsize * npred)
-            .type(car_size.type())
+            .type(state_seq.car_size.type())
             .to(device)
         )
         max_y = (
@@ -203,7 +162,7 @@ class PolicyCostContinuous(PolicyCost):
             .expand(bsize, npred)
             .contiguous()
             .view(bsize * npred)
-            .type(car_size.type())
+            .type(state_seq.car_size.type())
             .to(device)
         )
 
@@ -224,7 +183,7 @@ class PolicyCostContinuous(PolicyCost):
         x_filter = (
             x_filter.unsqueeze(0)
             .expand(bsize * npred, crop_h)
-            .type(car_size.type())
+            .type(state_seq.car_size.type())
             .to(device)
         )
         x_filter = torch.min(
@@ -239,7 +198,7 @@ class PolicyCostContinuous(PolicyCost):
         y_filter = (
             y_filter.view(1, crop_w)
             .expand(bsize * npred, crop_w)
-            .type(car_size.type())
+            .type(state_seq.car_size.type())
             .to(device)
         )
         y_filter = torch.min(y_filter, max_y.view(bsize * npred, 1))
@@ -247,67 +206,105 @@ class PolicyCostContinuous(PolicyCost):
         y_filter = (y_filter - min_y.view(bsize * npred, 1)) / (
             max_y.view(bsize * npred, 1) - min_y.view(bsize * npred, 1)
         )
-        x_filter = x_filter.type(car_size.type()).to(device)
-        y_filter = y_filter.type(car_size.type()).to(device)
+        x_filter = x_filter.type(state_seq.car_size.type()).to(device)
+        y_filter = y_filter.type(state_seq.car_size.type()).to(device)
         proximity_mask = torch.bmm(
             x_filter.view(-1, crop_h, 1), y_filter.view(-1, 1, crop_w)
         )
         proximity_mask = proximity_mask.view(bsize, npred, crop_h, crop_w)
-        if clip:
-            proximity_mask[:, :, 60:] = 0
         images = images.view(-1, nchannels, crop_h, crop_w)
-        green_contours = self.compute_contours(images)
-        green_contours = green_contours.view(bsize, npred, crop_h, crop_w)
         # pre_max = (proximity_mask * (green_image ** 2))
         # green_contours[green_contours < 0.5] = 0
         proximity_mask = proximity_mask ** 2
-        mask_sum = proximity_mask.sum(dim=(-1, -2))
-        pre_max = proximity_mask * (green_contours ** 2)
-        # costs = torch.max(pre_max.view(bsize, npred, -1), 2)[0]
-        costs = torch.sum(pre_max.view(bsize, npred, -1), 2) / mask_sum
+        return proximity_mask
+        # mask_sum = proximity_mask.sum(dim=(-1, -2))
+        # pre_max = proximity_mask * (green_contours ** 2)
+        # # costs = torch.max(pre_max.view(bsize, npred, -1), 2)[0]
+        # costs = torch.sum(pre_max.view(bsize, npred, -1), 2) / mask_sum
 
-        images = images.view(bsize, npred, nchannels, crop_h, crop_w)
-        green_image = images[:, :, green_channel].float()
-        pre_max_old = proximity_mask * green_image
-        costs_old = torch.max(pre_max_old.view(bsize, npred, -1), 2)[0]
+        # images = images.view(bsize, npred, nchannels, crop_h, crop_w)
+        # green_image = images[:, :, 1].float()
+        # pre_max_old = proximity_mask * green_image
+        # costs_old = torch.max(pre_max_old.view(bsize, npred, -1), 2)[0]
 
-        result = {}
-        result["costs"] = costs
-        result["costs_old"] = costs_old
-        result["masks"] = proximity_mask
-        result["pre_max"] = pre_max
-        result["contours"] = green_contours
+        # result = {}
+        # result["costs"] = costs
+        # result["costs_old"] = costs_old
+        # result["masks"] = proximity_mask
+        # result["pre_max"] = pre_max
+        # result["contours"] = green_contours
 
+        # return result
+
+    def compute_contours(self, images: torch.Tensor) -> torch.Tensor:
+        """Computes contours of the green channel.
+        The idea is to get only edges of the cars so that later
+        when we do summing the size of the cars doesn't affect our behavior.
+        Input and output are both of shape bsize, npred, height, width
+        """
+        device = images.device
+        horizontal_filter = torch.tensor(
+            [[[-1.0], [1.0]]],
+            device=device,
+        )
+        horizontal_filter = horizontal_filter.expand(1, 1, 2, 1)
+        vertical_filter = torch.tensor([[1.0, -1.0]], device=device).view(
+            1, 1, 2
+        )
+        vertical_filter = vertical_filter.expand(1, 1, 1, 2)
+
+        original_images_shape = images.shape
+        # new shape is -1, 1, height, width
+        images = images.view(-1, *images.shape[-2:]).unsqueeze(-3)
+
+        horizontal = F.conv2d(
+            images, horizontal_filter, stride=1, padding=(1, 0)
+        )
+        horizontal = horizontal[:, :, :-1, :]
+
+        vertical = F.conv2d(images, vertical_filter, stride=1, padding=(0, 1))
+        vertical = vertical[:, :, :, :-1]
+
+        _, _, height, width = horizontal.shape
+
+        horizontal_mask = torch.ones((1, 1, height, width), device=device)
+        horizontal_mask[:, :, : (height // 2), :] = -1
+        horizontal_masked = F.relu(horizontal_mask * horizontal)
+
+        vertical_mask = torch.ones((1, 1, height, width), device=device)
+        vertical_mask[:, :, :, (width // 2) :] = -1
+        vertical_masked = F.relu(vertical_mask * vertical)
+
+        result = vertical_masked[:][:] + horizontal_masked[:][:]
+        result = result.view(*original_images_shape)
         return result
 
-    def compute_state_costs(self, pred_images, pred_states, car_sizes):
-        npred = pred_images.size(1)
-        gamma_mask = (
-            torch.tensor([0.99 ** t for t in range(npred + 1)])
-            .cuda()
-            .unsqueeze(0)
-        )
-        proximity_cost = self.compute_proximity_cost(
-            pred_images,
-            pred_states.data,
-            car_sizes,
-            unnormalize=True,
-            clip=False,
-        )["costs"]
-        lane_cost, prox_map_l = self.compute_lane_cost(pred_images, car_sizes)
-        mask_sum = prox_map_l.sum(dim=(-1, -2))
-        offroad_cost = (
-            self.compute_offroad_cost(pred_images, prox_map_l) / mask_sum
+    def _multiply_masks(
+        self, images: torch.Tensor, proximity_mask: torch.Tensor
+    ) -> torch.Tensor:
+        """Given an image of shape bsize, npred, height, width and a mask
+        of same shape, multiplies them, and sums them up. This is the main
+        difference from the vanilla version of the cost.
+        Returns tensor of shape bsize, npred.
+        """
+        mask_sum = proximity_mask.sum(dim=(-1, -2))
+        return (
+            torch.sum(
+                (proximity_mask * images.float()).view(*images.shape[:2], -1),
+                2,
+            ).view(*images.shape[:2])
+            / mask_sum
         )
 
-        lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred])
-        offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred])
-        proximity_loss = torch.mean(proximity_cost * gamma_mask[:, :npred])
-        return dict(
-            proximity_cost=proximity_cost,
-            lane_cost=lane_cost,
-            offroad_cost=offroad_cost,
-            lane_loss=lane_loss,
-            offroad_loss=offroad_loss,
-            proximity_loss=proximity_loss,
-        )
+    def compute_proximity_cost(
+        self,
+        state_seq: StateSequence,
+        proximity_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Calculates the proximity cost using the provided mask
+        Returns a tensor of shape (batch_size, npred).
+        """
+        images = state_seq.images[:, :, 1]
+        if not self.config.skip_contours:
+            images = self.compute_contours(images)
+        return self._multiply_masks(images, proximity_mask)

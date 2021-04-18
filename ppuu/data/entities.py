@@ -75,13 +75,16 @@ class StateSequence(NamedTuple):
             self.ego_car_image.to(device),
         )
 
-    def cuda(self) -> DatasetSample:
+    def cuda(self) -> StateSequence:
         """Creates a new DatasetSample with all fields moved to cuda"""
         return self.to(torch.device("cuda"))
 
-    def cpu(self) -> DatasetSample:
+    def cpu(self) -> StateSequence:
         """Creates a new DatasetSample with all fields moved to cuda"""
         return self.to(torch.device("cpu"))
+
+    def map(self, f) -> StateSequence:
+        return StateSequence(*map(f, self))
 
 
 class DatasetSample(NamedTuple):

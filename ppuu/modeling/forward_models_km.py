@@ -1,10 +1,10 @@
-from typing import Union, Tuple, Callable
+from typing import Callable, Tuple, Union
 
 import torch
 
+from ppuu.data.entities import StateSequence
 from ppuu.modeling.forward_models import FwdCNN_VAE
 from ppuu.modeling.km import predict_states
-from ppuu.data.entities import StateSequence
 
 
 class FwdCNNKM_VAE(FwdCNN_VAE):
@@ -36,7 +36,7 @@ class FwdCNNKM_VAE(FwdCNN_VAE):
             n_actions,
             hidden_size,
             ncond,
-            False, # predict state
+            False,  # predict state
             nz,
             enable_kld,
             enable_latent,
@@ -86,7 +86,9 @@ class FwdCNNKM_VAE(FwdCNN_VAE):
         pred_image = torch.sigmoid(
             pred_image + input_state_seq.images[:, -1].unsqueeze(1)
         )
-        pred_state = self.state_predictor(input_state_seq.states[:, -1], action)
+        pred_state = self.state_predictor(
+            input_state_seq.states[:, -1], action
+        )
         return FwdCNN_VAE.ForwardSingleStepResult(
             pred_image, pred_state, z_val, kld_loss
         )

@@ -1,22 +1,13 @@
 from __future__ import annotations
 
 import random
-from typing import List, NamedTuple, Union, Tuple, Any, Optional, Callable
+from typing import Any, Callable, NamedTuple, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 
-from ppuu.modeling.common_models import Decoder, Encoder, UNetwork
 from ppuu.data.entities import StateSequence
-
-
-class FMResult(NamedTuple):
-    """ A tuple to hold values for fm forward result"""
-
-    pred_images: torch.Tensor
-    pred_states: torch.Tensor
-    z_list: List[torch.Tensor]
-    p_loss: torch.Tensor
+from ppuu.modeling.common_models import Decoder, Encoder, UNetwork
 
 
 class FwdBase:
@@ -49,160 +40,17 @@ class FwdBase:
         raise NotImplementedError()
 
 
-# class FwdCNN(nn.Module, FwdBase):
-#     class Unfolding(NamedTuple):
-#         images: torch.Tensor
-#         states: torch.Tensor
-#         acitons: torch.Tensor
-
-#     class ForwardResult(NamedTuple):
-#         images: torch.Tensor
-#         states: torch.Tensor
-
-#     def __init__(
-#         self,
-#         layers,
-#         nfeature,
-#         dropout,
-#         h_height,
-#         h_width,
-#         height,
-#         width,
-#         n_actions,
-#         hidden_size,
-#         ncond,
-#         predict_state,
-#     ):
-#         super(FwdCNN, self).__init__()
-
-#         self.layers = layers
-#         self.nfeature = nfeature
-#         self.dropout = dropout
-#         self.h_height = h_height
-#         self.h_width = h_width
-#         self.height = height
-#         self.width = width
-#         self.n_actions = n_actions
-#         self.hidden_size = hidden_size
-#         self.ncond = ncond
-#         self.predict_state = predict_state
-#         self.normalizer = None
-
-#         self.encoder = Encoder(a_size=0, n_inputs=self.ncond)
-#         self.decoder = Decoder(
-#             layers=self.layers,
-#             n_feature=self.nfeature,
-#             dropout=self.dropout,
-#             h_height=self.h_height,
-#             h_width=self.h_width,
-#             height=self.height,
-#             width=self.width,
-#             state_dimension=5 if self.predict_state else 0,
-#         )
-#         self.a_encoder = nn.Sequential(
-#             nn.Linear(self.n_actions, self.nfeature),
-#             # nn.BatchNorm1d(self.nfeature, momentum=0.01),
-#             nn.Dropout(p=self.dropout, inplace=True),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             nn.Linear(self.nfeature, self.nfeature),
-#             nn.Dropout(p=self.dropout, inplace=True),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             nn.Linear(self.nfeature, self.hidden_size),
-#         )
-#         self.u_network = UNetwork(
-#             n_feature=self.nfeature, layers=self.layers, dropout=self.dropout
-#         )
-
-#     # dummy function
-#     def sample_z(self, bsize, method=None):
-#         return torch.zeros(bsize, 32)
-
-#     def encode(self, input_images, input_states, action):
-#         bsize = input_images.size(0)
-#         h_x = self.encoder(input_images, input_states)
-#         h_x = h_x.view(bsize, self.nfeature, self.h_height, self.h_width)
-#         a_emb = self.a_encoder(action).view(h_x.size())
-
-#         h = h_x
-#         h = h + a_emb
-#         h = h + self.u_network(h)
-#         return h
-
-#     def forward_single_step(
-#         self,
-#         input_state_seq: StateSequence,
-#         action: torch.Tensor,
-#     ) -> Tuple[torch.Tensor, torch.Tensor]:
-#         """Unfold serves to predict a sequence of next steps using
-#         the forward model.
-#         """
-#         h = self.encode(input_state_seq.images, input_state_seq.states, action)
-#         pred_image, pred_state = self.decoder(h)
-#         pred_state = pred_state + input_state_seq.states[:, -1]
-#         pred_image = torch.sigmoid(
-#             pred_image + input_state_seq.images[:, -1].unsqueeze(1)
-#         )
-#         return pred_image, pred_state
-
-#     def forward(
-#         self,
-#         input_state_seq: StateSequence,
-#         actions: torch.Tensor,
-#         _target: StateSequence,  # this is not used for deterministic model
-#     ) -> FwdCNN.Unfolding:
-#         """For deterministic model, we basically just do unfold."""
-#         return FwdCNN.ForwardResult(*self.unfold(input_state_seq, actions)[:2])
-
-#     def unfold(
-#         self,
-#         input_state_seq: StateSequence,
-#         actions_or_policy: Union[torch.nn.Module, torch.Tensor],
-#         npred: int = None,
-#     ) -> StateSequence:
-#         if torch.is_tensor(actions_or_policy):
-#             npred = actions_or_policy.size(1)
-#         else:
-#             # If the source of actions is a policy and not a tensor array, we
-#             # need a version of the state with ego car on the 4th channel.
-#             input_state_seq = input_state_seq.with_ego()
-
-#         pred_images, pred_states, pred_actions = [], [], []
-
-#         for t in range(npred):
-#             if torch.is_tensor(actions_or_policy):
-#                 actions = actions_or_policy[:, t]
-#             else:
-#                 actions = actions_or_policy(input_state_seq)
-
-#             pred_image, pred_state = self.forward_single_step(
-#                 input_state_seq, actions
-#             )
-#             input_state_seq = input_state_seq.shift_add(pred_image, pred_state)
-
-#             pred_images.append(pred_image)
-#             pred_states.append(pred_state)
-#             pred_actions.append(actions)
-
-#         pred_images = torch.cat(pred_images, 1)
-#         pred_states = torch.stack(pred_states, 1)
-#         pred_actions = torch.stack(pred_actions, 1)
-
-#         return FwdCNN.Unfolding(pred_images, pred_states, pred_actions)
-
-
-# this version adds the actions *after* the z variables
 class FwdCNN_VAE(torch.nn.Module):
     class Unfolding(NamedTuple):
-        images: torch.Tensor
-        states: torch.Tensor
-        acitons: torch.Tensor
+        state_seq: StateSequence
+        actions: torch.Tensor
+        z: torch.Tensor
 
     class ForwardResult(NamedTuple):
         """ A tuple to hold values for fm forward result"""
 
-        pred_images: torch.Tensor
-        pred_states: torch.Tensor
-        z_list: List[torch.Tensor]
+        state_seq: StateSequence
+        z: torch.Tensor
         p_loss: torch.Tensor
 
     class ForwardSingleStepResult(NamedTuple):
@@ -302,8 +150,8 @@ class FwdCNN_VAE(torch.nn.Module):
         else:
             return mu
 
-    def sample_z(self, bsize, method=None, h_x=None):
-        z = torch.randn(bsize, self.nz)
+    def sample_z(self, *shape):
+        z = torch.randn(*shape, self.nz)
         return z
 
     def forward_single_step(
@@ -441,10 +289,14 @@ class FwdCNN_VAE(torch.nn.Module):
 
         pred_images = torch.cat(pred_images, 1)
         pred_states = torch.stack(pred_states, 1)
-        z_list = torch.stack(z_list, 1)
-        return FwdCNN_VAE.ForwardResult(
-            pred_images, pred_states, z_list, ploss
+        pred_state_seq = StateSequence(
+            pred_images,
+            pred_states,
+            input_state_seq.car_size,
+            input_state_seq.ego_car_image,
         )
+        z_list = torch.stack(z_list, 1)
+        return FwdCNN_VAE.ForwardResult(pred_state_seq, z_list, ploss)
 
     def unfold(
         self,
@@ -499,5 +351,11 @@ class FwdCNN_VAE(torch.nn.Module):
         pred_images = torch.cat(pred_images, 1)
         pred_states = torch.stack(pred_states, 1)
         pred_actions = torch.stack(pred_actions, 1)
+        pred_state_seq = StateSequence(
+            pred_images,
+            pred_states,
+            input_state_seq.car_size,
+            input_state_seq.ego_car_image,
+        )
 
-        return FwdCNN_VAE.Unfolding(pred_images, pred_states, pred_actions)
+        return FwdCNN_VAE.Unfolding(pred_state_seq, pred_actions, Z)

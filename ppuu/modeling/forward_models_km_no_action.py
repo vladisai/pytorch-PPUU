@@ -1,10 +1,10 @@
-from typing import Union, Tuple, Callable
+from typing import Callable, Tuple, Union
 
 import torch
 
+from ppuu.data.entities import StateSequence
 from ppuu.modeling.forward_models import FwdCNN_VAE
 from ppuu.modeling.km import predict_states
-from ppuu.data.entities import StateSequence
 
 
 class FwdCNNKMNoAction_VAE(FwdCNN_VAE):

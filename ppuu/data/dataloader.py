@@ -293,10 +293,16 @@ class Dataset(torch.utils.data.Dataset):
         car_sizes = car_sizes.float()
 
         conditional_state_seq = StateSequence(
-            input_images, input_states, car_sizes, ego_cars,
+            input_images,
+            input_states,
+            car_sizes,
+            ego_cars,
         )
         target_state_seq = StateSequence(
-            target_images, target_states, car_sizes, ego_cars,
+            target_images,
+            target_states,
+            car_sizes,
+            ego_cars,
         )
 
         return DatasetSample(

@@ -1,20 +1,27 @@
 """Cost model that uses the kinematic model.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Tuple
 
 import numpy as np
 import torch
 
 from ppuu.costs.policy_costs_continuous import PolicyCostContinuous
 from ppuu.data.dataloader import UnitConverter
+from ppuu.data.entities import StateSequence
 
 
 class AggregationFunction:
+    """An aggregation function that given an elementwise product
+    of mask and the image will give the combined value.
+    """
+
     def __init__(self, s):
         self.s = s
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> torch.Tensor:
+        """Forwards arguments to the respective function."""
         if self.s == "sum":
             return torch.sum(*args, **kwargs)
         elif self.s.startswith("logsumexp"):
@@ -24,220 +31,12 @@ class AggregationFunction:
             return torch.logsumexp(*args, **kwargs)
 
 
-class PolicyCostKM(PolicyCostContinuous):
-    @dataclass
-    class Config(PolicyCostContinuous.Config):
-        masks_power_x: int = 4.22
-        masks_power_y: int = 4.22
-        agg_func_str: str = "logsumexp-67"
-        lambda_a: float = field(default=0.02)
-        lambda_l: float = field(default=1.77)
-        lambda_o: float = field(default=0.5)
-        lambda_p: float = field(default=2.15)
-        curl: bool = field(default=False)
-        keep_dims: bool = False
-
-    def __init__(self, config, *args, **kwargs):
-        super().__init__(config, *args, **kwargs)
-        self.agg_func = AggregationFunction(config.agg_func_str)
-
-    # def get_masks(self, images, states, car_size, unnormalize):
-    #     bsize, npred, nchannels, crop_h, crop_w = images.shape
-    #     device = images.device
-
-    #     states = states.view(bsize * npred, 4).clone()
-
-    #     if unnormalize:
-    #         states = self.normalizer.unnormalize_states(states)
-
-    #     states = states.view(bsize, npred, 5)
-
-    #     LANE_WIDTH_METRES = 3.7
-    #     LANE_WIDTH_PIXELS = 24  # pixels / 3.7 m, lane width
-    #     # SCALE = 1 / 4
-    #     PIXELS_IN_METRE = LANE_WIDTH_PIXELS / LANE_WIDTH_METRES
-    #     MAX_SPEED_MS = 130 / 3.6  # m/s
-    #     LOOK_AHEAD_M = MAX_SPEED_MS  # meters
-    #     LOOK_SIDEWAYS_M = 2 * LANE_WIDTH_METRES  # meters
-    #     METRES_IN_FOOT = 0.3048
-
-    #     car_size = car_size.to(device)
-    #     positions = states[:, :, :2]
-    #     speeds_norm = states[:, :, 4] / PIXELS_IN_METRE
-    #     # speeds_o = torch.ones_like(speeds).cuda()
-    #     old_directions = directions
-    #     directions = torch.atan2(directions[:, :, 3], directions[:, :, 2])
-    #     # directions = states[:, :, 2:4]
-
-    #     positions_adjusted = positions - positions.detach()
-    #     # here we flip directions because they're flipped otherwise
-    #     directions_adjusted = -(directions - directions.detach())
-
-    #     width, length = car_size[:, 0], car_size[:, 1]  # feet
-    #     width = width * METRES_IN_FOOT
-    #     width = width.view(bsize, 1)
-
-    #     length = length * METRES_IN_FOOT
-    #     length = length.view(bsize, 1)
-
-    #     REPEAT_SHAPE = (bsize, npred, 1, 1)
-
-    #     y_d = width / 2 + LANE_WIDTH_METRES
-    #     x_s = self.config.safe_factor * torch.clamp(speeds_norm.detach(), min=10) + length * 1.5 + 1
-
-    #     x_s = x_s.view(REPEAT_SHAPE)
-    #     # x_s_rotation = torch.ones(REPEAT_SHAPE).cuda() * 1
-
-    #     y = torch.linspace(-LOOK_SIDEWAYS_M, LOOK_SIDEWAYS_M, crop_w, device=device)
-    #     # x should be from positive to negative, as when we draw the image,
-    #     # cars with positive distance are ahead of us.
-    #     # also, if it's reversed, the -x_pos in x_prime calculation becomes
-    #     # +x_pos.
-    #     x = torch.linspace(LOOK_AHEAD_M, -LOOK_AHEAD_M, crop_h, device=device)
-    #     xx, yy = torch.meshgrid(x, y)
-    #     xx = xx.repeat(bsize, npred, 1, 1)
-    #     yy = yy.repeat(bsize, npred, 1, 1)
-
-    #     c, s = torch.cos(directions_adjusted), torch.sin(directions_adjusted)
-    #     c = c.view(REPEAT_SHAPE)
-    #     s = s.view(REPEAT_SHAPE)
-
-    #     x_pos = positions_adjusted[:, :, 0]
-    #     x_pos = x_pos.view(*x_pos.shape, 1, 1)
-    #     y_pos = positions_adjusted[:, :, 1]
-    #     y_pos = y_pos.view(*y_pos.shape, 1, 1)
-
-    #     x_prime = c * xx - s * yy - x_pos  # <- here
-    #     y_prime = s * xx + c * yy - y_pos  # and here a double - => +
-
-    #     z_x_prime = torch.clamp((x_s - torch.abs(x_prime)) / (x_s - length.view(bsize, 1, 1, 1) / 2), min=0,)
-    #     # z_x_prime_rotation = torch.clamp(
-    #     #     (x_s_rotation - torch.abs(x_prime)) / (x_s_rotation), min=0
-    #     # )
-    #     r_y_prime = torch.clamp(
-    #         (y_d.view(bsize, 1, 1, 1) - torch.abs(y_prime)) / (y_d - width / 2).view(bsize, 1, 1, 1), min=0,
-    #     )
-
-    #     # Acceleration probe
-    #     x_major = z_x_prime ** self.config.masks_power_x
-    #     # x_major[:, :, (x_major.shape[2] // 2 + 10):, :] =
-    #     # = x_major[:, :, (x_major.shape[2] // 2 + 10):, :].clone() ** 2
-    #     y_ramp = torch.clamp(r_y_prime ** self.config.masks_power_y, max=1)
-    #     result_acceleration = x_major * y_ramp
-
-    #     # Rotation probe
-    #     # x_ramp = torch.clamp(z_x_prime, max=1).float()
-    #     x_ramp = torch.clamp(z_x_prime ** self.config.masks_power_x, max=1)
-    #     # x_ramp = (z_x_prime > 0).float()
-    #     # x_ramp[:, :, (x_ramp.shape[2] // 2 + 10):, :]
-    #     # = x_ramp[:, :, (x_ramp.shape[2] // 2 + 10):, :].clone() ** 2
-    #     y_major = r_y_prime ** self.config.masks_power_y
-    #     result_rotation = x_ramp * y_major
-
-    #     return result_rotation, result_acceleration
-
-    def compute_proximity_cost_km(
-        self, images, proximity_masks, masks_sums=None
-    ):
-        bsize, npred, nchannels, crop_h, crop_w = images.shape
-        images = images.view(-1, nchannels, crop_h, crop_w)
-        green_contours = self.compute_contours(images)
-        green_contours = green_contours.view(bsize, npred, crop_h, crop_w)
-        pre_max = proximity_masks * (green_contours ** 2)
-        if masks_sums is not None:
-            pre_max /= masks_sums.view(*masks_sums.shape, 1, 1)
-        costs = self.agg_func(pre_max.view(bsize, npred, -1), 2)
-        result = {}
-        result["costs"] = costs
-        result["masks"] = proximity_masks
-        result["pre_max"] = pre_max
-        result["contours"] = green_contours
-
-        return result
-
-    def compute_lane_cost_km(self, images, proximity_masks, masks_sums=None):
-        bsize, npred = images.shape[0], images.shape[1]
-        lanes = images[:, :, 0].float()
-        costs = proximity_masks * (lanes ** 2)
-        if masks_sums is not None:
-            costs /= masks_sums.view(*masks_sums.shape, 1, 1)
-        costs_m = self.agg_func(costs.view(bsize, npred, -1), 2)
-        return costs_m.view(bsize, npred)
-
-    def compute_offroad_cost_km(
-        self, images, proximity_masks, masks_sums=None
-    ):
-        bsize, npred = images.shape[0], images.shape[1]
-        offroad = images[:, :, 2]
-        costs = proximity_masks * (offroad ** 2)
-        if masks_sums is not None:
-            costs /= masks_sums.view(*masks_sums.shape, 1, 1)
-        costs_m = self.agg_func(costs.view(bsize, npred, -1), 2)
-        return costs_m.view(bsize, npred)
-
-    def compute_combined_loss(
-        self,
-        proximity_loss,
-        uncertainty_loss,
-        lane_loss,
-        action_loss,
-        jerk_loss,
-        offroad_loss,
-        destination_loss,
-        reference_distance_loss,
-        **_kwargs,
-    ):
-        return (
-            self.config.lambda_p * proximity_loss
-            + self.config.u_reg * uncertainty_loss
-            + self.config.lambda_l * lane_loss
-            + self.config.lambda_a * action_loss
-            + self.config.lambda_o * offroad_loss
-            + self.config.lambda_j * jerk_loss
-            + self.config.lambda_d * destination_loss
-            + self.config.lambda_r * reference_distance_loss
-        )
-
-    def compute_state_costs_for_training(
-        self, _, pred_images, pred_states, _pred_actions, car_sizes
-    ):
-        proximity_masks = self.get_masks(
-            pred_images[:, :, :3].contiguous().detach(),
-            pred_states,
-            car_sizes,
-            unnormalize=True,
-        )
-
-        npred = pred_images.size(1)
-        gamma_mask = (
-            torch.tensor([self.config.gamma ** t for t in range(npred + 1)])
-            .cuda()
-            .unsqueeze(0)
-        )
-        proximity_cost = self.compute_proximity_cost_km(
-            pred_images,
-            proximity_masks[1],
-        )["costs"]
-
-        lane_cost = self.compute_lane_cost_km(pred_images, proximity_masks[0])
-        offroad_cost = self.compute_offroad_cost_km(
-            pred_images, proximity_masks[0]
-        )
-
-        lane_loss = torch.mean(lane_cost * gamma_mask[:, :npred])
-        offroad_loss = torch.mean(offroad_cost * gamma_mask[:, :npred])
-        proximity_loss = torch.mean(proximity_cost * gamma_mask[:, :npred])
-        return dict(
-            proximity_cost=proximity_cost,
-            lane_cost=lane_cost,
-            offroad_cost=offroad_cost,
-            lane_loss=lane_loss,
-            offroad_loss=offroad_loss,
-            proximity_loss=proximity_loss,
-        )
-
-
-def coordinate_curl(xx, yy, radii):
+def coordinate_curl(
+    xx: torch.Tensor, yy: torch.Tensor, radii: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Given two matrices of coordinates, x and y, curl them around the given radii
+    Returns a tuple of coordinates, xx and yy.
+    """
     center_y = radii.view(*xx.shape[:-2], 1, 1)
     center_x = torch.zeros_like(center_y)
 
@@ -254,7 +53,13 @@ def coordinate_curl(xx, yy, radii):
     return xx, yy
 
 
-def coordinate_rotate(xx, yy, dx, dy):
+def coordinate_rotate(
+    xx: torch.Tensor, yy: torch.Tensor, dx: torch.Tensor, dy: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Given two matrices of coordinates, x and y, and a vector that corresponds
+    to cosine and sine of the rotation angle, rotate all points in xx and yy.
+    Returns a tuple of coordinates, rotated xx and yy.
+    """
     c, s = dx, dy
     c = c.view(*xx.shape[:-2], 1, 1)
     s = s.view(*xx.shape[:-2], 1, 1)
@@ -296,7 +101,13 @@ def rotation_matrix(v1, v2):
     return rot
 
 
-def coordinate_shift(xx, yy, shift_x, shift_y):
+def coordinate_shift(
+    xx: torch.Tensor,
+    yy: torch.Tensor,
+    shift_x: torch.Tensor,
+    shift_y: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Shifts the x and y coordinates by specified values."""
     shift_x = shift_x.view(*xx.shape[:-2], 1, 1)
     shift_y = shift_y.view(*yy.shape[:-2], 1, 1)
     return xx - shift_x, yy - shift_y
@@ -314,8 +125,11 @@ def flip_x(xx, yy):
     return torch.flip(xx, [-2]), torch.flip(yy, [-2])
 
 
-class PolicyCostKMTaper(PolicyCostKM):
-    """Cost with tapered end"""
+class PolicyCostKMTaper(PolicyCostContinuous):
+    """Cost with tapered end and using the kinematic model.
+    The main difference is now we propagate through the kinematic model,
+    and we can shift the car from the center of the image.
+    """
 
     @dataclass
     class Config(PolicyCostContinuous.Config):
@@ -332,21 +146,17 @@ class PolicyCostKMTaper(PolicyCostKM):
         # Reference distance loss
         lambda_r: float = 1.0
         keep_dims: bool = False
-        # lambda_a: float = field(default=0.23)
-        # lambda_j: float = field(default=2.5)
-        # lambda_l: float = field(default=2.86)
-        # lambda_o: float = field(default=3.18)
-        # lambda_p: float = field(default=45.5)
-        # u_reg: float = field(default=1.62)
+
+    def __init__(self, config, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.agg_func = AggregationFunction(config.agg_func_str)
 
     def get_masks(
         self,
-        images,
-        states,
-        actions,
-        car_size,
-        unnormalize,
-        ref_states=None,
+        state_seq: StateSequence,
+        actions: torch.Tensor,
+        unnormalize: bool = False,
+        ref_states: torch.Tensor = None,
         *,
         metadata=None,
     ):
@@ -354,12 +164,12 @@ class PolicyCostKMTaper(PolicyCostKM):
         and one for lane and offroad costs, so it doesn't have a flat nose.
         """
         if ref_states is None:
-            ref_states = states
+            ref_states = state_seq.states
 
-        bsize, npred, nchannels, crop_h, crop_w = images.shape
-        device = images.device
+        bsize, npred, nchannels, crop_h, crop_w = state_seq.images.shape
+        device = state_seq.images.device
 
-        states = states.view(bsize * npred, 5).clone()
+        states = state_seq.states.view(bsize * npred, 5).clone()
         ref_states = ref_states.view(bsize * npred, 5).clone()
 
         if unnormalize:
@@ -381,7 +191,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         METRES_IN_FOOT = 0.3048
         TIMESTEP = 0.1
 
-        car_size = car_size.to(device)
+        car_size = state_seq.car_size.to(device)
 
         width, length = car_size[:, 0], car_size[:, 1]  # feet
         width = width * METRES_IN_FOOT
@@ -767,13 +577,6 @@ class PolicyCostKMTaper(PolicyCostKM):
             ref_states=ref_states,
         )
 
-        # count collisions: if more then 50% of the center are covered in green, we've collided.
-        # collisions_sum = (traj_proximity_mask * ref_images[:, :, 1]).sum(
-        #     dim=(2, 3)
-        # )
-        # traj_mask_sums = traj_proximity_mask.sum(dim=(2, 3))
-        # collisions = collisions_sum > 0.5 * traj_mask_sums
-
         self.overlay = proximity_mask.unsqueeze(2) * 0.85 + ref_images
 
         # this is to only update image every 10 times.
@@ -837,3 +640,64 @@ class PolicyCostKMTaper(PolicyCostKM):
             reference_distance_loss=reference_distance_loss,
             destination_loss=destination_loss,
         )
+
+    def compute_combined_loss(
+        self,
+        proximity_loss,
+        uncertainty_loss,
+        lane_loss,
+        action_loss,
+        jerk_loss,
+        offroad_loss,
+        destination_loss,
+        reference_distance_loss,
+        **_kwargs,
+    ):
+        return (
+            self.config.lambda_p * proximity_loss
+            + self.config.u_reg * uncertainty_loss
+            + self.config.lambda_l * lane_loss
+            + self.config.lambda_a * action_loss
+            + self.config.lambda_o * offroad_loss
+            + self.config.lambda_j * jerk_loss
+            + self.config.lambda_d * destination_loss
+            + self.config.lambda_r * reference_distance_loss
+        )
+
+    def compute_proximity_cost_km(
+        self, images, proximity_masks, masks_sums=None
+    ):
+        bsize, npred, nchannels, crop_h, crop_w = images.shape
+        images = images.view(-1, nchannels, crop_h, crop_w)
+        green_contours = self.compute_contours(images)
+        green_contours = green_contours.view(bsize, npred, crop_h, crop_w)
+        pre_max = proximity_masks * (green_contours ** 2)
+        if masks_sums is not None:
+            pre_max /= masks_sums.view(*masks_sums.shape, 1, 1)
+        costs = self.agg_func(pre_max.view(bsize, npred, -1), 2)
+        result = {}
+        result["costs"] = costs
+        result["masks"] = proximity_masks
+        result["pre_max"] = pre_max
+        result["contours"] = green_contours
+        return result
+
+    def compute_lane_cost_km(self, images, proximity_masks, masks_sums=None):
+        bsize, npred = images.shape[0], images.shape[1]
+        lanes = images[:, :, 0].float()
+        costs = proximity_masks * (lanes ** 2)
+        if masks_sums is not None:
+            costs /= masks_sums.view(*masks_sums.shape, 1, 1)
+        costs_m = self.agg_func(costs.view(bsize, npred, -1), 2)
+        return costs_m.view(bsize, npred)
+
+    def compute_offroad_cost_km(
+        self, images, proximity_masks, masks_sums=None
+    ):
+        bsize, npred = images.shape[0], images.shape[1]
+        offroad = images[:, :, 2]
+        costs = proximity_masks * (offroad ** 2)
+        if masks_sums is not None:
+            costs /= masks_sums.view(*masks_sums.shape, 1, 1)
+        costs_m = self.agg_func(costs.view(bsize, npred, -1), 2)
+        return costs_m.view(bsize, npred)
