@@ -60,6 +60,7 @@ class PolicyCost(PolicyCostBase):
         """Tuple to store the result of state cost calculation.
         Total costs are tensors of shape bsize.
         The rest are of shape bsize, npred.
+        Costs associated with masks are state costs.
         """
 
         total_proximity: torch.Tensor
@@ -83,6 +84,7 @@ class PolicyCost(PolicyCostBase):
         self.forward_model = forward_model
         self.normalizer = normalizer
         self.traj_landscape = False
+        self.gamma = None
 
     def build_car_proximity_mask(
         self,
@@ -494,13 +496,7 @@ class PolicyCost(PolicyCostBase):
     def compute_state_costs(
         self, state_seq: StateSequence
     ) -> PolicyCost.StateCosts:
-        npred = state_seq.images.size(1)
-        device = state_seq.images.device
-        gamma_mask = (
-            torch.tensor([0.99 ** t for t in range(npred + 1)])
-            .to(device)
-            .unsqueeze(0)
-        )
+        """Costs associated with masks are state costs"""
         artifact_reduced_state_seq = StateSequence(
             state_seq.images ** self.config.artifact_power, *state_seq[1:]
         )
@@ -523,9 +519,9 @@ class PolicyCost(PolicyCostBase):
             lane_offroad_mask,
         )
 
-        lane_total = torch.mean(lane_cost * gamma_mask[:, :npred])
-        offroad_total = torch.mean(offroad_cost * gamma_mask[:, :npred])
-        proximity_total = torch.mean(proximity_cost * gamma_mask[:, :npred])
+        lane_total = torch.mean(self.apply_gamma(lane_cost))
+        offroad_total = torch.mean(self.apply_gamma(offroad_cost))
+        proximity_total = torch.mean(self.apply_gamma(proximity_cost))
         return PolicyCost.StateCosts(
             total_proximity=proximity_total,
             total_lane=lane_total,
@@ -570,6 +566,18 @@ class PolicyCost(PolicyCostBase):
             + self.config.lambda_j * jerk
         )
 
+    def calculate_jerk_loss(self, actions: torch.Tensor) -> torch.Tensor:
+        if actions.shape[1] > 1:
+            loss_j = (
+                (actions[:, 1:] - actions[:, :-1]).norm(2, 2).pow(2).mean()
+            )
+        else:
+            loss_j = 0.0
+        return loss_j
+
+    def calculate_action_loss(self, actions: torch.Tensor) -> torch.Tensor:
+        return (actions).norm(2, 2).pow(2).mean()
+
     def calculate_cost(
         self,
         conditional_state_seq: StateSequence,
@@ -579,13 +587,8 @@ class PolicyCost(PolicyCostBase):
         u_loss = self.calculate_uncertainty_cost(
             conditional_state_seq, actions
         )
-        if actions.shape[1] > 1:
-            loss_j = (
-                (actions[:, 1:] - actions[:, :-1]).norm(2, 2).pow(2).mean()
-            )
-        else:
-            loss_j = 0.0
-        loss_a = (actions).norm(2, 2).pow(2).mean()
+        loss_a = self.calculate_action_loss(actions)
+        loss_j = self.calculate_jerk_loss(actions)
         state_cost = self.compute_state_costs_for_training(
             conditional_state_seq,
             actions,
@@ -601,6 +604,23 @@ class PolicyCost(PolicyCostBase):
             jerk=loss_j,
             total=total,
         )
+
+    def apply_gamma(self, loss_over_time: torch.Tensor) -> torch.Tensor:
+        if (
+            self.gamma is None
+            or self.gamma.shape[-1] != loss_over_time.shape[-1]
+        ):
+            self.gamma = (
+                torch.tensor(
+                    [
+                        self.config.gamma ** t
+                        for t in range(loss_over_time.shape[-1])
+                    ]
+                )
+                .to(loss_over_time.device)
+                .unsqueeze(0)
+            )
+        return loss_over_time * self.gamma
 
     # def calculate_z_cost(self, inputs, predictions, original_z=None):
     #     u_loss = self.calculate_uncertainty_cost(inputs, predictions)
