@@ -408,17 +408,19 @@ class PolicyCostKMTaper(PolicyCostKM):
 
         positions_adjusted = positions - ref_positions.detach()
 
-        rotation = rotation_matrix(ref_directions.detach(), directions).to(
+        rotation = rotation_matrix(directions, ref_directions.detach()).to(
             device
         )
 
         y = torch.linspace(
             -LOOK_SIDEWAYS_M, LOOK_SIDEWAYS_M, crop_w, device=device
         )
-        x = torch.linspace(-LOOK_AHEAD_M, LOOK_AHEAD_M, crop_h, device=device)
+        x = torch.linspace(LOOK_AHEAD_M, -LOOK_AHEAD_M, crop_h, device=device)
         xx, yy = torch.meshgrid(x, y)
         xx = xx.repeat(bsize, npred, 1, 1)
         yy = yy.repeat(bsize, npred, 1, 1)
+
+        # breakpoint()
 
         xx, yy = coordinate_shift(
             xx, yy, positions_adjusted[:, :, 0], positions_adjusted[:, :, 1]
@@ -431,7 +433,7 @@ class PolicyCostKMTaper(PolicyCostKM):
         # Because originally x goes from negative to positive, and the
         # generated mask is overlayed with an image where the cars ahead of us
         # are positive distance, we flip x axis.
-        xx, yy = flip_x(xx, yy)
+        # xx, yy = flip_x(xx, yy)
 
         if metadata is not None:
             metadata["width_y"] = yy.abs() < (width / 2).view(bsize, 1, 1, 1)

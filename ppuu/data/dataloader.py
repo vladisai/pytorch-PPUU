@@ -469,7 +469,7 @@ class Normalizer:
         return images.clone().float().div_(255.0)
 
     def unnormalize_images(self, images):
-        return images.clone().mul_(255.0).uint8()
+        return images.clone().mul_(255.0).type(torch.uint8)
 
 
 class UnitConverter:

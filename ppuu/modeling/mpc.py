@@ -1,13 +1,10 @@
 from dataclasses import dataclass
 from typing import Optional
-from concurrent import futures
+
 import torch
 
-import nevergrad as ng
-
 from ppuu import configs
-
-from ppuu.modeling.km import predict_states_seq, predict_states
+from ppuu.modeling.km import predict_states, predict_states_seq
 
 
 def repeat_batch(value, times, interleave=False):
@@ -295,7 +292,8 @@ class MPCKMPolicy(torch.nn.Module):
                     actions_per_fm_timestep, dim=1
                 )
             else:
-                # TODO: this has to also account for the fact that other cars are probably moving at the same rate as us.
+                # TODO: this has to also account for the fact that other cars
+                # are probably moving at the same rate as us.
                 ref_states = unfolding["pred_states"][:1].repeat_interleave(
                     actions_per_fm_timestep, dim=1
                 )
@@ -303,14 +301,37 @@ class MPCKMPolicy(torch.nn.Module):
             return ref_images, ref_states
 
     def get_cost_batched(
-        self, actions, keep_batch_dim=False, unfolding_agg="max"
+        self,
+        input_images,
+        input_states,
+        car_size,
+        pred_images,
+        pred_states,
+        actions,
+        keep_batch_dim=False,
     ):
-        pass
+        inputs = {
+            "input_images": input_images,
+            "input_states": input_states,
+            "car_sizes": car_size,
+            "ref_states": pred_states,
+            "ref_images": pred_images,
+        }
+
+        predictions = {
+            "pred_states": pred_states,
+            "pred_images": pred_images,
+            "pred_actions": actions,
+        }
+        costs = self.cost.calculate_cost(inputs, predictions)
+        return costs["policy_loss"].mean()
 
     def batched(
         self,
         images,
         states,
+        pred_images,
+        pred_states,
         normalize_inputs=False,
         normalize_outputs=False,
         car_size=None,
@@ -320,19 +341,22 @@ class MPCKMPolicy(torch.nn.Module):
         """
         This function is used for target prop.
         """
-        pass
+
         if normalize_inputs:
             states = self.normalizer.normalize_states(states.clone())
             images = self.normalizer.normalize_images(images)
             car_size = torch.tensor(car_size).unsqueeze(0)
 
-        full_states = states.unsqueeze(0)
-        full_images = images[:, :3].unsqueeze(0)
         states = states[..., -1, :].view(-1, 5)
         images = images[..., -1, :, :, :].view(-1, 1, 4, 117, 24)
 
-        actions = init
+        actions = init.detach().clone()
+        actions.requires_grad = True
+
         self.cost.traj_landscape = False
+
+        if metadata is not None:
+            metadata["costs"] = []
 
         if self.config.optimizer in ["SGD", "Adam"]:
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
@@ -342,12 +366,18 @@ class MPCKMPolicy(torch.nn.Module):
                 optimizer.zero_grad()
 
                 cost = self.get_cost_batched(
+                    images.detach(),
+                    states.detach(),
+                    car_size,
+                    pred_images.detach(),
+                    pred_states.detach(),
                     actions,
                     keep_batch_dim=True,
-                    unfolding_agg=self.config.unfolding_agg,
                 )
 
                 cost.mean().backward()
+                if metadata is not None:
+                    metadata["costs"].append(cost.mean())
                 if not torch.isnan(actions.grad).any():
                     # this is definitely needed, judging from some examples I saw where gradient is 50
                     torch.nn.utils.clip_grad_norm_(
@@ -357,16 +387,12 @@ class MPCKMPolicy(torch.nn.Module):
                 else:
                     print("NaN grad!")
 
-                values, indices = cost.min(dim=0)
-                # if cost[indices] < best_cost:
-                #     best_actions = actions[indices].unsqueeze(0).clone()
-                #     best_cost = cost[indices]
-                best_cost = cost[indices]
-                best_actions = actions[indices].unsqueeze(0).clone()
         else:
             raise NotImplementedError(
                 f"{self.config.optimizer} optimizer is not supported"
             )
+
+        return actions
 
     def __call__(
         self,
@@ -378,11 +404,14 @@ class MPCKMPolicy(torch.nn.Module):
         init=None,
         metadata=None,
         gt_future=None,
+        init_freeze=None,
     ):
         """
         This function is used as a policy in the evaluator.
         """
         device = states.device
+
+        # return torch.tensor([-20.0, 0.01]).to(device)
 
         if self.ctr % self.config.planning_freq > 0:
             actions = self.last_actions[
@@ -439,33 +468,33 @@ class MPCKMPolicy(torch.nn.Module):
 
         # Zero normalized maps to slight acceleration when normalized. We make sure we start from
         # true zero.
-        actions = torch.cat(
-            [
-                # The first action is always just zeros.
-                torch.zeros(1, self.config.unfold_len, 2, device=device),
-                # The rest are random repeated.
-                7
-                * torch.randn(
-                    self.config.batch_size - 1, 1, 2, device=device
-                ).repeat(1, self.config.unfold_len, 1),
-            ],
-            dim=0,
-        )
+        opt_actions = torch.zeros(1, 1, 2, device=device, requires_grad=True)
+
+        actions = opt_actions.expand(1, self.config.unfold_len, 2)
         # actions[:, :, 0] = 30
         # best_actions = torch.zeros_like(actions[:1])
         best_actions = actions[:1]
 
-        actions[:, :, 1] = 0
         best_cost = 1e10
 
-        if init is not None:
-            actions.data = init
+        # if init is not None:
+        #     actions.data = init
 
         actions = self.normalizer.normalize_actions(actions)
-        self.cost.traj_landscape = False
-        actions.requires_grad = True
 
-        def get_cost(actions, keep_batch_dim=False, unfolding_agg="max"):
+        if metadata is not None:
+            metadata["action_history"] = []
+            metadata["best_costs"] = []
+            metadata["costs"] = []
+            metadata["predictions"] = []
+
+        self.cost.traj_landscape = False
+
+        def get_cost(
+            actions, keep_batch_dim=False, unfolding_agg="max", metadata=None
+        ):
+            if actions.shape[1] == 1:
+                actions = actions.expand(1, self.config.unfold_len, 2)
             batch_size = actions.shape[0]
             unfoldings_size = ref_images.shape[0]
 
@@ -498,7 +527,7 @@ class MPCKMPolicy(torch.nn.Module):
                 "pred_images": repeat_batch(
                     ref_images, batch_size, interleave=True
                 ),
-                "pred_actions": repeat_batch(actions, unfoldings_size),
+                "pred_actions": rep_actions,
             }
 
             jerk_actions = actions
@@ -532,6 +561,9 @@ class MPCKMPolicy(torch.nn.Module):
 
             # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
             costs = self.cost.calculate_cost(inputs, predictions)
+            if metadata is not None:
+                metadata["costs"].append(costs)
+                metadata["predictions"].append(predictions)
 
             result = (
                 costs["policy_loss"]
@@ -552,9 +584,51 @@ class MPCKMPolicy(torch.nn.Module):
             else:
                 return result.mean()
 
+        if init_freeze is not None:
+            # we freeze the first few of values in the actions tensor to the passed value.
+            # action shape is batch_size, unfold_len, 2
+            init_length = init_freeze.shape[0]
+            actions = torch.cat(
+                [
+                    # The first action is always just zeros.
+                    torch.zeros(
+                        1,
+                        self.config.unfold_len - init_length,
+                        2,
+                        device=device,
+                    ),
+                    # The rest are random repeated.
+                    1
+                    * torch.randn(
+                        self.config.batch_size - 1, 1, 2, device=device
+                    ).repeat(1, self.config.unfold_len - init_length, 1),
+                ],
+                dim=0,
+            )
+            actions[:, :, 1] = 0
+            actions.requires_grad = True
+            if init_length < self.config.unfold_len:
+                opt_actions = torch.cat(
+                    [
+                        init_freeze.unsqueeze(0).repeat(
+                            self.config.batch_size, 1, 1
+                        ),
+                        actions,
+                    ],
+                    dim=1,
+                )
+            else:
+                if gt_future_values is None:
+                    # We don't regenerate this if gt is passed!
+                    ref_images, ref_states = self.unfold_fm(
+                        full_images, full_states, best_actions
+                    )
+                opt_actions = init_freeze.unsqueeze(0)
+                return get_cost(opt_actions, metadata=metadata)
+
         if self.config.optimizer in ["SGD", "Adam"]:
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
-                (actions,), self.config.lr
+                (opt_actions,), self.config.lr
             )
 
             for i in range(self.config.n_iter):
@@ -567,26 +641,42 @@ class MPCKMPolicy(torch.nn.Module):
                         full_images, full_states, best_actions
                     )
 
-                # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
                 optimizer.zero_grad()
                 if i == self.config.n_iter - 1 and self.visualizer is not None:
                     self.cost.traj_landscape = True
 
-                cost = get_cost(
-                    actions,
-                    keep_batch_dim=True,
-                    unfolding_agg=self.config.unfolding_agg,
-                )
+                if init_freeze is None:
+                    cost = get_cost(
+                        opt_actions,
+                        keep_batch_dim=True,
+                        unfolding_agg=self.config.unfolding_agg,
+                        metadata=metadata,
+                    )
+                else:
+                    cost = get_cost(
+                        actions,
+                        keep_batch_dim=True,
+                        unfolding_agg=self.config.unfolding_agg,
+                        metadata=metadata,
+                    )
 
                 if i == self.config.n_iter - 1:
                     self.cost.traj_landscape = False
 
                 cost.mean().backward()
-                a_grad = actions.grad[0, 0].clone()  # save for plotting later
-                if not torch.isnan(actions.grad).any():
+                if opt_actions.grad.shape[0] > 0:
+                    a_grad = (
+                        opt_actions.grad[0, 0].detach().clone()
+                    )  # save for plotting later
+                else:
+                    a_grad = torch.tensor([0.0, 0.0])
+                print(a_grad)
+                print(opt_actions)
+
+                if not torch.isnan(opt_actions.grad).any():
                     # this is definitely needed, judging from some examples I saw where gradient is 50
                     torch.nn.utils.clip_grad_norm_(
-                        actions, 1.0, norm_type="inf"
+                        opt_actions, 1.0, norm_type="inf"
                     )
                     optimizer.step()
                 else:
@@ -596,8 +686,14 @@ class MPCKMPolicy(torch.nn.Module):
                 # if cost[indices] < best_cost:
                 #     best_actions = actions[indices].unsqueeze(0).clone()
                 #     best_cost = cost[indices]
-                best_cost = cost[indices]
-                best_actions = actions[indices].unsqueeze(0).clone()
+                best_cost = cost[indices].detach().clone()
+                best_actions = actions[indices].unsqueeze(0).detach().clone()
+
+                if metadata is not None:
+                    metadata["action_history"].append(
+                        opt_actions[0, 0].clone().detach()
+                    )
+                    metadata["best_costs"].append(best_cost.item())
 
                 if self.visualizer:
                     unnormalized_actions = self.normalizer.unnormalize_actions(
@@ -610,51 +706,6 @@ class MPCKMPolicy(torch.nn.Module):
                         a_grad[0].item(),
                         a_grad[1].item(),
                     )
-
-        elif self.config.optimizer == "Nevergrad":
-            i = 0
-
-            def ng_get_cost(actions):
-                if i == 0 and self.visualizer is not None:
-                    self.cost.traj_landscape = True
-                i += 1
-
-                a = torch.tensor(actions).float().cuda()
-                cost = get_cost(a)
-
-                if metadata is not None and "cost" not in metadata:
-                    metadata["cost"] = cost
-
-                if i == 0:
-                    self.cost.traj_landscape = False
-
-                if self.visualizer:
-                    unnormalized_actions = self.normalizer.unnormalize_actions(
-                        a.data
-                    )
-                    self.visualizer.update_values(
-                        cost.item(),
-                        unnormalized_actions[0, 0, 0].item(),
-                        unnormalized_actions[0, 0, 1].item(),
-                    )
-
-                return cost.item()
-
-            ref_images, ref_states = self.unfold_fm(
-                full_images, full_states, best_actions
-            )
-
-            parametrization = ng.p.Array(shape=actions.shape)
-            parametrization.set_bounds(-5, 5)
-            optim = ng.optimizers.registry["CMA"](
-                parametrization=parametrization,
-                budget=self.config.optimizer_budget,
-            )
-            with futures.ThreadPoolExecutor(
-                max_workers=optim.num_workers
-            ) as executor:  # the executor will evaluate the function in multiple threads
-                recommendation = optim.minimize(ng_get_cost, executor=executor)
-                actions = torch.tensor(recommendation.value).float().cuda()
 
         elif self.config.optimizer == "LBFGS":
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
@@ -750,6 +801,9 @@ class MPCKMPolicy(torch.nn.Module):
 
         print("final actions for", self.ctr, "are", actions)
 
+        if metadata is not None:
+            metadata["best_cost"] = best_cost.item()
+
         self.ctr += 1
 
         return actions.detach()
@@ -843,8 +897,6 @@ class MPCFMPolicy(torch.nn.Module):
                     * self.config.fm_unfold_variance
                 )
                 print("WARN: reinitializing Z")
-            # else:
-            #     print('using the provided z', Z.view(self.config.fm_unfold_samples, self.config.batch_size, -1).sum(dim=-1))
 
             unfolding = self.forward_model.model.unfold(
                 actions_or_policy=actions,
@@ -867,7 +919,8 @@ class MPCFMPolicy(torch.nn.Module):
             if self.config.fm_unfold_samples_agg == "keep":
                 ref_states = unfolding["pred_states"]
             else:
-                # TODO: this has to also account for the fact that other cars are probably moving at the same rate as us.
+                # TODO: this has to also account for the fact that other
+                # cars are probably moving at the same rate as us.
                 ref_states = unfolding["pred_states"][:1]
 
             return ref_images, ref_states, unfolding["Z"]
@@ -1064,7 +1117,6 @@ class MPCFMPolicy(torch.nn.Module):
             Z = repeat_batch(Z, self.config.fm_unfold_samples, interleave=True)
 
             for i in range(self.config.n_iter):
-                # costs = self.cost.compute_state_costs_for_training(inputs, pred_images, pred_states, actions, car_size)
                 optimizer.zero_grad()
                 if i == self.config.n_iter - 1 and self.visualizer is not None:
                     self.cost.traj_landscape = True
