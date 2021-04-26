@@ -2,32 +2,14 @@ import unittest
 
 from ppuu.costs import PolicyCost, PolicyCostContinuous, PolicyCostKMTaper
 from ppuu.data.dataloader import Normalizer
-from ppuu.modeling.forward_models import FwdCNN_VAE
 from ppuu.test.mock_dataset import get_mock_dataloader
+from ppuu.test import utils
 
 
 class TestFMModels(unittest.TestCase):
     def setUp(self):
-        self.fm = self.get_fm()
+        self.fm = utils.get_fm()
         self.fm = self.fm.cuda()
-
-    def get_fm(self):
-        return FwdCNN_VAE(
-            layers=3,
-            nfeature=256,
-            dropout=0.1,
-            h_height=14,
-            h_width=3,
-            height=117,
-            width=24,
-            n_actions=2,
-            hidden_size=256 * 14 * 3,
-            ncond=20,
-            predict_state=True,
-            nz=32,
-            enable_kld=True,
-            enable_latent=True,
-        )
 
     def run_cost_test(self, c):
         dl = get_mock_dataloader()

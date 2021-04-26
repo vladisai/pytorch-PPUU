@@ -8,10 +8,10 @@ import torch
 class StateSequence(NamedTuple):
     """A class to hold info about state sequences used throughout this codebase."""
 
-    images: torch.Tensor
-    states: torch.Tensor
-    car_size: torch.Tensor
-    ego_car_image: torch.Tensor
+    images: torch.Tensor  # of shape (..., npred, 3 or 4, 117, 24)
+    states: torch.Tensor  # of shape (..., npred, 5)
+    car_size: torch.Tensor  # of shape (..., 2)
+    ego_car_image: torch.Tensor  # of shape (..., 3, 117, 24)
 
     def with_ego(self) -> StateSequence:
         """This creates another sequence with modified image to contain the images

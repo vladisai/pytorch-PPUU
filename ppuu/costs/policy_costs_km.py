@@ -518,11 +518,18 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             context_state_seq.images, proximity_mask_lo, mask_sums_lo
         )
 
+        batch_size = lane_cost.shape[0]
         # Multiply everything with mask_coeff used to scale up the costs that
         # depend on mask size.
-        lane_total = torch.mean(self.apply_gamma(lane_cost))
-        offroad_total = torch.mean(self.apply_gamma(offroad_cost))
-        proximity_total = torch.mean(self.apply_gamma(proximity_cost))
+        lane_total = (
+            self.apply_gamma(lane_cost).view(batch_size, -1).mean(dim=-1)
+        )
+        offroad_total = (
+            self.apply_gamma(offroad_cost).view(batch_size, -1).mean(dim=-1)
+        )
+        proximity_total = (
+            self.apply_gamma(proximity_cost).view(batch_size, -1).mean(dim=-1)
+        )
 
         return PolicyCost.StateCosts(
             total_proximity=proximity_total,
@@ -593,7 +600,8 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         scalar_states: torch.Tensor,
         actions: torch.Tensor,
         context_state_seq: StateSequence,
-    ):
+    ) -> Cost:
+        batch_size = actions.shape[0]
         u_loss = self.calculate_uncertainty_cost(
             conditional_state_seq, actions
         )
@@ -603,7 +611,11 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         reference_distance_cost = self.calculate_reference_distance_cost(
             scalar_states, context_state_seq.states
         )
-        reference_total = torch.mean(self.apply_gamma(reference_distance_cost))
+        reference_total = (
+            self.apply_gamma(reference_distance_cost)
+            .view(batch_size, -1)
+            .mean(dim=-1)
+        )
 
         state_cost = self.compute_state_costs_for_training(
             scalar_states,
@@ -618,12 +630,14 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             jerk=loss_j,
             reference_distance=reference_total,
         )
-        return PolicyCost.Cost(
+
+        return PolicyCostKMTaper.Cost(
             state=state_cost,
             uncertainty=u_loss,
             action=loss_a,
             jerk=loss_j,
             total=total,
+            reference_distance=reference_total,
         )
 
     def _build_cost_landscape(

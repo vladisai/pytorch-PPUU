@@ -569,14 +569,20 @@ class PolicyCost(PolicyCostBase):
     def calculate_jerk_loss(self, actions: torch.Tensor) -> torch.Tensor:
         if actions.shape[1] > 1:
             loss_j = (
-                (actions[:, 1:] - actions[:, :-1]).norm(2, 2).pow(2).mean()
+                (actions[:, 1:] - actions[:, :-1])
+                .norm(2, 2)
+                .pow(2)
+                .view(actions.shape[0], -1)
+                .mean(dim=-1)
             )
         else:
-            loss_j = 0.0
+            loss_j = torch.zeros(actions.shape[0], device=actions.device)
         return loss_j
 
     def calculate_action_loss(self, actions: torch.Tensor) -> torch.Tensor:
-        return (actions).norm(2, 2).pow(2).mean()
+        return (
+            (actions).norm(2, 2).pow(2).view(actions.shape[0], -1).mean(dim=-1)
+        )
 
     def calculate_cost(
         self,

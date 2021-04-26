@@ -479,6 +479,22 @@ class Normalizer:
     def unnormalize_images(self, images):
         return images.clone().mul_(255.0).uint8()
 
+    def normalize_state_seq(self, state_seq: StateSequence) -> StateSequence:
+        return StateSequence(
+            images=self.normalize_images(state_seq.images),
+            states=self.normalize_states(state_seq.states),
+            car_sizes=state_seq.car_sizes,
+            ego_car_image=self.normalize_images(state_seq.ego_car_images),
+        )
+
+    def unnormalize_state_seq(self, state_seq: StateSequence) -> StateSequence:
+        return StateSequence(
+            images=self.unnormalize_images(state_seq.images),
+            states=self.unnormalize_states(state_seq.states),
+            car_sizes=state_seq.car_sizes,
+            ego_car_image=self.unnormalize_images(state_seq.ego_car_images),
+        )
+
 
 class UnitConverter:
     METRES_IN_FOOT = 0.3048
