@@ -242,7 +242,9 @@ class PolicyEvaluator:
                         ]  # we just get the first
                     )
                 if policy.cost.config.build_cost_profile_and_traj:
-                    self.visualizer.update_()
+                    self.visualizer.update_cost_profile_and_traj(
+                        *policy.cost.get_last_cost_profile_and_traj()
+                    )
                 self.visualizer.update_plot()
 
             # Every second, we save a copy of the environment.

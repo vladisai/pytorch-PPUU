@@ -16,8 +16,8 @@ class EvalVisualizer:
         self.transform = transforms.ToPILImage()
 
         self.output_dir = output_dir
-        self.t_data = None
-        self.c_data = None
+        self.cost_profile_and_traj = None
+        self.cost_profile = None
         self.i_data = None
         self.notebook = notebook
         self.mask_overlay_image_data = None
@@ -53,17 +53,17 @@ class EvalVisualizer:
         big_image = self.transform(big_image)
         self.mask_overlay_image_data = big_image
 
-    def update_trajectory_image(self, image, data):
-        image = (
-            image.clone()
+    def update_cost_profile_and_traj(self, cost_profile_and_traj, cost_profile):
+        cost_profile_and_traj = (
+            cost_profile_and_traj.clone()
             .detach()
             .cpu()
             .mul_(255.0)
             .clamp_(0, 255)
             .type(torch.uint8)
         )
-        image = self.transform(image)
-        self.trajectory_data = image
+        self.cost_profile_and_traj = self.transform(cost_profile_and_traj)
+        self.cost_profile = cost_profile
 
     def update_values(self, cost, acc, turn, acc_grad=0, turn_grad=0):
         self.costs_history.append(cost)
@@ -103,9 +103,9 @@ class EvalVisualizer:
         ax2.set_ylabel("gradient")
 
         plt.subplot(4, 4, 4)
-        if self.trajectory_data is not None:
+        if self.cost_profile_and_traj is not None and self.cost_profile is not None:
             plt.title("cost landscape", y=1.08)
-            im = plt.imshow(self.trajectory_data)
+            im = plt.imshow(self.cost_profile)
             im.axes.get_xaxis().set_visible(False)
             im.axes.get_yaxis().set_visible(False)
             plt.gcf().colorbar(im, orientation="vertical", ax=plt.gca())
@@ -117,8 +117,8 @@ class EvalVisualizer:
             im.axes.get_yaxis().set_visible(False)
 
         plt.subplot(2, 4, 2)
-        if self.t_data is not None:
-            im = plt.imshow(self.t_data)  # show traj
+        if self.cost_profile_and_traj is not None:
+            im = plt.imshow(self.cost_profile_and_traj)  # show traj
             im.axes.get_xaxis().set_visible(False)
             im.axes.get_yaxis().set_visible(False)
 

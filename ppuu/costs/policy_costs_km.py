@@ -1,6 +1,7 @@
 """Cost model that uses the kinematic model.
 """
 
+import random
 from dataclasses import dataclass
 from typing import NamedTuple, Optional, Tuple
 
@@ -148,6 +149,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         lambda_r: float = 1.0
         keep_dims: bool = False
         build_overlay: bool = False
+        build_cost_profile_and_traj: bool = False
 
     class Cost(NamedTuple):
         """Tuple to store the full result of the cost calculation."""
@@ -162,6 +164,9 @@ class PolicyCostKMTaper(PolicyCostContinuous):
     def __init__(self, config, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
         self.agg_func = AggregationFunction(config.agg_func_str)
+        self._last_mask_overlay = None
+        self._last_cost_profile_and_traj = None
+        self._last_cost_profile = None
 
     def calculate_reference_distance_cost(
         self,
@@ -465,7 +470,6 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         mask_sums = proximity_mask.sum(dim=(-1, -2))
         mask_sums_lo = proximity_mask_lo.sum(dim=(-1, -2))
 
-        print(f"{context_state_seq.images.max()=}")
         # We impose a cost for being too far from the reference. Being too far to the side is punished more.
         proximity_cost = self.compute_proximity_cost_km(
             context_state_seq.images, proximity_mask, mask_sums
@@ -492,6 +496,15 @@ class PolicyCostKMTaper(PolicyCostContinuous):
 
         if self.config.build_overlay:
             self._build_mask_overlay(context_state_seq, proximity_mask)
+
+        if self.config.build_cost_profile_and_traj:
+            self._build_cost_profile_and_traj(
+                scalar_states,
+                context_state_seq,
+                conditional_state_seq,
+                proximity_mask,
+                mask_sums,
+            )
 
         return PolicyCost.StateCosts(
             total_proximity=proximity_total,
@@ -524,7 +537,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         self, images, proximity_masks, masks_sums=None
     ):
         images = images[:, :, 1]
-        if self.config.skip_contours:
+        if not self.config.skip_contours:
             images = self.compute_contours(images)
         images = images ** 2
         return self._multiply_masks_km(images, proximity_masks, masks_sums)
@@ -584,6 +597,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             scalar_states,
             actions,
             context_state_seq,
+            conditional_state_seq,
         )
 
         total = self.compute_combined_loss(
@@ -615,6 +629,9 @@ class PolicyCostKMTaper(PolicyCostContinuous):
 
     def get_last_overlay(self):
         return self._last_mask_overlay
+
+    def get_last_cost_profile_and_traj(self):
+        return (self._last_cost_profile_and_traj, self._last_cost_profile)
 
     # def _build_cost_landscape(
     #     self,
@@ -664,46 +681,51 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         """This function builds visualization images.
         The first one is overlay of the mask on top of different future states,
         the second one is trajectory on top of the cost landscape.
+
         """
 
-        last_image = conditional_state_seq.images[:, -1:, :3].repeat(
-            1, context_state_seq.states.shape[1], 1, 1, 1
-        )
-        last_state = conditional_state_seq.states.repeat(
-            1, context_state_seq.states.shape[1], 1
-        )
-        new_context = StateSequence(
-            images=last_image,
-            states=last_state,
-            car_sizes=context_state_seq.car_sizes,
-            ego_car_image=conditional_state_seq.ego_car_image,
-        )
+        if (
+            self._last_cost_profile_and_traj is None
+            or random.randint(1, 30) == 1
+        ):
+            last_image = conditional_state_seq.images[:, -1:, :3].repeat(
+                1, context_state_seq.states.shape[1], 1, 1, 1
+            )
+            last_state = conditional_state_seq.states[:, -1:].repeat(
+                1, context_state_seq.states.shape[1], 1
+            )
+            new_context = StateSequence(
+                images=last_image,
+                states=last_state,
+                car_size=context_state_seq.car_size,
+                ego_car_image=conditional_state_seq.ego_car_image,
+            )
 
-        traj_proximity_mask = self.get_traj_points(
-            scalar_states,
-            new_context,
-            unnormalize=False,
-        )
+            traj_proximity_mask = self.get_traj_points(
+                scalar_states,
+                new_context,
+                unnormalize=True,
+            )
 
-        cost_landscape_unnormed = self.get_cost_landscape(
-            last_image[0, 0].cuda(),
-            proximity_mask[0, 0].unsqueeze(0).unsqueeze(0),
-            proximity_mask_sum[0, 0].unsqueeze(0).unsqueeze(0),
-        )
-        cost_landscape = cost_landscape_unnormed / (
-            cost_landscape_unnormed.max() + 1e-9
-        )
-        cost_landscape = torch.stack(
-            [
-                torch.zeros_like(cost_landscape),
-                cost_landscape,
-                torch.zeros_like(cost_landscape),
-            ]
-        )
+            cost_landscape_unnormed = self.get_cost_landscape(
+                last_image[0, 0].cuda(),
+                proximity_mask[0, 0].unsqueeze(0).unsqueeze(0),
+                proximity_mask_sum[0, 0].unsqueeze(0).unsqueeze(0),
+            )
+            cost_landscape = cost_landscape_unnormed / (
+                cost_landscape_unnormed.max() + 1e-9
+            )
+            cost_landscape = torch.stack(
+                [
+                    torch.zeros_like(cost_landscape),
+                    cost_landscape,
+                    torch.zeros_like(cost_landscape),
+                ]
+            )
 
-        self._cost_profile_and_traj = (
-            cost_landscape.cuda() + traj_proximity_mask.sum(dim=1)[0]
-        ).contiguous()
-
-        self.t_image = self.t_image.contiguous()
-        self.t_image_data = cost_landscape_unnormed.detach().cpu().numpy()
+            self._last_cost_profile_and_traj = (
+                cost_landscape.cuda() + traj_proximity_mask.sum(dim=1)[0]
+            ).contiguous()
+            self._last_cost_profile = (
+                cost_landscape_unnormed.detach().cpu().numpy()
+            )
