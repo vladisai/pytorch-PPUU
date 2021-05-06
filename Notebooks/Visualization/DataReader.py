@@ -409,7 +409,7 @@ class DataReader:
 
     @staticmethod
     def get_episode_speeds(experiment, seed, checkpoint, episode):
-        """ Returns an array of speeds for given model and given episode"""
+        """Returns an array of speeds for given model and given episode"""
         return DataReader.get_model_speeds(experiment, seed, checkpoint)[
             episode - 1
         ]
@@ -427,7 +427,7 @@ class DataReader:
     @staticmethod
     @lru_cache(maxsize=10)
     def get_model_costs(experiment, seed, checkpoint):
-        """ Returns an array of costs for given model for all episodes"""
+        """Returns an array of costs for given model for all episodes"""
         return DataReader.get_evaluation_result(experiment, seed, checkpoint)[
             "cost_sequence"
         ]
@@ -444,7 +444,7 @@ class DataReader:
     @staticmethod
     @lru_cache(maxsize=10)
     def get_model_speeds(experiment, seed, checkpoint):
-        """ Returns an array of speeds for given model for all episodes"""
+        """Returns an array of speeds for given model for all episodes"""
         states = DataReader.get_evaluation_result(
             experiment, seed, checkpoint
         )["state_sequence"]
@@ -459,7 +459,7 @@ class DataReader:
     @staticmethod
     @lru_cache(maxsize=10)
     def get_model_states(experiment, seed, checkpoint):
-        """ Returns an array of states for given model for all episodes"""
+        """Returns an array of states for given model for all episodes"""
         states = DataReader.get_evaluation_result(
             experiment, seed, checkpoint
         )["state_sequence"]

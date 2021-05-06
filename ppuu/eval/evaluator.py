@@ -14,11 +14,12 @@ from typing import Optional
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 
-import gym
-import pandas as pd
-import torch
+import gym  # noqa
+import pandas as pd  # noqa
+import torch  # noqa
 
-from ppuu.data import dataloader
+from ppuu.data import dataloader  # noqa
+from ppuu.data.entities import StateSequence  # noqa
 
 MAX_ENV_QUEUE_SIZE = 5
 
@@ -170,22 +171,25 @@ class PolicyEvaluator:
             input_images = inputs["context"].contiguous()
             input_states = inputs["state"].contiguous()
 
+            conditional_state_seq = StateSequence(
+                images=input_images.unsqueeze(0),
+                states=input_states.unsqueeze(0),
+                car_size=torch.tensor(car_size).unsqueeze(0),
+                ego_car_image=input_images.unsqueeze(0),
+            ).cuda()
+
             if self.pass_gt_future:
                 a = policy(
-                    input_images.cuda(),
-                    input_states.cuda(),
-                    car_size=car_size,
+                    conditional_state_seq=conditional_state_seq,
                     normalize_inputs=True,
                     normalize_outputs=True,
                     gt_future=lambda: self._get_future_with_no_action(
-                        env, t=policy.config.unfold_len
+                        env, policy.config.unfold_len, car_size
                     ),
                 )
             else:
                 a = policy(
-                    input_images.cuda(),
-                    input_states.cuda(),
-                    car_size=car_size,
+                    conditional_state_seq=conditional_state_seq,
                     normalize_inputs=True,
                     normalize_outputs=True,
                 )
@@ -223,17 +227,25 @@ class PolicyEvaluator:
             )
 
             if self.visualizer is not None:
-                self.visualizer.update(inputs["context"][-1].contiguous())
+                self.visualizer.update_main_image(
+                    inputs["context"][-1].contiguous()
+                )
                 if hasattr(policy.cost, "t_image"):
-                    self.visualizer.update_t(
+                    self.visualizer.update_trajectory(
                         policy.cost.t_image.contiguous(),
                         policy.cost.t_image_data,
                     )
-                    self.visualizer.update_c(
-                        policy.cost.overlay[0].contiguous()
+                if policy.cost.config.build_overlay:
+                    self.visualizer.update_mask_overlay(
+                        policy.cost.get_last_overlay()[
+                            0
+                        ]  # we just get the first
                     )
+                if policy.cost.config.build_cost_profile_and_traj:
+                    self.visualizer.update_()
+                self.visualizer.update_plot()
 
-            # every second, we save a copy of the environment
+            # Every second, we save a copy of the environment.
             if t % 10 == 0:
                 # need to remove lane surfaces because they're unpickleable
                 env._lane_surfaces = dict()
@@ -280,9 +292,8 @@ class PolicyEvaluator:
             total_cost["lane_cost"],
         )
 
-    def _get_future_with_no_action(self, env, t):
-        """ Build state and images for the future if all actions are 0"""
-        Future = namedtuple("Future", ["images", "states"])
+    def _get_future_with_no_action(self, env, t, car_size):
+        """Build state and images for the future if all actions are 0"""
         env._lane_surfaces = dict()
         env = copy.deepcopy(env)
         images = []
@@ -293,8 +304,14 @@ class PolicyEvaluator:
             states.append(inputs["state"].contiguous()[-1])
             if done:
                 return None  # we fall back to using the forward model in this case.
+        images = torch.stack(images).unsqueeze(0)
 
-        return Future(torch.stack(images), torch.stack(states))
+        return StateSequence(
+            images,
+            torch.stack(states).unsqueeze(0),
+            car_size=torch.tensor(car_size).unsqueeze(0),
+            ego_car_image=images,
+        ).cuda()
 
     def _build_episode_data(self, unfolding):
         return dict(
@@ -424,7 +441,6 @@ class PolicyEvaluator:
         output_dir: Optional[str] = None,
         alternative_module: Optional[torch.nn.Module] = None,
     ):
-
         if output_dir is not None:
             os.makedirs(
                 os.path.join(output_dir, "episode_data"), exist_ok=True

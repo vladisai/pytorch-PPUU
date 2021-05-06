@@ -20,6 +20,7 @@ class EvalVisualizer:
         self.c_data = None
         self.i_data = None
         self.notebook = notebook
+        self.mask_overlay_image_data = None
 
         if notebook:
             # In the notebook we create this once and keep it, otherwise we spawn a new one
@@ -31,15 +32,16 @@ class EvalVisualizer:
     def setup_mpl(self):
         mpl.use("Agg")
 
-    def update(self, image):
+    def update_main_image(self, image):
         if image.shape[0] == 4:
             image = image[:3] + image[3]
         image = self.transform(image)
         self.i_data = image
 
-    def update_c(self, overlay):
+    def update_mask_overlay(self, overlay):
         big_image = (
-            overlay.clone()
+            overlay[:, :3]
+            .clone()
             .detach()
             .cpu()
             .mul_(255.0)
@@ -49,9 +51,9 @@ class EvalVisualizer:
             .reshape(3, 117, -1)
         )
         big_image = self.transform(big_image)
-        self.c_data = big_image
+        self.mask_overlay_image_data = big_image
 
-    def update_t(self, image, data):
+    def update_trajectory_image(self, image, data):
         image = (
             image.clone()
             .detach()
@@ -61,8 +63,7 @@ class EvalVisualizer:
             .type(torch.uint8)
         )
         image = self.transform(image)
-        self.t_data = image
-        self.t_data_no_traj = data
+        self.trajectory_data = image
 
     def update_values(self, cost, acc, turn, acc_grad=0, turn_grad=0):
         self.costs_history.append(cost)
@@ -102,9 +103,9 @@ class EvalVisualizer:
         ax2.set_ylabel("gradient")
 
         plt.subplot(4, 4, 4)
-        if self.t_data is not None and self.t_data_no_traj is not None:
+        if self.trajectory_data is not None:
             plt.title("cost landscape", y=1.08)
-            im = plt.imshow(self.t_data_no_traj)
+            im = plt.imshow(self.trajectory_data)
             im.axes.get_xaxis().set_visible(False)
             im.axes.get_yaxis().set_visible(False)
             plt.gcf().colorbar(im, orientation="vertical", ax=plt.gca())
@@ -121,9 +122,11 @@ class EvalVisualizer:
             im.axes.get_xaxis().set_visible(False)
             im.axes.get_yaxis().set_visible(False)
 
-        if self.c_data is not None:
+        if self.mask_overlay_image_data is not None:
             plt.subplot(2, 1, 2)
-            im = plt.imshow(self.c_data)  # show planning images
+            im = plt.imshow(
+                self.mask_overlay_image_data
+            )  # show planning images
             im.axes.get_xaxis().set_visible(False)
             im.axes.get_yaxis().set_visible(False)
 

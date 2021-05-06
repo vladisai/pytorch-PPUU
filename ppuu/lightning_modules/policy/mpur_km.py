@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import torch
 
-from ppuu.costs.policy_costs_km import PolicyCostKM, PolicyCostKMTaper
+from ppuu.costs.policy_costs_km import PolicyCostKMTaper
 from ppuu.data.dataloader import overlay_ego_car
 from ppuu.lightning_modules.policy.mpur import (
     ForwardModelV3,
@@ -14,8 +14,8 @@ from ppuu.modeling.mpc import MPCKMPolicy
 from ppuu.wrappers import ForwardModelKM
 
 
-@inject(cost_type=PolicyCostKM, fm_type=ForwardModelKM)
-class MPURKMModule(MPURModule):
+@inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelKM)
+class MPURKMTaperModule(MPURModule):
     def forward(self, batch):
         self.forward_model.eval()
         predictions = self.forward_model.unfold_km(
@@ -25,11 +25,6 @@ class MPURKMModule(MPURModule):
             npred=self.config.model.n_pred,
         )
         return predictions
-
-
-@inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelKM)
-class MPURKMTaperModule(MPURKMModule):
-    pass
 
 
 @inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelV3)

@@ -6,17 +6,18 @@ import os
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 
-import logging
-from dataclasses import dataclass
-from typing import Optional
+import logging  # noqa
+from dataclasses import dataclass  # noqa
+from typing import Optional  # noqa
 
-import torch.multiprocessing
-from omegaconf import MISSING
 
-from ppuu import configs, slurm
-from ppuu.data import dataloader
-from ppuu.eval import PolicyEvaluator
-from ppuu.lightning_modules.policy import get_module
+import torch.multiprocessing  # noqa
+from omegaconf import MISSING  # noqa
+
+from ppuu import configs, slurm  # noqa
+from ppuu.data import dataloader  # noqa
+from ppuu.eval import PolicyEvaluator  # noqa
+from ppuu.lightning_modules.policy import get_module  # noqa
 
 
 def get_optimal_pool_size():

@@ -1,7 +1,7 @@
 """Improved costs that use edge filter and don't take max of the pixels, but
 sum the values instead"""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
@@ -13,7 +13,7 @@ from ppuu.data.entities import StateSequence
 class PolicyCostContinuous(PolicyCost):
     @dataclass
     class Config(PolicyCost.Config):
-        lambda_p: float = field(default=4.0)
+        lambda_p: float = 4.0
         skip_contours: bool = False
         safe_factor: float = 1.5
         u_reg: float = 0.2

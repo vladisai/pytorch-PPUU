@@ -38,6 +38,14 @@ class StateSequence(NamedTuple):
             images_with_ego, self.states, self.car_size, self.ego_car_image
         )
 
+    def without_ego(self) -> StateSequence:
+        return StateSequence(
+            self.images[..., :3, :, :],
+            self.states,
+            self.car_size,
+            self.ego_car_image,
+        )
+
     def shift_add(
         self, image: torch.Tensor, state: torch.Tensor
     ) -> StateSequence:

@@ -1,9 +1,7 @@
 """Costs calculation for policy. Calculates uncertainty and state costs.
 """
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import NamedTuple, Any
 
 import torch
 
@@ -73,7 +71,7 @@ class PolicyCost(PolicyCostBase):
     class Cost(NamedTuple):
         """Tuple to store the full result of the cost calculation."""
 
-        state: PolicyCost.StateCosts
+        state: Any  # PolicyCost.StateCosts  # noqa
         uncertainty: torch.Tensor
         action: torch.Tensor
         jerk: torch.Tensor
@@ -495,7 +493,7 @@ class PolicyCost(PolicyCostBase):
 
     def compute_state_costs(
         self, state_seq: StateSequence
-    ) -> PolicyCost.StateCosts:
+    ) -> Any:  # PolicyCost.StateCosts:  # noqa
         """Costs associated with masks are state costs"""
         artifact_reduced_state_seq = StateSequence(
             state_seq.images ** self.config.artifact_power, *state_seq[1:]
@@ -533,7 +531,7 @@ class PolicyCost(PolicyCostBase):
 
     def compute_state_costs_for_uncertainty(
         self, state_seq: StateSequence
-    ) -> PolicyCost.StateCost:
+    ) -> Any:  # PolicyCost.StateCost:  # noqa
         return self.compute_state_costs(state_seq)
 
     def compute_state_costs_for_training(
@@ -549,7 +547,7 @@ class PolicyCost(PolicyCostBase):
 
     def compute_combined_loss(
         self,
-        state: PolicyCost.StateCosts,
+        state: Any,  # PolicyCost.StateCosts,
         uncertainty: torch.Tensor,
         action: torch.Tensor,
         jerk: torch.Tensor,

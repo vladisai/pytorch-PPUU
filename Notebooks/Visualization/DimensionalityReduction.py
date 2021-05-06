@@ -69,12 +69,12 @@ class DimensionalityReduction:
         self.initialized = True
 
     def transform(self, value):
-        """ Performs dimensionality reduction on given values"""
+        """Performs dimensionality reduction on given values"""
         self.initialize()
         return self.dimensionality_reduction.fit_transform(value)
 
     def cluster(self, value):
-        """ Performs clustering on given values"""
+        """Performs clustering on given values"""
         self.initialize()
         return self.km.predict(value)
 

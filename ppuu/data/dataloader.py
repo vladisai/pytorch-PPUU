@@ -426,7 +426,7 @@ class Normalizer:
         )
 
     def states_to_diffs(self, states):
-        """ First two numbers are pixels"""
+        """First two numbers are pixels"""
         state_diffs = states[1:] - states[:-1]
         state_diffs = torch.cat([torch.zeros(1, 5), state_diffs], axis=0)
         state_diffs[..., 2:] = states[..., 2:]
@@ -443,7 +443,7 @@ class Normalizer:
         return states
 
     def unnormalize_states(self, states):
-        """ From normalized to feet """
+        """From normalized to feet"""
         device = states.device
         states = states * (
             1e-8 + self.data_stats["s_std"].view(1, 5).expand(states.size())
@@ -477,63 +477,23 @@ class Normalizer:
         return images.clone().float().div_(255.0)
 
     def unnormalize_images(self, images):
-        return images.clone().mul_(255.0).uint8()
+        return images.clone().mul_(255.0).type(torch.uint8)
 
     def normalize_state_seq(self, state_seq: StateSequence) -> StateSequence:
         return StateSequence(
             images=self.normalize_images(state_seq.images),
             states=self.normalize_states(state_seq.states),
-            car_sizes=state_seq.car_sizes,
-            ego_car_image=self.normalize_images(state_seq.ego_car_images),
+            car_size=state_seq.car_size,
+            ego_car_image=self.normalize_images(state_seq.ego_car_image),
         )
 
     def unnormalize_state_seq(self, state_seq: StateSequence) -> StateSequence:
         return StateSequence(
             images=self.unnormalize_images(state_seq.images),
             states=self.unnormalize_states(state_seq.states),
-            car_sizes=state_seq.car_sizes,
-            ego_car_image=self.unnormalize_images(state_seq.ego_car_images),
+            car_size=state_seq.car_size,
+            ego_car_image=self.unnormalize_images(state_seq.ego_car_image),
         )
-
-
-class UnitConverter:
-    METRES_IN_FOOT = 0.3048
-    LANE_WIDTH_METRES = 3.7
-    LANE_WIDTH_PIXELS = 24  # pixels / 3.7 m, lane width
-    PIXELS_IN_METRE = LANE_WIDTH_PIXELS / LANE_WIDTH_METRES
-    """
-    LOOKAHEAD is 36 meters
-    LOOK sideways is 2 lane widths, which is 7.2 meters
-    One 6.5 pixels per s is about 1 m/s
-    """
-
-    @classmethod
-    def feet_to_m(cls, x):
-        return x * cls.METRES_IN_FOOT
-
-    @classmethod
-    def m_to_feet(cls, x):
-        return x / cls.METRES_IN_FOOT
-
-    @classmethod
-    def pixels_to_m(cls, x):
-        return x / cls.PIXELS_IN_METRE
-
-    @classmethod
-    def m_to_pixels(cls, x):
-        return x * cls.PIXELS_IN_METRE
-
-    @classmethod
-    def feet_to_pixels(cls, x):
-        return cls.m_to_pixels(cls.feet_to_m(x))
-
-    @classmethod
-    def pixels_to_feet(cls, x):
-        return cls.m_to_feet(cls.pixels_to_m(x))
-
-    @classmethod
-    def pixels_per_s_to_kmph(cls, x):
-        return cls.pixels_to_m(x) / 1000 * 60 * 60
 
 
 def overlay_ego_car(images, ego_car):

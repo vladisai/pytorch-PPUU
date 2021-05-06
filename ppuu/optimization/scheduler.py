@@ -4,7 +4,7 @@ import torch
 
 
 class BlowupSchedule(torch.optim.lr_scheduler._LRScheduler):
-    """ This only really works if you call it per step, not per epoch """
+    """This only really works if you call it per step, not per epoch"""
 
     def __init__(
         self,

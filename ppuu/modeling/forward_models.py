@@ -46,15 +46,20 @@ class FwdCNN_VAE(torch.nn.Module):
         actions: torch.Tensor
         z: torch.Tensor
 
+        def map(self, f) -> FwdCNN_VAE.Unfolding:
+            return FwdCNN_VAE.Unfolding(
+                self.state_seq.map(f), f(self.actions), f(self.z)
+            )
+
     class ForwardResult(NamedTuple):
-        """ A tuple to hold values for fm forward result"""
+        """A tuple to hold values for fm forward result"""
 
         state_seq: StateSequence
         z: torch.Tensor
         p_loss: torch.Tensor
 
     class ForwardSingleStepResult(NamedTuple):
-        """ A tuple to hold values for fm forward single step result"""
+        """A tuple to hold values for fm forward single step result"""
 
         pred_image: torch.Tensor
         pred_state: torch.Tensor

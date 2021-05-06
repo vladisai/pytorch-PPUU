@@ -42,130 +42,139 @@ def flatten_2_dims(x):
     return flatten_dims(x, 2)
 
 
-def flatten_f_unflatten(f, args, flatten_dims=2):
-    """Flattens first flattenn_dims in x, applies
+def nan_to_val(x, val=1e8):
+    old_shape = x.shape
+    x_flat = x.flatten()
+    x_flat[torch.isnan(x_flat)] = val
+    return x_flat.view(*old_shape)
+
+
+def flatten_f_unflatten(f, args, dims=2):
+    """Flattens first dims in x, applies
     x to the tensor, and unflattens the result to have the
     original first two dims"""
-    original_shapes = [x.shape for x in args]
-    args_flat = [flatten_dims(x) for x in args]
+    original_shapes = [
+        x.shape if torch.is_tensor(x) else x.images.shape for x in args
+    ]
+    args_flat = [flatten_dims(x, dims) for x in args]
     f_x_flat = f(*args_flat)
-    return unflatten_dims(f_x_flat, original_shapes[0][:flatten_dims])
+    return unflatten_dims(f_x_flat, original_shapes[0][:dims])
 
 
-class CE:
-    """Adapted from:
-    https://github.com/homangab/gradcem/blob/master/mpc/cem.py
-    """
+# class CE:
+#     """Adapted from:
+#     https://github.com/homangab/gradcem/blob/master/mpc/cem.py
+#     """
 
-    def __init__(
-        self,
-        batch_size=1,
-        horizon=30,
-        n_iter=10,
-        population_size=30,
-        top_size=10,
-        variance=4,
-        gd=True,
-        lr=0.1,
-        repeat_step=5,
-    ):
-        self.a_size = 2
-        self.batch_size = batch_size
-        self.horizon = horizon
-        self.device = torch.device("cuda")
-        self.n_iter = n_iter
-        self.population_size = population_size
-        self.top_size = top_size
-        self.variance = variance
-        self.gd = gd
-        self.lr = lr
-        self.repeat_step = repeat_step
-        self.plan_length = int(self.horizon / self.repeat_step)
+#     def __init__(
+#         self,
+#         batch_size=1,
+#         horizon=30,
+#         n_iter=10,
+#         population_size=30,
+#         top_size=10,
+#         variance=4,
+#         gd=True,
+#         lr=0.1,
+#         repeat_step=5,
+#     ):
+#         self.a_size = 2
+#         self.batch_size = batch_size
+#         self.horizon = horizon
+#         self.device = torch.device("cuda")
+#         self.n_iter = n_iter
+#         self.population_size = population_size
+#         self.top_size = top_size
+#         self.variance = variance
+#         self.gd = gd
+#         self.lr = lr
+#         self.repeat_step = repeat_step
+#         self.plan_length = int(self.horizon / self.repeat_step)
 
-    def plan(self, get_cost):
-        # Initialize factorized belief over action sequences q(a_t:t+H) ~ N(0, I)
-        a_mu = torch.zeros(
-            self.batch_size,
-            1,
-            self.plan_length,
-            self.a_size,
-            device=self.device,
-        )
-        a_std = self.variance * torch.ones(
-            self.batch_size,
-            1,
-            self.plan_length,
-            self.a_size,
-            device=self.device,
-        )
-        actions = (
-            a_mu
-            + a_std
-            * torch.randn(
-                self.batch_size,
-                self.population_size,
-                self.plan_length,
-                self.a_size,
-                device=self.device,
-            )
-        ).repeat_interleave(self.repeat_step, dim=2)
-        actions.requires_grad = True
+#     def plan(self, get_cost):
+#         # Initialize factorized belief over action sequences q(a_t:t+H) ~ N(0, I)
+#         a_mu = torch.zeros(
+#             self.batch_size,
+#             1,
+#             self.plan_length,
+#             self.a_size,
+#             device=self.device,
+#         )
+#         a_std = self.variance * torch.ones(
+#             self.batch_size,
+#             1,
+#             self.plan_length,
+#             self.a_size,
+#             device=self.device,
+#         )
+#         actions = (
+#             a_mu
+#             + a_std
+#             * torch.randn(
+#                 self.batch_size,
+#                 self.population_size,
+#                 self.plan_length,
+#                 self.a_size,
+#                 device=self.device,
+#             )
+#         ).repeat_interleave(self.repeat_step, dim=2)
+#         actions.requires_grad = True
 
-        optimizer = torch.optim.SGD((actions,), self.lr)
+#         optimizer = torch.optim.SGD((actions,), self.lr)
 
-        for _ in range(self.n_iter):
-            # now we want to get the rewards for those actions.
-            costs = get_cost(
-                actions.view(-1, self.horizon, self.a_size),
-                keep_batch_dim=True,
-            ).view(self.batch_size, self.population_size)
+#         for _ in range(self.n_iter):
+#             # now we want to get the rewards for those actions.
+#             costs = get_cost(
+#                 actions.view(-1, self.horizon, self.a_size),
+#                 keep_batch_dim=True,
+#             ).view(self.batch_size, self.population_size)
 
-            if self.gd:
-                optimizer.zero_grad()
-                costs.mean().backward()
-                torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
-                optimizer.step()
+#             if self.gd:
+#                 optimizer.zero_grad()
+#                 costs.mean().backward()
+#                 torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
+#                 optimizer.step()
 
-            # get the indices of the best cost elements
-            values, topk = costs.topk(
-                self.top_size,
-                dim=1,
-                largest=False,
-                sorted=True,
-            )
+#             # get the indices of the best cost elements
+#             values, topk = costs.topk(
+#                 self.top_size,
+#                 dim=1,
+#                 largest=False,
+#                 sorted=True,
+#             )
 
-            # pick the actions that correspond to the best elements
-            best_actions = actions.view(
-                self.batch_size,
-                self.population_size,
-                self.horizon,
-                self.a_size,
-            ).gather(
-                dim=1,
-                index=topk.view(*topk.shape, 1, 1).repeat(
-                    1, 1, self.horizon, 2
-                ),
-            )
+#             # pick the actions that correspond to the best elements
+#             best_actions = actions.view(
+#                 self.batch_size,
+#                 self.population_size,
+#                 self.horizon,
+#                 self.a_size,
+#             ).gather(
+#                 dim=1,
+#                 index=topk.view(*topk.shape, 1, 1).repeat(
+#                     1, 1, self.horizon, 2
+#                 ),
+#             )
 
-            # Update belief with new means and standard deviations
-            a_mu = best_actions.mean(dim=1, keepdim=True)
-            a_std = best_actions.std(dim=1, unbiased=False, keepdim=True)
+#             # Update belief with new means and standard deviations
+#             a_mu = best_actions.mean(dim=1, keepdim=True)
+#             a_std = best_actions.std(dim=1, unbiased=False, keepdim=True)
 
-            resample_actions = (
-                a_mu
-                + a_std
-                * torch.randn(
-                    self.batch_size,
-                    self.population_size - self.top_size,
-                    self.plan_length,
-                    self.a_size,
-                    device=self.device,
-                ).repeat_interleave(self.repeat_step, dim=2)
-            )
+#             resample_actions = (
+#                 a_mu
+#                 + a_std
+#                 * torch.randn(
+#                     self.batch_size,
+#                     self.population_size - self.top_size,
+#                     self.plan_length,
+#                     self.a_size,
+#                     device=self.device,
+#                 ).repeat_interleave(self.repeat_step, dim=2)
+#             )
 
-            actions.data = torch.cat([best_actions, resample_actions], dim=1)
+#             actions.data = torch.cat([best_actions, resample_actions], dim=1)
 
-        return actions[:, 0]
+#         return actions[:, 0]
 
 
 class MPCKMPolicy(torch.nn.Module):
@@ -190,6 +199,7 @@ class MPCKMPolicy(torch.nn.Module):
         unfolding_agg: str = "max"
         km_noise: float = 0.0
         save_opt_stats: bool = False
+        plan_size: Optional[int] = None
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -226,8 +236,8 @@ class MPCKMPolicy(torch.nn.Module):
     def unfold_km(self, states, actions):
         """
         Autoregressively applies km state prediction to states with given actions.
-            states shape : batch, state_dim
-            actions shape : batch, unfold_len, action_dim
+            states shape : batch, actions_bsize, state_dim
+            actions shape : batch, acitions_bsize, unfold_len, action_dim
         Returns:
             predicted_states, shape = batch, unfold_len, state_dim
 
@@ -245,7 +255,7 @@ class MPCKMPolicy(torch.nn.Module):
             for i in range(self.config.unfold_len):
                 states = predict_states(
                     states,
-                    actions[:, i],
+                    actions[:, :, i],
                     self.normalizer,
                     timestep=self.config.timestep,
                     noise=self.config.km_noise,
@@ -266,7 +276,7 @@ class MPCKMPolicy(torch.nn.Module):
             predicted_states, shape = batch, unfold_len, state_dim
         """
 
-        print("Running fm")
+        # print("Running fm")
 
         # We make a batch of the same values, but we use different latents.
         # The motivation is to get multiple fm predictions and plan through that to get
@@ -285,43 +295,55 @@ class MPCKMPolicy(torch.nn.Module):
         # todo checkout what the hell is going on with dimensions when we want batched predictions
 
         Z = (
-            torch.randn(*actions.shape[:2], 32)
+            torch.randn(*actions.shape[:3], 32)
             * self.config.fm_unfold_variance
         ).to(actions.device)
 
-        print(
-            f"inside unfold_fm {Z.shape=}, {actions.shape=}, {rep_conditional_state_seq.images.shape=}"
-        )
+        # print(
+        #     f"inside unfold_fm {Z.shape=}, {actions.shape=}, {rep_conditional_state_seq.images.shape=}"
+        # )
+
+        # print(
+        #     f"inside unfold_fm {Z.device=}, {actions.device=}, {rep_conditional_state_seq.images.device=}"
+        # )
 
         unfolding = flatten_f_unflatten(
             self.forward_model.unfold,
-            (rep_conditional_state_seq, actions, Z),
-            flatten_dims=2,
+            (rep_conditional_state_seq.without_ego(), actions, Z),
+            dims=2,
         )
 
+        # Depending on aggregation function, we do aggregation
+        # along the second dimension, which is the unfoldings dimensions.
         if self.config.fm_unfold_samples_agg == "max":
-            images = unfolding.images.max(dim=0, keepdim=True).values
+            images = unfolding.state_seq.images.max(dim=1, keepdim=True).values
         elif self.config.fm_unfold_samples_agg == "mean":
-            images = unfolding.images.mean(dim=0, keepdim=True)
+            images = unfolding.state_seq.images.mean(dim=1, keepdim=True)
         elif self.config.fm_unfold_samples_agg == "keep":
-            images = unfolding.images
+            # we still keep the dimension
+            images = unfolding.state_seq.images
 
+        # Depending on if we collapse the dim, we need to return different
+        # states/car_sizes/ego_car_image.
         if self.config.fm_unfold_samples_agg == "keep":
             result_seq = StateSequence(
                 images=images,
-                states=unfolding.states,
-                car_size=unfolding.car_size,
-                ego_car_image=unfolding.ego_car_image,
+                states=unfolding.state_seq.states,
+                car_size=unfolding.state_seq.car_size,
+                ego_car_image=unfolding.state_seq.ego_car_image,
             )
 
         else:
-            states = unfolding["pred_states"][:1]
             result_seq = StateSequence(
                 images=images,
-                states=unfolding.states[:1],
-                car_size=unfolding.car_size[:1],
-                ego_car_image=unfolding.ego_car_image[:1],
+                states=unfolding.state_seq.states[:, :1],
+                car_size=unfolding.state_seq.car_size[:, :1],
+                ego_car_image=unfolding.state_seq.ego_car_image[:, :1],
             )
+
+        # print(
+        #     f"After generating images {result_seq.images.shape=}, {result_seq.states.shape=}"
+        # )
 
         return result_seq
 
@@ -351,88 +373,29 @@ class MPCKMPolicy(torch.nn.Module):
         costs = self.cost.calculate_cost(inputs, predictions)
         return costs["policy_loss"].mean()
 
-    def batched(
-        self,
-        images,
-        states,
-        pred_images,
-        pred_states,
-        normalize_inputs=False,
-        normalize_outputs=False,
-        car_size=None,
-        init=None,
-        metadata=None,
-    ):
-        """
-        This function is used for target prop.
-        """
-
-        if normalize_inputs:
-            states = self.normalizer.normalize_states(states.clone())
-            images = self.normalizer.normalize_images(images)
-            car_size = torch.tensor(car_size).unsqueeze(0)
-
-        states = states[..., -1, :].view(-1, 5)
-        images = images[..., -1, :, :, :].view(-1, 1, 4, 117, 24)
-
-        actions = init.detach().clone()
-        actions.requires_grad = True
-
-        self.cost.traj_landscape = False
-
-        if metadata is not None:
-            metadata["costs"] = []
-
-        if self.config.optimizer in ["SGD", "Adam"]:
-            optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
-                (actions,), self.config.lr
-            )
-            for i in range(self.config.n_iter):
-                optimizer.zero_grad()
-
-                cost = self.get_cost_batched(
-                    images.detach(),
-                    states.detach(),
-                    car_size,
-                    pred_images.detach(),
-                    pred_states.detach(),
-                    actions,
-                    keep_batch_dim=True,
-                )
-
-                cost.mean().backward()
-                if metadata is not None:
-                    metadata["costs"].append(cost.mean())
-                if not torch.isnan(actions.grad).any():
-                    # this is definitely needed, judging from some examples I saw where gradient is 50
-                    torch.nn.utils.clip_grad_norm_(
-                        actions, 1.0, norm_type="inf"
-                    )
-                    optimizer.step()
-                else:
-                    print("NaN grad!")
-
-        else:
-            raise NotImplementedError(
-                f"{self.config.optimizer} optimizer is not supported"
-            )
-
-        return actions
-
     def should_replan(self) -> bool:
-        """ Returns true if according to config this step has to be replanned"""
+        """Returns true if according to config this step has to be replanned"""
         return self.ctr % self.config.planning_freq == 0
 
     def _jerk_loss_with_last_action(
         self, actions: torch.Tensor
     ) -> torch.Tensor:
-        actions_batch_size = actions.shape[1]
+        """Expects tensor of shape
+        bsize (bsize*action_batch_size), npred, 2
+        """
+        actions_batch_size = self.config.batch_size
         jerk_actions = actions
         if self.last_actions is not None:
             # Cat the last action so we account for what action we performed in the past when calculating jerk.
             jerk_actions = torch.cat(
                 [
-                    repeat_batch(self.last_actions[:, :1], actions_batch_size),
+                    flatten_2_dims(
+                        repeat_batch(
+                            self.last_actions[:, :1].unsqueeze(1),
+                            actions_batch_size,
+                            dim=1,
+                        )
+                    ),
                     actions,
                 ],
                 dim=1,
@@ -466,11 +429,12 @@ class MPCKMPolicy(torch.nn.Module):
     ) -> Tuple[StateSequence, torch.Tensor, torch.Tensor, StateSequence]:
         # we repeat all inputs, and repeat interleave all contexts to achieve
         # cross-product.
+        # then, we can reshape back to batch size, unfoldings, action_batch_size...
         action_batch_size = actions.shape[1]
         unfoldings_batch_size = context_state_seq.images.shape[1]
-        print(
-            f"inside cross product {action_batch_size=}, {unfoldings_batch_size=}"
-        )
+        # print(
+        #     f"Inside cross product {action_batch_size=}, {unfoldings_batch_size=}"
+        # )
 
         cp_conditional_state_seq = conditional_state_seq.map(
             lambda x: x.unsqueeze(1).expand(
@@ -489,6 +453,7 @@ class MPCKMPolicy(torch.nn.Module):
                 x,
                 times=action_batch_size,
                 dim=1,
+                interleave=True,
             )
         )
         return (
@@ -514,6 +479,15 @@ class MPCKMPolicy(torch.nn.Module):
         action_batch_size = actions.shape[1]
         unfolding_size = context_state_seq.images.shape[1]
 
+        # If we have fewer actions that unfoldings steps,
+        # we repeat the actions to fit the desired length.
+        if actions.shape[2] != self.config.unfold_len:
+            assert (
+                self.config.unfold_len % actions.shape[2] == 0
+            ), f"can't use specified actions size ({actions.shape[2]}) with horizin={self.config.unfold_len}"
+            repeat_size = self.config.unfold_len // actions.shape[2]
+            actions = actions.repeat_interleave(repeat_size, dim=2)
+
         # All conditional states are of shape
         # batch, npred, ...
         rep_conditional_states = repeat_batch(
@@ -524,36 +498,31 @@ class MPCKMPolicy(torch.nn.Module):
         pred_states = flatten_f_unflatten(
             self.unfold_km,
             (rep_conditional_states[..., -1, :], actions),
-            flatten_dims=2,
-        )
-
-        # we construct repeated conditional frames
-        # the rep shape is
-        # batch_size, actions_batch_size ...
-        rep_conditional_state_seq = conditional_state_seq.map(
-            lambda x: x.unsqueeze(1).expand(
-                x.shape[0],
-                action_batch_size,
-                *x.shape[1:],
-            )
+            dims=2,
         )
 
         # Now we need to do a cross product between the tuple
         # (actions, pred_states) and different context images.
 
         # Now we'd have batch, action_batch_size * unfolding_batch_size, ...
-        # shapes.
+        # shapes, done with repeat/repeat_interleave.
         (
             cross_product_conditional_state_seq,
             cross_product_scalar_states,
             cross_product_actions,
             cross_product_context_state_seq,
         ) = self._input_context_cross_product(
-            rep_conditional_state_seq,
+            conditional_state_seq,
             pred_states,
             actions,
             context_state_seq,
         )
+        # print(
+        #     f"{cross_product_conditional_state_seq.states.shape=}\n"
+        #     f"{cross_product_scalar_states.shape=}\n"
+        #     f"{cross_product_actions.shape=}\n"
+        #     f"{cross_product_context_state_seq.states.shape=}\n"
+        # )
 
         # To calculate the cost we flatten the values to have
         # batch * action_batch_size * unfolding_batch_size, ... shape
@@ -597,29 +566,52 @@ class MPCKMPolicy(torch.nn.Module):
             result = result.max(dim=1).values
 
         assert list(result.shape) == [batch_size, action_batch_size]
-
         return result
 
     def _init_actions(
         self, batch_size: int, device: torch.device
     ) -> torch.Tensor:
-        """Initializes actions."""
+        """Initializes actions.
+        If config says we should only have one action for the entire prediction,
+        we'll create just one action, otherwise we create unfolding_len actions.
+        The output is normalized actions.
+        """
+        if self.config.plan_size is None:
+            actions_size = self.config.unfold_len
+        else:
+            actions_size = self.config.plan_size
+
         actions = torch.cat(
             [
                 # The first action is always just zeros.
-                torch.zeros(
-                    batch_size, 1, self.config.unfold_len, 2, device=device
+                self.normalizer.normalize_actions(
+                    torch.zeros(batch_size, 1, actions_size, 2, device=device)
                 ),
                 # The rest are random repeated.
-                2
-                * torch.randn(
+                torch.randn(
                     batch_size, self.config.batch_size - 1, 1, 2, device=device
-                ).repeat(1, 1, self.config.unfold_len, 1),
+                ).repeat(1, 1, actions_size, 1),
             ],
             dim=1,
         )
-        actions[:, :, :, 1] = 0
+        # actions[:, :, :, 1] = 0
         return actions
+
+    def _select_best_actions(self, actions: torch.Tensor, costs: torch.Tensor):
+        values, indices = nan_to_val(costs, 1e8).min(dim=1)
+        flat_actions = actions.view(
+            *actions.shape[:2], -1
+        )  # bsize, 1, npred * 2
+        # gather indices should be of shape batch size, 1, npred * 2
+        gather_idx = indices.view(actions.shape[0], 1, 1).expand(
+            actions.shape[0], 1, flat_actions.shape[2]
+        )
+        gathered_flat_actions = torch.gather(flat_actions, 1, gather_idx)
+        # the result we get should have shape batch_size, npred, 2
+        return (
+            gathered_flat_actions.view(actions.shape[0], *actions.shape[2:]),
+            values,
+        )
 
     def _get_context(
         self,
@@ -629,12 +621,19 @@ class MPCKMPolicy(torch.nn.Module):
         current_context_state_seq: Optional[StateSequence],
         gt_future_state_seq: Optional[StateSequence],
     ):
+        # print("getting context")
         if gt_future_state_seq is not None:
+            # print("gt future")
             return gt_future_state_seq
         else:
-            if i % self.config.update_ref_period != 0:
+            if (
+                current_context_state_seq is not None
+                and i % self.config.update_ref_period != 0
+            ):
+                # print("current")
                 return current_context_state_seq
             else:
+                # print("gen")
                 return self.unfold_fm(conditional_state_seq, best_actions)
 
     def plan(
@@ -643,6 +642,10 @@ class MPCKMPolicy(torch.nn.Module):
         gt_future_state_seq: Optional[StateSequence],
         metadata: Optional[dict] = None,
     ):
+        """Plans given conditional state sequence, and optionally gt_future_state_seq.
+        Everything is normalized in input and output.
+        """
+
         if self.visualizer:
             self.visualizer.step_reset()
 
@@ -662,18 +665,15 @@ class MPCKMPolicy(torch.nn.Module):
             batch_size=conditional_state_seq.states.shape[0],
             device=conditional_state_seq.states.device,
         )
-        actions = self.normalizer.normalize_actions(actions)
         actions.requires_grad = True
 
         best_actions = actions[:, 0]  # we take the first action initially
         best_cost = 1e10
 
-        print(f"{best_actions.shape=}")
+        # print(f"{best_actions.shape=}")
 
         if metadata is not None:
             metadata["action_history"] = []
-
-        self.cost.traj_landscape = False
 
         optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
             (actions,), self.config.lr
@@ -689,6 +689,10 @@ class MPCKMPolicy(torch.nn.Module):
                 future_context_state_seq,
                 gt_future_state_seq,
             )
+            # print(
+            #     f"after get context {future_context_state_seq.images.shape=}"
+            #     f"{future_context_state_seq.states.shape=}"
+            # )
 
             optimizer.zero_grad()
 
@@ -700,17 +704,25 @@ class MPCKMPolicy(torch.nn.Module):
             )
             cost.mean().backward()
 
-            a_grad = actions.grad[0, 0].clone()  # save for plotting later
+            a_grad = actions.grad[0, 0, 0].clone()  # save for plotting later
             if not torch.isnan(actions.grad).any():
                 # this is definitely needed, judging from some examples I saw where gradient is 50
                 torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
                 optimizer.step()
             else:
-                print("NaN grad!")
+                print(
+                    f"NaN grad! {actions.grad.max().values=}, {actions.max().values=}"
+                )
 
-            values, indices = cost.min(dim=0)
-            best_cost = cost[indices]
-            best_actions = actions[indices].unsqueeze(0).clone()
+            best_actions, best_cost = self._select_best_actions(
+                actions.data, cost.data
+            )
+
+            # check that we got rid of actions_batch_size
+            assert list(best_actions.shape) == [
+                actions.shape[0],
+                *actions.shape[2:],
+            ]
 
             if metadata is not None:
                 metadata["action_history"].append(best_actions)
@@ -719,13 +731,13 @@ class MPCKMPolicy(torch.nn.Module):
                 unnormalized_actions = self.normalizer.unnormalize_actions(
                     actions.data
                 )
-                # self.visualizer.update_values(
-                #     best_cost.item(),
-                #     unnormalized_actions[0, 0, 0].item(),
-                #     unnormalized_actions[0, 0, 1].item(),
-                #     a_grad[0].item(),
-                #     a_grad[1].item(),
-                # )
+                self.visualizer.update_values(
+                    best_cost.item(),
+                    unnormalized_actions[0, 0, 0, 0].item(),
+                    unnormalized_actions[0, 0, 0, 1].item(),
+                    a_grad[0].item(),
+                    a_grad[1].item(),
+                )
         self.last_actions = best_actions
         actions = best_actions[:, 0]
 
@@ -737,7 +749,6 @@ class MPCKMPolicy(torch.nn.Module):
         normalize_inputs: bool = False,
         normalize_outputs: bool = False,
         gt_future: Callable[[], StateSequence] = None,
-        init_freeze: Optional[torch.Tensor] = None,
         metadata: dict = None,
     ):
         """
@@ -756,7 +767,9 @@ class MPCKMPolicy(torch.nn.Module):
                 # gt future is a lambda. this is to save time when we don't
                 # plan every step.
                 gt_future_seq = gt_future()
-                if gt_future_seq is None:
+                if gt_future_seq is not None:
+                    gt_future_seq = gt_future_seq.map(lambda x: x.unsqueeze(1))
+                else:
                     self.fm_fallback = True
             else:
                 gt_future_seq = None
@@ -775,10 +788,6 @@ class MPCKMPolicy(torch.nn.Module):
         if normalize_outputs:
             actions = self.normalizer.unnormalize_actions(actions.data)
         print("final actions for", self.ctr, "are", actions)
-
-        self.cost.traj_landscape = False
-        if self.visualizer is not None:
-            self.visualizer.update_plot()
 
         return actions.detach()
 

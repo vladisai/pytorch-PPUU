@@ -4,12 +4,13 @@
 from dataclasses import dataclass
 from typing import NamedTuple, Optional, Tuple
 
-import numpy as np
 import torch
 
 from ppuu.costs.policy_costs_continuous import PolicyCost, PolicyCostContinuous
-from ppuu.data.dataloader import UnitConverter
 from ppuu.data.entities import StateSequence
+
+from ppuu.data import constants
+from ppuu.data.constants import UnitConverter
 
 
 class AggregationFunction:
@@ -146,6 +147,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         # Reference distance loss
         lambda_r: float = 1.0
         keep_dims: bool = False
+        build_overlay: bool = False
 
     class Cost(NamedTuple):
         """Tuple to store the full result of the cost calculation."""
@@ -166,7 +168,9 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         scalar_states: torch.Tensor,
         reference_scalar_states: torch.Tensor,
     ):
-        reference_distance_cost = 0.0
+        reference_distance_cost = torch.zeros(
+            *scalar_states.shape[:-1], device=scalar_states.device
+        )
         if self.config.lambda_r > 0:
             diff_xy = UnitConverter.pixels_to_m(
                 self.normalizer.unnormalize_states(scalar_states)[..., :2]
@@ -181,6 +185,78 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             )
         return reference_distance_cost
 
+    def _get_transformed_points(
+        self,
+        scalar_states: torch.Tensor,
+        context_state_seq: StateSequence,
+    ):
+        """Given car states and context state sequence,
+        gives xx, yy arrays where each element is the coordinate
+        in the car reference system.
+        """
+        (
+            bsize,
+            npred,
+            nchannels,
+            crop_h,
+            crop_w,
+        ) = context_state_seq.images.shape
+        device = scalar_states.device
+
+        states = scalar_states.view(bsize * npred, 5).clone()
+        ref_states = context_state_seq.states.view(bsize * npred, 5).clone()
+
+        states = states.view(bsize, npred, 5)
+        ref_states = ref_states.view(bsize, npred, 5)
+
+        car_size = context_state_seq.car_size.to(device)
+
+        width, length = car_size[:, 0], car_size[:, 1]  # feet
+        width = UnitConverter.feet_to_m(width)
+        width = width.view(bsize, 1)
+
+        length = UnitConverter.feet_to_m(length)
+        length = length.view(bsize, 1)
+
+        positions = UnitConverter.pixels_to_m(states[:, :, :2])
+        ref_positions = UnitConverter.pixels_to_m(ref_states[:, :, :2])
+
+        directions = states[:, :, 2:4]
+        ref_directions = ref_states[:, :, 2:4]
+
+        positions_adjusted = positions - ref_positions.detach()
+
+        rotation = rotation_matrix(directions, ref_directions.detach()).to(
+            device
+        )
+
+        y = torch.linspace(
+            -constants.LOOK_SIDEWAYS_M,
+            constants.LOOK_SIDEWAYS_M,
+            crop_w,
+            device=device,
+        )
+        x = torch.linspace(
+            constants.LOOK_AHEAD_M,
+            -constants.LOOK_AHEAD_M,
+            crop_h,
+            device=device,
+        )
+        xx, yy = torch.meshgrid(x, y)
+        xx = xx.repeat(bsize, npred, 1, 1)
+        yy = yy.repeat(bsize, npred, 1, 1)
+
+        xx, yy = coordinate_shift(
+            xx, yy, positions_adjusted[:, :, 0], positions_adjusted[:, :, 1]
+        )
+        if self.config.rotate > 0:
+            xx, yy = coordinate_rotate_matrix(xx, yy, rotation)
+
+        # Because originally x goes from negative to positive, and the
+        # generated mask is overlayed with an image where the cars ahead of us
+        # are positive distance, we flip x axis.
+        return xx, yy
+
     def get_masks(
         self,
         scalar_states: torch.Tensor,
@@ -193,8 +269,6 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         """Returns two masks - one for proximity cost, so it has a flat nose,
         and one for lane and offroad costs, so it doesn't have a flat nose.
         """
-        ref_states = context_state_seq.states
-
         (
             bsize,
             npred,
@@ -202,93 +276,34 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             crop_h,
             crop_w,
         ) = context_state_seq.images.shape
-        device = context_state_seq.images.device
-
-        states = context_state_seq.states.view(bsize * npred, 5).clone()
-        ref_states = ref_states.view(bsize * npred, 5).clone()
 
         if unnormalize:
-            states = self.normalizer.unnormalize_states(states)
-            ref_states = self.normalizer.unnormalize_states(ref_states)
-            actions = self.normalizer.unnormalize_actions(actions)
+            scalar_states = self.normalizer.unnormalize_states(scalar_states)
+            context_state_seq = self.normalizer.unnormalize_state_seq(
+                context_state_seq
+            )
 
-        states = states.view(bsize, npred, 5)
-        ref_states = ref_states.view(bsize, npred, 5)
-        actions = actions.view(bsize, npred, 2)
+        x_prime, y_prime = self._get_transformed_points(
+            scalar_states, context_state_seq
+        )
 
-        LANE_WIDTH_METRES = 3.7
-        LANE_WIDTH_PIXELS = 24  # pixels / 3.7 m, lane width
-        # SCALE = 1 / 4
-        PIXELS_IN_METRE = LANE_WIDTH_PIXELS / LANE_WIDTH_METRES
-        MAX_SPEED_MS = 130 / 3.6  # m/s
-        LOOK_AHEAD_M = MAX_SPEED_MS  # meters
-        LOOK_SIDEWAYS_M = 2 * LANE_WIDTH_METRES  # meters
-        METRES_IN_FOOT = 0.3048
-        TIMESTEP = 0.1
-
+        device = actions.device
         car_size = context_state_seq.car_size.to(device)
-
         width, length = car_size[:, 0], car_size[:, 1]  # feet
-        width = width * METRES_IN_FOOT
+        width = UnitConverter.feet_to_m(width)
         width = width.view(bsize, 1)
-
-        length = length * METRES_IN_FOOT
-        length = length.view(bsize, 1)
-
-        positions = UnitConverter.pixels_to_m(states[:, :, :2])
-        ref_positions = UnitConverter.pixels_to_m(ref_states[:, :, :2])
-        speeds_norm = states[:, :, 4] / PIXELS_IN_METRE
-        speeds_norm_pixels = states[:, :, 4]
-
-        alphas = torch.atan(speeds_norm_pixels * actions[:, :, 1] * TIMESTEP)
-        gammas = (np.pi - alphas) / 2
-        radii = (
-            -1 * speeds_norm * TIMESTEP / (2 * torch.cos(gammas) + 1e-7)
-        )  # in meters
-
-        directions = states[:, :, 2:4]
-        ref_directions = ref_states[:, :, 2:4]
-
-        positions_adjusted = positions - ref_positions.detach()
-
-        rotation = rotation_matrix(ref_directions.detach(), directions).to(
-            device
-        )
-
-        y = torch.linspace(
-            -LOOK_SIDEWAYS_M, LOOK_SIDEWAYS_M, crop_w, device=device
-        )
-        x = torch.linspace(-LOOK_AHEAD_M, LOOK_AHEAD_M, crop_h, device=device)
-        xx, yy = torch.meshgrid(x, y)
-        xx = xx.repeat(bsize, npred, 1, 1)
-        yy = yy.repeat(bsize, npred, 1, 1)
-
-        xx, yy = coordinate_shift(
-            xx, yy, positions_adjusted[:, :, 0], positions_adjusted[:, :, 1]
-        )
-        if self.config.rotate > 0:
-            xx, yy = coordinate_rotate_matrix(xx, yy, rotation)
-        if self.config.curl > 0:
-            xx, yy = coordinate_curl(xx, yy, radii)
-
-        # Because originally x goes from negative to positive, and the
-        # generated mask is overlayed with an image where the cars ahead of us
-        # are positive distance, we flip x axis.
-        xx, yy = flip_x(xx, yy)
-
-        if metadata is not None:
-            metadata["width_y"] = yy.abs() < (width / 2).view(bsize, 1, 1, 1)
-
-        x_prime, y_prime = xx, yy
 
         REPEAT_SHAPE = (bsize, npred, 1, 1)
         # y_d - is lateral distance to 0 mask value - lateral safety distance
-        y_d = width / 2 + LANE_WIDTH_METRES
+        y_d = width / 2 + constants.LANE_WIDTH_METRES
         if metadata is not None:
             metadata["y_d"] = y_d
         # x_s - is longitudinal distance to 0 mask value - safety distance
+        speeds_norm = UnitConverter.pixels_to_m(scalar_states[:, :, 4])
         x_s = (
-            1.5 * torch.clamp(speeds_norm.detach(), min=10) + length * 1.5 + 1
+            1.5 * torch.clamp(speeds_norm.detach(), min=10)
+            + length.unsqueeze(-1) * 1.5
+            + 1
         )
         x_s = x_s.view(REPEAT_SHAPE)
 
@@ -358,72 +373,15 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         context_state_seq: StateSequence,
         unnormalize: bool = False,
     ):
-        (
-            bsize,
-            npred,
-            nchannels,
-            crop_h,
-            crop_w,
-        ) = context_state_seq.images.shape
-        device = scalar_states.device
-
-        states = scalar_states.view(bsize * npred, 5).clone()
-        ref_states = context_state_seq.states.view(bsize * npred, 5).clone()
-
         if unnormalize:
-            states = self.normalizer.unnormalize_states(states)
-            ref_states = self.normalizer.unnormalize_states(ref_states)
+            scalar_states = self.normalizer.unnormalize_states(scalar_states)
+            context_state_seq = self.normalizer.unnormalize_state_seq(
+                context_state_seq
+            )
 
-        states = states.view(bsize, npred, 5)
-        ref_states = ref_states.view(bsize, npred, 5)
-
-        LANE_WIDTH_METRES = 3.7
-        # SCALE = 1 / 4
-        MAX_SPEED_MS = 130 / 3.6  # m/s
-        LOOK_AHEAD_M = MAX_SPEED_MS  # meters
-        LOOK_SIDEWAYS_M = 2 * LANE_WIDTH_METRES  # meters
-        METRES_IN_FOOT = 0.3048
-
-        car_size = context_state_seq.car_size.to(device)
-
-        width, length = car_size[:, 0], car_size[:, 1]  # feet
-        width = width * METRES_IN_FOOT
-        width = width.view(bsize, 1)
-
-        length = length * METRES_IN_FOOT
-        length = length.view(bsize, 1)
-
-        positions = UnitConverter.pixels_to_m(states[:, :, :2])
-        ref_positions = UnitConverter.pixels_to_m(ref_states[:, :, :2])
-
-        directions = states[:, :, 2:4]
-        ref_directions = ref_states[:, :, 2:4]
-
-        positions_adjusted = positions - ref_positions.detach()
-
-        rotation = rotation_matrix(ref_directions.detach(), directions).to(
-            device
+        x_prime, y_prime = self._get_transformed_points(
+            scalar_states, context_state_seq
         )
-
-        y = torch.linspace(
-            -LOOK_SIDEWAYS_M, LOOK_SIDEWAYS_M, crop_w, device=device
-        )
-        x = torch.linspace(-LOOK_AHEAD_M, LOOK_AHEAD_M, crop_h, device=device)
-        xx, yy = torch.meshgrid(x, y)
-        xx = xx.repeat(bsize, npred, 1, 1)
-        yy = yy.repeat(bsize, npred, 1, 1)
-
-        xx, yy = coordinate_shift(
-            xx, yy, positions_adjusted[:, :, 0], positions_adjusted[:, :, 1]
-        )
-        if self.config.rotate > 0:
-            xx, yy = coordinate_rotate_matrix(xx, yy, rotation)
-
-        # Because originally x goes from negative to positive, and the
-        # generated mask is overlayed with an image where the cars ahead of us
-        # are positive distance, we flip x axis.
-        xx, yy = flip_x(xx, yy)
-        x_prime, y_prime = xx, yy
 
         # draw a square of 1m
         z_x_prime = (x_prime.abs() < 0.5).int()
@@ -502,11 +460,12 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             scalar_states,
             actions,
             context_state_seq,
-            unnormalize=False,
+            unnormalize=True,
         )
         mask_sums = proximity_mask.sum(dim=(-1, -2))
         mask_sums_lo = proximity_mask_lo.sum(dim=(-1, -2))
 
+        print(f"{context_state_seq.images.max()=}")
         # We impose a cost for being too far from the reference. Being too far to the side is punished more.
         proximity_cost = self.compute_proximity_cost_km(
             context_state_seq.images, proximity_mask, mask_sums
@@ -530,6 +489,9 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         proximity_total = (
             self.apply_gamma(proximity_cost).view(batch_size, -1).mean(dim=-1)
         )
+
+        if self.config.build_overlay:
+            self._build_mask_overlay(context_state_seq, proximity_mask)
 
         return PolicyCost.StateCosts(
             total_proximity=proximity_total,
@@ -601,6 +563,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         actions: torch.Tensor,
         context_state_seq: StateSequence,
     ) -> Cost:
+        """Input is all normalized"""
         batch_size = actions.shape[0]
         u_loss = self.calculate_uncertainty_cost(
             conditional_state_seq, actions
@@ -640,7 +603,57 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             reference_distance=reference_total,
         )
 
-    def _build_cost_landscape(
+    # Visualization functions for debugging.
+    def _build_mask_overlay(
+        self,
+        context_state_seq: torch.Tensor,
+        proximity_mask: torch.Tensor,
+    ):
+        self._last_mask_overlay = (
+            proximity_mask.unsqueeze(2) * 0.85 + context_state_seq.images
+        )
+
+    def get_last_overlay(self):
+        return self._last_mask_overlay
+
+    # def _build_cost_landscape(
+    #     self,
+    #     scalar_states: torch.Tensor,
+    #     context_state_seq: torch.Tensor,
+    #     conditional_state_seq: torch.Tensor,
+    #     proximity_mask: torch.Tensor,
+    #     proximity_mask_sum: torch.Tensor,
+    # ):
+    #     last_image = conditional_state_seq.images[:, -1:, :3].repeat(
+    #         1, context_state_seq.states.shape[1], 1, 1, 1
+    #     )
+    #     last_state = conditional_state_seq.states.repeat(
+    #         1, context_state_seq.states.shape[1], 1
+    #     )
+    #     new_context = StateSequence(
+    #         images=last_image,
+    #         states=last_state,
+    #         car_sizes=context_state_seq.car_sizes,
+    #         ego_car_image=conditional_state_seq.ego_car_image,
+    #     )
+
+    #     cost_landscape_unnormed = self.get_cost_landscape(
+    #         last_image[0, 0].cuda(),
+    #         proximity_mask[0, 0].unsqueeze(0).unsqueeze(0),
+    #         proximity_mask_sum[0, 0].unsqueeze(0).unsqueeze(0),
+    #     )
+    #     cost_landscape = cost_landscape_unnormed / (
+    #         cost_landscape_unnormed.max() + 1e-9
+    #     )
+    #     cost_landscape = torch.stack(
+    #         [
+    #             torch.zeros_like(cost_landscape),
+    #             cost_landscape,
+    #             torch.zeros_like(cost_landscape),
+    #         ]
+    #     )
+
+    def _build_cost_profile_and_traj(
         self,
         scalar_states: torch.Tensor,
         context_state_seq: torch.Tensor,
@@ -648,59 +661,49 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         proximity_mask: torch.Tensor,
         proximity_mask_sum: torch.Tensor,
     ):
-        self.overlay = (
-            proximity_mask.unsqueeze(2) * 0.85 + context_state_seq.images
+        """This function builds visualization images.
+        The first one is overlay of the mask on top of different future states,
+        the second one is trajectory on top of the cost landscape.
+        """
+
+        last_image = conditional_state_seq.images[:, -1:, :3].repeat(
+            1, context_state_seq.states.shape[1], 1, 1, 1
+        )
+        last_state = conditional_state_seq.states.repeat(
+            1, context_state_seq.states.shape[1], 1
+        )
+        new_context = StateSequence(
+            images=last_image,
+            states=last_state,
+            car_sizes=context_state_seq.car_sizes,
+            ego_car_image=conditional_state_seq.ego_car_image,
         )
 
-        # this is to only update image every 10 times.
-        if not hasattr(self, "ctr"):
-            self.ctr = 0
-            self.t_image = torch.zeros(10, 10)
-            self.t_image_data = None
+        traj_proximity_mask = self.get_traj_points(
+            scalar_states,
+            new_context,
+            unnormalize=False,
+        )
 
-        if hasattr(self, "traj_landscape") and self.traj_landscape:
-            if self.ctr % 10 == 0:
-                last_image = conditional_state_seq.images[:, -1:, :3].repeat(
-                    1, context_state_seq.states.shape[1], 1, 1, 1
-                )
-                last_state = conditional_state_seq.states.repeat(
-                    1, context_state_seq.states.shape[1], 1
-                )
-                new_context = StateSequence(
-                    images=last_image,
-                    states=last_state,
-                    car_sizes=context_state_seq.car_sizes,
-                    ego_car_image=conditional_state_seq.ego_car_image,
-                )
+        cost_landscape_unnormed = self.get_cost_landscape(
+            last_image[0, 0].cuda(),
+            proximity_mask[0, 0].unsqueeze(0).unsqueeze(0),
+            proximity_mask_sum[0, 0].unsqueeze(0).unsqueeze(0),
+        )
+        cost_landscape = cost_landscape_unnormed / (
+            cost_landscape_unnormed.max() + 1e-9
+        )
+        cost_landscape = torch.stack(
+            [
+                torch.zeros_like(cost_landscape),
+                cost_landscape,
+                torch.zeros_like(cost_landscape),
+            ]
+        )
 
-                traj_proximity_mask = self.get_traj_points(
-                    scalar_states,
-                    new_context,
-                    unnormalize=False,
-                )
+        self._cost_profile_and_traj = (
+            cost_landscape.cuda() + traj_proximity_mask.sum(dim=1)[0]
+        ).contiguous()
 
-                cost_landscape_unnormed = self.get_cost_landscape(
-                    last_image[0, 0].cuda(),
-                    proximity_mask[0, 0].unsqueeze(0).unsqueeze(0),
-                    proximity_mask_sum[0, 0].unsqueeze(0).unsqueeze(0),
-                )
-                cost_landscape = cost_landscape_unnormed / (
-                    cost_landscape_unnormed.max() + 1e-9
-                )
-                cost_landscape = torch.stack(
-                    [
-                        torch.zeros_like(cost_landscape),
-                        cost_landscape,
-                        torch.zeros_like(cost_landscape),
-                    ]
-                )
-
-                self.t_image = (
-                    cost_landscape.cuda() + traj_proximity_mask.sum(dim=1)[0]
-                )
-                self.t_image = self.t_image.contiguous()
-                self.t_image_data = (
-                    cost_landscape_unnormed.detach().cpu().numpy()
-                )
-
-            self.ctr += 1
+        self.t_image = self.t_image.contiguous()
+        self.t_image_data = cost_landscape_unnormed.detach().cpu().numpy()

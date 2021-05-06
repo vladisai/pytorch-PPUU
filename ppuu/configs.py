@@ -319,13 +319,13 @@ def omegaconf_parse(cls):
 
 
 def combine_cli_dict(cls, c_dict):
-    """ A function to load cli configs and merge them with a dictionary"""
+    """A function to load cli configs and merge them with a dictionary"""
     config_base = cls.parse_from_command_line()
     return combine_dataclass_dict(config_base, c_dict)
 
 
 def combine_dataclass_dict(dcls, c_dict):
-    """ Combines the parameters in an instantiated dataclass with the dictionary. """
+    """Combines the parameters in an instantiated dataclass with the dictionary."""
     config = OmegaConf.create(dataclasses.asdict(dcls))
     for k, v in c_dict.items():
         OmegaConf.update(config, k, v)
