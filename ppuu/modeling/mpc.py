@@ -469,6 +469,7 @@ class MPCKMPolicy(torch.nn.Module):
         actions: torch.Tensor,
         context_state_seq: StateSequence,
         unfolding_agg: str = "max",
+        metadata: Optional[dict] = None,
     ):
         """Gets the cost of actions.
         actions shape is batch_size, actions_batch_size, npred, 2
@@ -544,6 +545,10 @@ class MPCKMPolicy(torch.nn.Module):
             cross_product_actions,
             cross_product_context_state_seq,
         )
+        if metadata is not None:
+            if "costs" not in metadata:
+                metadata["costs"] = []
+            metadata["costs"].append(costs)
 
         assert list(costs.total.shape) == [
             batch_size * action_batch_size * unfolding_size
@@ -701,8 +706,9 @@ class MPCKMPolicy(torch.nn.Module):
                 actions,
                 context_state_seq=future_context_state_seq,
                 unfolding_agg=self.config.unfolding_agg,
+                metadata=metadata,
             )
-            cost.mean().backward()
+            cost.sum().backward()
 
             a_grad = actions.grad[0, 0, 0].clone()  # save for plotting later
             if not torch.isnan(actions.grad).any():

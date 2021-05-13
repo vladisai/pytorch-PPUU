@@ -294,9 +294,14 @@ class PolicyCostKMTaper(PolicyCostContinuous):
 
         device = actions.device
         car_size = context_state_seq.car_size.to(device)
+
         width, length = car_size[:, 0], car_size[:, 1]  # feet
+
         width = UnitConverter.feet_to_m(width)
         width = width.view(bsize, 1)
+
+        length = UnitConverter.feet_to_m(length)
+        length = length.view(bsize, 1)
 
         REPEAT_SHAPE = (bsize, npred, 1, 1)
         # y_d - is lateral distance to 0 mask value - lateral safety distance
@@ -307,7 +312,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         speeds_norm = UnitConverter.pixels_to_m(scalar_states[:, :, 4])
         x_s = (
             1.5 * torch.clamp(speeds_norm.detach(), min=10)
-            + length.unsqueeze(-1) * 1.5
+            + length * 1.5
             + 1
         )
         x_s = x_s.view(REPEAT_SHAPE)
@@ -486,13 +491,13 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         # depend on mask size.
         lane_total = (
             self.apply_gamma(lane_cost).view(batch_size, -1).mean(dim=-1)
-        )
+        ) * self.config.mask_coeff
         offroad_total = (
             self.apply_gamma(offroad_cost).view(batch_size, -1).mean(dim=-1)
-        )
+        ) * self.config.mask_coeff
         proximity_total = (
             self.apply_gamma(proximity_cost).view(batch_size, -1).mean(dim=-1)
-        )
+        ) * self.config.mask_coeff
 
         if self.config.build_overlay:
             self._build_mask_overlay(context_state_seq, proximity_mask)
