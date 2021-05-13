@@ -53,7 +53,9 @@ class EvalVisualizer:
         big_image = self.transform(big_image)
         self.mask_overlay_image_data = big_image
 
-    def update_cost_profile_and_traj(self, cost_profile_and_traj, cost_profile):
+    def update_cost_profile_and_traj(
+        self, cost_profile_and_traj, cost_profile
+    ):
         cost_profile_and_traj = (
             cost_profile_and_traj.clone()
             .detach()
@@ -103,7 +105,10 @@ class EvalVisualizer:
         ax2.set_ylabel("gradient")
 
         plt.subplot(4, 4, 4)
-        if self.cost_profile_and_traj is not None and self.cost_profile is not None:
+        if (
+            self.cost_profile_and_traj is not None
+            and self.cost_profile is not None
+        ):
             plt.title("cost landscape", y=1.08)
             im = plt.imshow(self.cost_profile)
             im.axes.get_xaxis().set_visible(False)

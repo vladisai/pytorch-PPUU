@@ -2,8 +2,8 @@ import unittest
 
 from ppuu.costs import PolicyCost, PolicyCostContinuous, PolicyCostKMTaper
 from ppuu.data.dataloader import Normalizer
-from ppuu.test.mock_dataset import get_mock_dataloader
 from ppuu.test import utils
+from ppuu.test.mock_dataset import get_mock_dataloader
 
 
 class TestFMModels(unittest.TestCase):

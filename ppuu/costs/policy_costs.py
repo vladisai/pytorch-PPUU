@@ -1,7 +1,7 @@
 """Costs calculation for policy. Calculates uncertainty and state costs.
 """
 from dataclasses import dataclass
-from typing import NamedTuple, Any
+from typing import Any, NamedTuple
 
 import torch
 

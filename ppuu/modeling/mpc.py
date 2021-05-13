@@ -1,12 +1,11 @@
 from dataclasses import dataclass
-from typing import Optional, Callable, Tuple, Union
+from typing import Callable, Optional, Tuple, Union
 
 import torch
 
 from ppuu import configs
-from ppuu.modeling.km import predict_states, predict_states_seq
-
 from ppuu.data.entities import StateSequence
+from ppuu.modeling.km import predict_states, predict_states_seq
 
 
 def repeat_batch(value, times, dim=0, interleave=False):

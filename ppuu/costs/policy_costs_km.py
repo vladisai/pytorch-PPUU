@@ -8,10 +8,9 @@ from typing import NamedTuple, Optional, Tuple
 import torch
 
 from ppuu.costs.policy_costs_continuous import PolicyCost, PolicyCostContinuous
-from ppuu.data.entities import StateSequence
-
 from ppuu.data import constants
 from ppuu.data.constants import UnitConverter
+from ppuu.data.entities import StateSequence
 
 
 class AggregationFunction:
@@ -147,6 +146,8 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         lambda_d: float = 0.0
         # Reference distance loss
         lambda_r: float = 1.0
+        lambda_s: float = 0.0
+        target_speed: float = 80
         keep_dims: bool = False
         build_overlay: bool = False
         build_cost_profile_and_traj: bool = False
@@ -159,6 +160,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         action: torch.Tensor
         jerk: torch.Tensor
         reference_distance: torch.Tensor
+        speed: torch.Tensor
         total: torch.Tensor
 
     def __init__(self, config, *args, **kwargs):
@@ -189,6 +191,22 @@ class PolicyCostKMTaper(PolicyCostContinuous):
                 + torch.nn.functional.relu(diff_xy[:, :, 1] - 5) ** 4
             )
         return reference_distance_cost
+
+    def calculate_speed_cost(self, scalar_states: torch.Tensor):
+        speed_cost = torch.zeros(
+            *scalar_states.shape[:-1], device=scalar_states.device
+        )
+        if self.config.lambda_s > 0:
+            unnormed_state = self.normalizer.unnormalize_states(scalar_states)
+            speed = (
+                unnormed_state[..., 2] * unnormed_state[..., 4]
+            )  # speed along x
+            target_speed = UnitConverter.kmph_to_pixels_per_s(
+                self.config.target_speed
+            )
+            speed_cost = (target_speed - speed).pow(2)
+
+        return speed_cost
 
     def _get_transformed_points(
         self,
@@ -311,9 +329,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         # x_s - is longitudinal distance to 0 mask value - safety distance
         speeds_norm = UnitConverter.pixels_to_m(scalar_states[:, :, 4])
         x_s = (
-            1.5 * torch.clamp(speeds_norm.detach(), min=10)
-            + length * 1.5
-            + 1
+            1.5 * torch.clamp(speeds_norm.detach(), min=10) + length * 1.5 + 1
         )
         x_s = x_s.view(REPEAT_SHAPE)
 
@@ -527,6 +543,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         action: torch.Tensor,
         jerk: torch.Tensor,
         reference_distance: torch.Tensor,
+        speed: torch.Tensor,
     ):
         return (
             self.config.lambda_p * state.total_proximity
@@ -536,6 +553,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             + self.config.lambda_a * action
             + self.config.lambda_j * jerk
             + self.config.lambda_r * reference_distance
+            + self.config.lambda_s * speed
         )
 
     def compute_proximity_cost_km(
@@ -598,6 +616,11 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             .mean(dim=-1)
         )
 
+        loss_s = self.calculate_speed_cost(scalar_states)
+        loss_s_total = (
+            self.apply_gamma(loss_s).view(batch_size, -1).mean(dim=-1)
+        )
+
         state_cost = self.compute_state_costs_for_training(
             scalar_states,
             actions,
@@ -611,6 +634,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             action=loss_a,
             jerk=loss_j,
             reference_distance=reference_total,
+            speed=loss_s_total,
         )
 
         return PolicyCostKMTaper.Cost(
@@ -620,6 +644,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             jerk=loss_j,
             total=total,
             reference_distance=reference_total,
+            speed=loss_s_total,
         )
 
     # Visualization functions for debugging.

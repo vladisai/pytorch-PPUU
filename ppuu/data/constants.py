@@ -43,3 +43,7 @@ class UnitConverter:
     @classmethod
     def pixels_per_s_to_kmph(cls, x):
         return cls.pixels_to_m(x) / 1000 * 60 * 60
+
+    @classmethod
+    def kmph_to_pixels_per_s(cls, x):
+        return cls.m_to_pixels(x * 1000) / (60 * 60)

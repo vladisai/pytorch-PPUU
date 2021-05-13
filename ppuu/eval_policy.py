@@ -10,7 +10,6 @@ import logging  # noqa
 from dataclasses import dataclass  # noqa
 from typing import Optional  # noqa
 
-
 import torch.multiprocessing  # noqa
 from omegaconf import MISSING  # noqa
 
