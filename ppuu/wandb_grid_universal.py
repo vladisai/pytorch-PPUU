@@ -115,6 +115,7 @@ if __name__ == "__main__":
         "lambda_o",
         "lambda_a",
         "lambda_j",
+        "lambda_s",
         "u_reg",
         "mask_coeff",
         "learning_rate",

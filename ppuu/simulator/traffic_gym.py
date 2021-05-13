@@ -15,7 +15,11 @@ import torch
 from gym import core, spaces
 from imageio import imwrite
 
-from ppuu.simulator.custom_graphics import draw_dashed_line, draw_rect, draw_text
+from ppuu.simulator.custom_graphics import (
+    draw_dashed_line,
+    draw_rect,
+    draw_text,
+)
 
 # from skimage.transform import rescale
 
