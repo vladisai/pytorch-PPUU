@@ -4,8 +4,7 @@ import torch
 import wandb
 import yaml
 
-from ppuu import eval_mpc
-from ppuu import configs
+from ppuu import configs, eval_mpc
 
 if __name__ == "__main__":
     torch.multiprocessing.set_start_method("spawn")
@@ -56,6 +55,7 @@ if __name__ == "__main__":
 
     config = configs.combine_cli_dict(eval_mpc.EvalMPCConfig, c_dict)
 
+    config.dataset_partition = 'train'
     config.test_size_cap = 50
     config.num_processes = 7
     config.cost.lambda_a = 0.0
