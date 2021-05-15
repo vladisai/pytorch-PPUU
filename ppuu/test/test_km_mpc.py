@@ -2,7 +2,7 @@ import unittest
 
 from ppuu.costs import PolicyCostKMTaper
 from ppuu.data import dataloader
-from ppuu.modeling.mpc import MPCKMPolicy
+from ppuu.modeling.policy.mpc import MPCKMPolicy
 from ppuu.test import utils
 from ppuu.test.mock_dataset import get_mock_dataloader
 

@@ -6,7 +6,7 @@ import torch
 from ppuu.costs.policy_costs_km import PolicyCostKMTaper
 from ppuu.data.dataloader import overlay_ego_car
 from ppuu.lightning_modules.policy.mpur import ForwardModelV3, MPURModule, inject
-from ppuu.modeling.mpc import MPCKMPolicy
+from ppuu.modeling.policy.mpc import MPCKMPolicy
 from ppuu.wrappers import ForwardModelKM
 
 

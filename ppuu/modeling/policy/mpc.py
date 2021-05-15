@@ -272,7 +272,7 @@ class MPCKMPolicy(torch.nn.Module):
         return loss_j
 
     def _action_log_barrier(self, actions: torch.Tensor) -> torch.Tensor:
-        """ actions should be normalized """
+        """actions should be normalized"""
         # This serves as a help to gradient prop if we actually go through the barrier.
         LIMIT = self.config.lbfgs_limit
         # adjusted_actions = (
@@ -502,7 +502,7 @@ class MPCKMPolicy(torch.nn.Module):
         optimizer.step(closure)
 
         a_grad = actions.grad[0, 0, 0].clone()  # save for plotting later
-        actions = torch.clamp(actions, min=-10, max=10) # in case it explodes
+        actions = torch.clamp(actions, min=-10, max=10)  # in case it explodes
 
         if self.visualizer:
             unnormalized_actions = self.normalizer.unnormalize_actions(
