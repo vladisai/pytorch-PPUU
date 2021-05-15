@@ -73,7 +73,7 @@ class MPCKMPolicy(torch.nn.Module):
         optimizer_budget: Optional[int] = None
         lambda_action_log_barrier: float = 1.0
         lbfgs_max_iter: int = 10
-        lbfgs_limit: int = 10
+        lbfgs_limit: float = 10
         fm_unfold_variance: float = 1.0
         fm_unfold_samples: int = 1
         fm_unfold_samples_agg: str = "max"
