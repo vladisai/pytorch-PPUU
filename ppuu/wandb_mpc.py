@@ -55,7 +55,7 @@ if __name__ == "__main__":
 
     config = configs.combine_cli_dict(eval_mpc.EvalMPCConfig, c_dict)
 
-    config.dataset_partition = 'train'
+    config.dataset_partition = "train"
     config.test_size_cap = 50
     config.num_processes = 7
     config.cost.lambda_a = 0.0

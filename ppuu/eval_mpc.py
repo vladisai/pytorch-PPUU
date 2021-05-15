@@ -22,7 +22,7 @@ from ppuu.eval import PolicyEvaluator  # noqa
 from ppuu.eval_mpc_visualizer import EvalVisualizer  # noqa
 from ppuu.lightning_modules.fm import FM  # noqa
 from ppuu.lightning_modules.policy import get_module  # noqa
-from ppuu.modeling.mpc import MPCKMPolicy  # noqa
+from ppuu.modeling.policy.mpc import MPCKMPolicy  # noqa
 
 
 def get_optimal_pool_size():
