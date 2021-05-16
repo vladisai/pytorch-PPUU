@@ -161,8 +161,7 @@ class MPCKMPolicy(torch.nn.Module):
             predicted_images, shape = batch, unfold_len, images channels, images h, images w
             predicted_states, shape = batch, unfold_len, state_dim
         """
-
-        # print("Running fm")
+        actions = self._repeat_actions_for_horizon(actions, dim=1)
 
         # We make a batch of the same values, but we use different latents.
         # The motivation is to get multiple fm predictions and plan through that to get
@@ -336,6 +335,17 @@ class MPCKMPolicy(torch.nn.Module):
             cp_context_state_seq,
         )
 
+    def _repeat_actions_for_horizon(self, actions: torch.Tensor, dim=1):
+        # If we have fewer actions that unfoldings steps,
+        # we repeat the actions to fit the desired length.
+        if actions.shape[dim] != self.config.unfold_len:
+            assert (
+                self.config.unfold_len % actions.shape[dim] == 0
+            ), f"can't use specified actions size ({actions.shape[dim]}) with horizin={self.config.unfold_len}"
+            repeat_size = self.config.unfold_len // actions.shape[dim]
+            actions = actions.repeat_interleave(repeat_size, dim=dim)
+        return actions
+
     def get_cost(
         self,
         conditional_state_seq: StateSequence,
@@ -353,14 +363,8 @@ class MPCKMPolicy(torch.nn.Module):
         action_batch_size = actions.shape[1]
         unfolding_size = context_state_seq.images.shape[1]
 
-        # If we have fewer actions that unfoldings steps,
-        # we repeat the actions to fit the desired length.
-        if actions.shape[2] != self.config.unfold_len:
-            assert (
-                self.config.unfold_len % actions.shape[2] == 0
-            ), f"can't use specified actions size ({actions.shape[2]}) with horizin={self.config.unfold_len}"
-            repeat_size = self.config.unfold_len // actions.shape[2]
-            actions = actions.repeat_interleave(repeat_size, dim=2)
+        # Repeat actions along dim #2, first two are batch and actions batch.
+        actions = self._repeat_actions_for_horizon(actions, dim=2)
 
         # All conditional states are of shape
         # batch, npred, ...
@@ -651,7 +655,7 @@ class MPCKMPolicy(torch.nn.Module):
             *actions.shape[2:],
         ]
 
-        self.last_actions = best_actions
+        self.last_actions = self._repeat_actions_for_horizon(best_actions, dim=1)
         actions = best_actions[:, 0]
         self.optimizer_stats = optimizer.state_dict()
 
