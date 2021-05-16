@@ -231,10 +231,9 @@ class MPCKMPolicy(torch.nn.Module):
         self, actions: torch.Tensor
     ) -> torch.Tensor:
         """Expects tensor of shape
-        bsize (bsize*action_batch_size), npred, 2
+        bsize, action_batch_size, npred, 2
         """
-        actions_batch_size = self.config.batch_size
-        jerk_actions = actions
+        actions_batch_size = actions.shape[1]
         if self.last_actions is not None:
             # Cat the last action so we account for what action we performed in the past when calculating jerk.
             jerk_actions = torch.cat(
@@ -246,10 +245,12 @@ class MPCKMPolicy(torch.nn.Module):
                             dim=1,
                         )
                     ),
-                    actions,
+                    flatten_2_dims(actions),
                 ],
                 dim=1,
             )
+        else:
+            jerk_actions = flatten_2_dims(actions)
 
         gamma_mask = (
             torch.tensor(
@@ -430,7 +431,7 @@ class MPCKMPolicy(torch.nn.Module):
         )
 
         loss_j = (
-            self._jerk_loss_with_last_action(flatten_2_dims(actions))
+            self._jerk_loss_with_last_action(actions)
             .view(batch_size, action_batch_size)
             .unsqueeze(1)
         )
@@ -519,6 +520,36 @@ class MPCKMPolicy(torch.nn.Module):
                 a_grad[0].item(),
                 a_grad[1].item(),
             )
+
+    @torch.no_grad()
+    def _greedy_optimize(
+        self,
+        conditional_state_seq: StateSequence,
+        best_actions: torch.Tensor,
+        gt_future_state_seq: Optional[StateSequence],
+    ):
+        future_context_state_seq = self._get_context(
+            conditional_state_seq,
+            best_actions,
+            0,
+            None,
+            gt_future_state_seq,
+        )
+        xx, yy, costs = self._try_action_grid(
+            conditional_state_seq, future_context_state_seq
+        )
+        batch_size = xx.shape[0]
+        xx = xx.view(batch_size, -1)
+        yy = yy.view(batch_size, -1)
+        costs = costs.view(batch_size, -1)
+        min_idx = costs.min(dim=-1).indices.unsqueeze(-1)
+        acc = torch.gather(xx, 1, min_idx)
+        turns = torch.gather(yy, 1, min_idx)
+        actions = torch.stack([acc, turns], dim=-1)
+        self.last_actions = actions.repeat(
+            1, self.config.unfold_len, 1
+        )
+        return actions[:, 0]
 
     def _init_actions(
         self, batch_size: int, device: torch.device
@@ -613,6 +644,11 @@ class MPCKMPolicy(torch.nn.Module):
         if metadata is not None:
             metadata["action_history"] = []
 
+        if self.config.optimizer == "greedy":
+            return self._greedy_optimize(
+                conditional_state_seq, best_actions, gt_future_state_seq
+            )
+
         optimizer = self._init_optimizer(actions)
 
         future_context_state_seq = None
@@ -655,7 +691,9 @@ class MPCKMPolicy(torch.nn.Module):
             *actions.shape[2:],
         ]
 
-        self.last_actions = self._repeat_actions_for_horizon(best_actions, dim=1)
+        self.last_actions = self._repeat_actions_for_horizon(
+            best_actions, dim=1
+        )
         actions = best_actions[:, 0]
         self.optimizer_stats = optimizer.state_dict()
 
@@ -675,7 +713,7 @@ class MPCKMPolicy(torch.nn.Module):
         that when called returns ground truth future.
         """
 
-        if not self.should_replan():
+        if self.last_actions is not None and not self.should_replan():
             actions = self.last_actions[
                 :, self.ctr % self.config.planning_freq
             ]
@@ -708,6 +746,45 @@ class MPCKMPolicy(torch.nn.Module):
         print("final actions for", self.ctr, "are", actions)
 
         return actions.detach()
+
+    @torch.no_grad()
+    def _try_action_grid(
+        self,
+        conditional_state_seq: StateSequence,
+        future_context_state_seq: StateSequence,
+        N: int = 25,
+        K: float = 3,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Constructs a matrix of all possible actions and their corresponding
+        costs.
+        Returns a tuple: accelerations, turns, and costs
+        """
+        x = torch.linspace(-1, 1, N) * (-K)
+        # later we draw it and y axis will be flipped
+        y = torch.linspace(-1, 1, N) * K
+        xx, yy = torch.meshgrid([x, y])
+        actions = (
+            torch.stack([xx, yy], dim=-1)
+            .view(-1, 2)
+            .to(conditional_state_seq.images.device)
+        )
+        batch_size = conditional_state_seq.images.shape[0]
+        actions = (
+            actions.unsqueeze(0)
+            .unsqueeze(-2)
+            .repeat(batch_size, 1, self.config.unfold_len, 1)
+        )
+        cost = self.get_cost(
+            conditional_state_seq,
+            actions,
+            future_context_state_seq,
+            unfolding_agg=self.config.unfolding_agg,
+        )
+
+        xx = xx.unsqueeze(0).repeat(batch_size, 1, 1).to(actions.device)
+        yy = yy.unsqueeze(0).repeat(batch_size, 1, 1).to(actions.device)
+        cost = cost.view(xx.shape)
+        return xx, yy, cost
 
 
 MPCFMPolicy = MPCKMPolicy
