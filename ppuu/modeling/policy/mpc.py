@@ -85,6 +85,10 @@ class MPCKMPolicy(torch.nn.Module):
         km_noise: float = 0.0
         save_opt_stats: bool = False
         plan_size: Optional[int] = None
+        clip_actions: Optional[float] = None
+        greedy_range: Optional[float] = None
+        greedy_points: Optional[int] = None
+        action_grid_batch: int = 625
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -507,7 +511,13 @@ class MPCKMPolicy(torch.nn.Module):
         optimizer.step(closure)
 
         a_grad = actions.grad[0, 0, 0].clone()  # save for plotting later
-        actions = torch.clamp(actions, min=-10, max=10)  # in case it explodes
+        if self.config.clip_actions is not None:
+            # in case it explodes
+            actions = torch.clamp(
+                actions,
+                min=-self.config.clip_actions,
+                max=self.config.clip_actions,
+            )
 
         if self.visualizer:
             unnormalized_actions = self.normalizer.unnormalize_actions(
@@ -536,19 +546,21 @@ class MPCKMPolicy(torch.nn.Module):
             gt_future_state_seq,
         )
         xx, yy, costs = self._try_action_grid(
-            conditional_state_seq, future_context_state_seq
+            conditional_state_seq,
+            future_context_state_seq,
+            points=self.config.greedy_points,
+            search_range=self.config.greedy_range,
         )
         batch_size = xx.shape[0]
         xx = xx.view(batch_size, -1)
         yy = yy.view(batch_size, -1)
         costs = costs.view(batch_size, -1)
+        costs = nan_to_val(costs)
         min_idx = costs.min(dim=-1).indices.unsqueeze(-1)
         acc = torch.gather(xx, 1, min_idx)
         turns = torch.gather(yy, 1, min_idx)
         actions = torch.stack([acc, turns], dim=-1)
-        self.last_actions = actions.repeat(
-            1, self.config.unfold_len, 1
-        )
+        self.last_actions = actions.repeat(1, self.config.unfold_len, 1)
         return actions[:, 0]
 
     def _init_actions(
@@ -752,16 +764,16 @@ class MPCKMPolicy(torch.nn.Module):
         self,
         conditional_state_seq: StateSequence,
         future_context_state_seq: StateSequence,
-        N: int = 25,
-        K: float = 3,
+        points: int = 25,
+        search_range: float = 3,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Constructs a matrix of all possible actions and their corresponding
         costs.
         Returns a tuple: accelerations, turns, and costs
         """
-        x = torch.linspace(-1, 1, N) * (-K)
+        x = torch.linspace(-1, 1, points) * (-search_range)
         # later we draw it and y axis will be flipped
-        y = torch.linspace(-1, 1, N) * K
+        y = torch.linspace(-1, 1, points) * search_range
         xx, yy = torch.meshgrid([x, y])
         actions = (
             torch.stack([xx, yy], dim=-1)
@@ -774,12 +786,28 @@ class MPCKMPolicy(torch.nn.Module):
             .unsqueeze(-2)
             .repeat(batch_size, 1, self.config.unfold_len, 1)
         )
-        cost = self.get_cost(
-            conditional_state_seq,
-            actions,
-            future_context_state_seq,
-            unfolding_agg=self.config.unfolding_agg,
-        )
+        # here we split the computations into batches of 625.
+        # and process them sequentially.
+        n_batches = (
+            actions.shape[1] + self.config.action_grid_batch - 1
+        ) // self.config.action_grid_batch
+        costs_batches = []
+        for i in range(n_batches):
+            batch_index_begin = i * self.config.action_grid_batch
+            batch_index_end = (i + 1) * self.config.action_grid_batch
+            batch_actions = actions[
+                :,
+                batch_index_begin: batch_index_end
+            ]
+            batch_cost = self.get_cost(
+                conditional_state_seq,
+                batch_actions,
+                future_context_state_seq,
+                unfolding_agg=self.config.unfolding_agg,
+            )
+            costs_batches.append(batch_cost)
+
+        cost = torch.cat(costs_batches, dim=1)
 
         xx = xx.unsqueeze(0).repeat(batch_size, 1, 1).to(actions.device)
         yy = yy.unsqueeze(0).repeat(batch_size, 1, 1).to(actions.device)

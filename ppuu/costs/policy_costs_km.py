@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import NamedTuple, Optional, Tuple
 
 import torch
+import numpy as np
 
 from ppuu.costs.policy_costs_continuous import PolicyCost, PolicyCostContinuous
 from ppuu.data import constants
@@ -212,6 +213,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         self,
         scalar_states: torch.Tensor,
         context_state_seq: StateSequence,
+        actions: Optional[torch.Tensor] = None,
     ):
         """Given car states and context state sequence,
         gives xx, yy arrays where each element is the coordinate
@@ -275,6 +277,24 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         if self.config.rotate > 0:
             xx, yy = coordinate_rotate_matrix(xx, yy, rotation)
 
+        if self.config.curl > 0:
+            assert (
+                actions is not None
+            ), "actions must be passed when curl is enabled"
+            speeds_norm_pixels = states[:, :, 4]
+            speeds_norm = UnitConverter.pixels_to_m(speeds_norm_pixels)
+            alphas = torch.atan(
+                speeds_norm_pixels * actions[:, :, 1] * constants.TIMESTEP
+            )
+            gammas = (np.pi - alphas) / 2
+            radii = (
+                -1
+                * speeds_norm
+                * constants.TIMESTEP
+                / (2 * torch.cos(gammas) + 1e-7)
+            )  # in meters
+            xx, yy = coordinate_curl(xx, yy, radii)
+
         # Because originally x goes from negative to positive, and the
         # generated mask is overlayed with an image where the cars ahead of us
         # are positive distance, we flip x axis.
@@ -307,7 +327,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             )
 
         x_prime, y_prime = self._get_transformed_points(
-            scalar_states, context_state_seq
+            scalar_states, context_state_seq, actions
         )
 
         device = actions.device
