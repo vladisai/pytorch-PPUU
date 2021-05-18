@@ -89,6 +89,7 @@ class MPCKMPolicy(torch.nn.Module):
         greedy_range: Optional[float] = None
         greedy_points: Optional[int] = None
         action_grid_batch: int = 625
+        lbfgs_history_size: int = 2
 
     OPTIMIZER_DICT = {
         "SGD": torch.optim.SGD,
@@ -468,6 +469,7 @@ class MPCKMPolicy(torch.nn.Module):
                 lr=self.config.lr,
                 line_search_fn="strong_wolfe",
                 max_iter=self.config.lbfgs_max_iter,
+                history_size=self.config.lbfgs_history_size,
             )
         else:
             optimizer = self.OPTIMIZER_DICT[self.config.optimizer](
@@ -513,8 +515,8 @@ class MPCKMPolicy(torch.nn.Module):
         a_grad = actions.grad[0, 0, 0].clone()  # save for plotting later
         if self.config.clip_actions is not None:
             # in case it explodes
-            actions = torch.clamp(
-                actions,
+            actions.data = torch.clamp(
+                actions.data,
                 min=-self.config.clip_actions,
                 max=self.config.clip_actions,
             )
@@ -795,10 +797,7 @@ class MPCKMPolicy(torch.nn.Module):
         for i in range(n_batches):
             batch_index_begin = i * self.config.action_grid_batch
             batch_index_end = (i + 1) * self.config.action_grid_batch
-            batch_actions = actions[
-                :,
-                batch_index_begin: batch_index_end
-            ]
+            batch_actions = actions[:, batch_index_begin:batch_index_end]
             batch_cost = self.get_cost(
                 conditional_state_seq,
                 batch_actions,

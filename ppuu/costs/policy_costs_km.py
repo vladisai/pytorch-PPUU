@@ -5,8 +5,8 @@ import random
 from dataclasses import dataclass
 from typing import NamedTuple, Optional, Tuple
 
-import torch
 import numpy as np
+import torch
 
 from ppuu.costs.policy_costs_continuous import PolicyCost, PolicyCostContinuous
 from ppuu.data import constants
@@ -295,9 +295,6 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             )  # in meters
             xx, yy = coordinate_curl(xx, yy, radii)
 
-        # Because originally x goes from negative to positive, and the
-        # generated mask is overlayed with an image where the cars ahead of us
-        # are positive distance, we flip x axis.
         return xx, yy
 
     def get_masks(
