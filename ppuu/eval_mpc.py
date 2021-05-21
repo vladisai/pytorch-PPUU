@@ -50,6 +50,7 @@ class EvalMPCConfig(configs.ConfigBase):
     forward_model_path: Optional[str] = None
     seed: int = 42
     dataset_partition: str = "test"
+    dataset_one_episode: Optional[int] = None
     pass_gt_future: bool = False
 
 
@@ -66,6 +67,11 @@ def main(config):
     test_dataset = dataloader.EvaluationDataset(
         config.dataset, config.dataset_partition, config.test_size_cap
     )
+
+    if config.dataset_one_episode:
+        # a workaround to limit the dataset to just one episode
+        test_dataset.splits[config.dataset_partition] = [test_dataset.splits[config.dataset_partition][config.dataset_one_episode]]
+        test_dataset.size = 1
 
     if config.forward_model_path is not None:
         m_config = FM.Config()

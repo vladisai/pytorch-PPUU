@@ -163,6 +163,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         reference_distance: torch.Tensor
         speed: torch.Tensor
         total: torch.Tensor
+        destination: torch.Tensor
 
     def __init__(self, config, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
@@ -170,6 +171,21 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         self._last_mask_overlay = None
         self._last_cost_profile_and_traj = None
         self._last_cost_profile = None
+
+    def calculate_destination_cost(
+        self, scalar_states: torch.Tensor
+    ) -> torch.Tensor:
+        destination_cost = torch.zeros(
+            *scalar_states.shape[:-1], device=scalar_states.device
+        )
+        if self.config.lambda_d > 0:
+            distance_covered = UnitConverter.pixels_to_m(
+                self.normalizer.unnormalize_states(scalar_states)[..., 0]
+            )
+            destination_cost = (
+                -1 * distance_covered
+            )
+        return destination_cost
 
     def calculate_reference_distance_cost(
         self,
@@ -561,6 +577,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
         jerk: torch.Tensor,
         reference_distance: torch.Tensor,
         speed: torch.Tensor,
+        destination: torch.Tensor,
     ):
         return (
             self.config.lambda_p * state.total_proximity
@@ -571,6 +588,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             + self.config.lambda_j * jerk
             + self.config.lambda_r * reference_distance
             + self.config.lambda_s * speed
+            + self.config.lambda_d * destination
         )
 
     def compute_proximity_cost_km(
@@ -633,6 +651,13 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             .mean(dim=-1)
         )
 
+        destination_cost = self.calculate_destination_cost(scalar_states)
+        destination_total = (
+            self.apply_gamma(destination_cost)
+            .view(batch_size, -1)
+            .mean(dim=-1)
+        )
+
         loss_s = self.calculate_speed_cost(scalar_states)
         loss_s_total = (
             self.apply_gamma(loss_s).view(batch_size, -1).mean(dim=-1)
@@ -652,6 +677,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             jerk=loss_j,
             reference_distance=reference_total,
             speed=loss_s_total,
+            destination=destination_total,
         )
 
         return PolicyCostKMTaper.Cost(
@@ -662,6 +688,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             total=total,
             reference_distance=reference_total,
             speed=loss_s_total,
+            destination=destination_total,
         )
 
     # Visualization functions for debugging.

@@ -47,9 +47,9 @@ if __name__ == "__main__":
             c_dict["mpc.unfold_len"] / c_dict["mpc.timestep"]
         )
 
-    c_dict["mpc.lr"] = c_dict["mpc.iter_reach_value"] / c_dict["mpc.n_iter"]
-
-    del c_dict["mpc.iter_reach_value"]
+    if "mpc.lr" not in c_dict:
+        c_dict["mpc.lr"] = c_dict["mpc.iter_reach_value"] / c_dict["mpc.n_iter"]
+        del c_dict["mpc.iter_reach_value"]
 
     print(c_dict)
 
@@ -57,7 +57,6 @@ if __name__ == "__main__":
 
     config.dataset_partition = "train"
     config.test_size_cap = 50
-    config.num_processes = 7
     config.cost.lambda_a = 0.0
     config.cost.lambda_j = 0.0
     config.cost.u_reg = 0.0
