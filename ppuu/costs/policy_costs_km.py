@@ -521,8 +521,8 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             context_state_seq,
             unnormalize=True,
         )
-        mask_sums = proximity_mask.sum(dim=(-1, -2))
-        mask_sums_lo = proximity_mask_lo.sum(dim=(-1, -2))
+        mask_sums = proximity_mask.sum(dim=(-1, -2)) + 1e-9
+        mask_sums_lo = proximity_mask_lo.sum(dim=(-1, -2)) + 1e-9
 
         # We impose a cost for being too far from the reference. Being too far to the side is punished more.
         proximity_cost = self.compute_proximity_cost_km(

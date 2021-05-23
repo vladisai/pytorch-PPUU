@@ -51,17 +51,16 @@ if __name__ == "__main__":
         c_dict["mpc.lr"] = c_dict["mpc.iter_reach_value"] / c_dict["mpc.n_iter"]
         del c_dict["mpc.iter_reach_value"]
 
+    if "mpc.top_coeff" in c_dict:
+        c_dict["mpc.ce_top_size"] = int(c_dict["mpc.batch_size"] * c_dict["mpc.top_coeff"])
+        del c_dict["mpc.top_coeff"]
+
     print(c_dict)
 
     config = configs.combine_cli_dict(eval_mpc.EvalMPCConfig, c_dict)
 
     config.dataset_partition = "train"
     config.test_size_cap = 50
-    config.cost.lambda_a = 0.0
-    config.cost.lambda_j = 0.0
-    config.cost.u_reg = 0.0
-    config.cost.rotate = 1
-    config.cost.skip_contours = True
     config.mpc.save_opt_stats = True
 
     # Debug

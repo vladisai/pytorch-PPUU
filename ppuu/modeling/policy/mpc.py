@@ -60,6 +60,115 @@ def flatten_f_unflatten(f, args, dims=2):
     return unflatten_dims(f_x_flat, original_shapes[0][:dims])
 
 
+class CE:
+    """Adapted from:
+    https://github.com/homangab/gradcem/blob/master/mpc/cem.py
+    """
+
+    def __init__(
+        self,
+        batch_size=1,
+        horizon=30,
+        n_iter=10,
+        population_size=30,
+        top_size=10,
+        variance=4,
+        gd=True,
+        lr=0.1,
+        repeat_step=5,
+        plan_length=30,
+    ):
+        self.a_size = 2
+        self.batch_size = batch_size
+        self.horizon = horizon
+        self.device = torch.device("cuda")
+        self.n_iter = n_iter
+        self.population_size = population_size
+        self.top_size = top_size
+        self.variance = variance
+        self.gd = gd
+        self.lr = lr
+        self.plan_length = plan_length
+
+    def plan(self, get_cost):
+        # Initialize factorized belief over action sequences q(a_t:t+H) ~ N(0, I)
+        a_mu = torch.zeros(
+            self.batch_size,
+            1,
+            self.plan_length,
+            self.a_size,
+            device=self.device,
+        )
+        a_std = self.variance * torch.ones(
+            self.batch_size,
+            1,
+            self.plan_length,
+            self.a_size,
+            device=self.device,
+        )
+        actions = a_mu + a_std * torch.randn(
+            self.batch_size,
+            self.population_size,
+            self.plan_length,
+            self.a_size,
+            device=self.device,
+        )
+        actions.requires_grad = True
+
+        optimizer = torch.optim.SGD((actions,), self.lr)
+
+        for _ in range(self.n_iter):
+            # now we want to get the rewards for those actions.
+            costs = get_cost(actions)
+
+            if self.gd:
+                optimizer.zero_grad()
+                costs.mean().backward()
+                torch.nn.utils.clip_grad_norm_(actions, 1.0, norm_type="inf")
+                optimizer.step()
+
+            # get the indices of the best cost elements
+            values, topk = costs.topk(
+                self.top_size,
+                dim=1,
+                largest=False,
+                sorted=True,
+            )
+
+            # pick the actions that correspond to the best elements
+            best_actions = actions.view(
+                self.batch_size,
+                self.population_size,
+                self.plan_length,
+                self.a_size,
+            ).gather(
+                dim=1,
+                index=topk.view(*topk.shape, 1, 1).repeat(
+                    1, 1, self.plan_length, 2
+                ),
+            )
+
+            # Update belief with new means and standard deviations
+            a_mu = best_actions.mean(dim=1, keepdim=True)
+            a_std = best_actions.std(dim=1, unbiased=False, keepdim=True)
+
+            resample_actions = (
+                a_mu
+                + a_std
+                * torch.randn(
+                    self.batch_size,
+                    self.population_size - self.top_size,
+                    self.plan_length,
+                    self.a_size,
+                    device=self.device,
+                )
+            )
+
+            actions.data = torch.cat([best_actions, resample_actions], dim=1)
+
+        return actions[:, 0]
+
+
 class MPCKMPolicy(torch.nn.Module):
     @dataclass
     class Config(configs.ConfigBase):
@@ -80,7 +189,9 @@ class MPCKMPolicy(torch.nn.Module):
         planning_freq: int = 1
         lambda_j_mpc: float = 0.0
         batch_size: int = 1
-        ce_repeat_step: int = 5
+        ce_top_size: int = 10
+        ce_gd: bool = True
+        ce_variance: float = 4.0
         unfolding_agg: str = "max"
         km_noise: float = 0.0
         save_opt_stats: bool = False
@@ -479,16 +590,19 @@ class MPCKMPolicy(torch.nn.Module):
             optimizer.load_state_dict(self.optimizer_stats)
         return optimizer
 
-    def _optimize_one_step(
+    def _build_closure(
         self,
-        optimizer: torch.optim.Optimizer,
         conditional_state_seq: StateSequence,
         future_context_state_seq: StateSequence,
-        actions: torch.Tensor,
+        actions: Optional[torch.Tensor] = None,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        gd: bool = True,
         metadata: Optional[dict] = None,
+        keep_dim: bool = False,
     ):
-        def closure():
-            optimizer.zero_grad()
+        def closure(actions: torch.Tensor):
+            if optimizer is not None:
+                optimizer.zero_grad()
             cost = self.get_cost(
                 conditional_state_seq,
                 actions,
@@ -497,18 +611,39 @@ class MPCKMPolicy(torch.nn.Module):
                 metadata=metadata,
             )
             self._last_cost = cost.data
-            cost.sum().backward()
 
-            if not torch.isnan(actions.grad).any():
-                # this is definitely needed, judging from some examples I saw where gradient is 50
-                if not self.config.optimizer == "LBFGS":
-                    torch.nn.utils.clip_grad_norm_(
-                        actions, 1.0, norm_type="inf"
-                    )
+            if gd:
+                cost.sum().backward()
+
+                if not torch.isnan(actions.grad).any():
+                    # this is definitely needed, judging from some examples I saw where gradient is 50
+                    if not self.config.optimizer == "LBFGS":
+                        torch.nn.utils.clip_grad_norm_(
+                            actions, 1.0, norm_type="inf"
+                        )
+                else:
+                    print(f"NaN grad! {actions.grad.max()=}, {actions.max()=}")
+            if keep_dim:
+                return cost
             else:
-                print(f"NaN grad! {actions.grad.max()=}, {actions.max()=}")
+                return cost.sum()
 
-            return cost.sum()
+        if actions is None:
+            return closure
+        else:
+            return lambda: closure(actions)
+
+    def _optimize_one_step(
+        self,
+        optimizer: torch.optim.Optimizer,
+        conditional_state_seq: StateSequence,
+        future_context_state_seq: StateSequence,
+        actions: torch.Tensor,
+        metadata: Optional[dict] = None,
+    ):
+        closure = self._build_closure(
+            conditional_state_seq, future_context_state_seq, actions, optimizer
+        )
 
         optimizer.step(closure)
 
@@ -563,6 +698,38 @@ class MPCKMPolicy(torch.nn.Module):
         turns = torch.gather(yy, 1, min_idx)
         actions = torch.stack([acc, turns], dim=-1)
         self.last_actions = actions.repeat(1, self.config.unfold_len, 1)
+        return actions[:, 0]
+
+    def _ce_optimize(
+        self,
+        conditional_state_seq: StateSequence,
+        best_actions: torch.Tensor,
+        gt_future_state_seq: Optional[StateSequence],
+    ):
+        future_context_state_seq = self._get_context(
+            conditional_state_seq,
+            best_actions,
+            0,
+            None,
+            gt_future_state_seq,
+        )
+        closure = self._build_closure(
+            conditional_state_seq,
+            future_context_state_seq,
+            gd=False,
+            keep_dim=True,
+        )
+        actions = CE(
+            horizon=self.config.unfold_len,
+            n_iter=self.config.n_iter,
+            population_size=self.config.batch_size,
+            top_size=self.config.ce_top_size,
+            variance=self.config.ce_variance,
+            gd=self.config.ce_gd,
+            lr=self.config.lr,
+            plan_length=self.config.plan_size,
+        ).plan(closure)
+        self.last_actions = actions.repeat(1, self.config.unfold_len // self.config.plan_size, 1).detach()
         return actions[:, 0]
 
     def _init_actions(
@@ -660,7 +827,11 @@ class MPCKMPolicy(torch.nn.Module):
 
         if self.config.optimizer == "greedy":
             return self._greedy_optimize(
-                conditional_state_seq, best_actions, gt_future_state_seq
+                conditional_state_seq, best_actions.detach(), gt_future_state_seq
+            )
+        elif self.config.optimizer == "CE":
+            return self._ce_optimize(
+                conditional_state_seq, best_actions.detach(), gt_future_state_seq
             )
 
         optimizer = self._init_optimizer(actions)
