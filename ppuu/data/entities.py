@@ -126,3 +126,12 @@ class DatasetSample(NamedTuple):
             self.episode_id,
             self.timestep,
         )
+
+    @classmethod
+    def from_tuple(cls, t) -> DatasetSample:
+        # NEXT finish from tuple method and put into lightning.
+        return DatasetSample(
+            StateSequence(*t[0]),
+            StateSequence(*t[1]),
+            *t[2:],
+        )

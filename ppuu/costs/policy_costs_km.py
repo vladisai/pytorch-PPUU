@@ -182,9 +182,7 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             distance_covered = UnitConverter.pixels_to_m(
                 self.normalizer.unnormalize_states(scalar_states)[..., 0]
             )
-            destination_cost = (
-                -1 * distance_covered
-            )
+            destination_cost = -1 * distance_covered
         return destination_cost
 
     def calculate_reference_distance_cost(

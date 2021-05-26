@@ -9,6 +9,7 @@ from torch.nn import functional as F
 
 from ppuu import configs
 from ppuu.data.dataloader import Normalizer
+from ppuu.data.entities import DatasetSample
 from ppuu.modeling import get_fm
 from ppuu.modeling.km import StatePredictor
 
@@ -128,9 +129,9 @@ class FM(pl.LightningModule):
 
     def forward(self, batch):
         predictions = self.model(
-            inputs=(batch["input_images"], batch["input_states"]),
-            actions=batch["actions"],
-            targets=(batch["target_images"], batch["target_states"]),
+            input_state_seq=batch.conditional_state_seq,
+            actions=batch.target_action_seq,
+            target_state_seq=batch.target_state_seq,
             z_dropout=self.config.model.z_dropout,
         )
         return predictions
@@ -146,24 +147,27 @@ class FM(pl.LightningModule):
         self.normalizer = Normalizer(stats)
         self.state_predictor.normalizer = self.normalizer
 
-    def shared_step(self, batch):
+    def shared_step(self, batch: DatasetSample):
         predictions = self(batch)
         if self.config.model.huber_loss:
             states_loss = F.smooth_l1_loss(
-                batch["target_states"], predictions.pred_states
+                batch.target_state_seq.states, predictions.state_seq.states
             )
         else:
             states_loss = F.mse_loss(
-                batch["target_states"], predictions.pred_states
+                batch.target_state_seq.states, predictions.state_seq.states
             )
         images_loss = (
-            ((batch["target_images"] - predictions.pred_images) ** 2)
-            .view(*batch["actions"].shape[:2], -1)
+            (
+                (batch.target_state_seq.images - predictions.state_seq.images)
+                ** 2
+            )
+            .view(*batch.target_action_seq.shape[:2], -1)
             .mean(dim=-1)
         )
         if self.config.training.rebalance:
             ranking = torch.clamp(
-                torch.exp(0.5 * batch["actions"].abs()[:, :, 1].pow(2)),
+                torch.exp(0.5 * batch.target_action_seq.abs()[:, :, 1].pow(2)),
                 min=1,
                 max=10,
             )
@@ -186,6 +190,7 @@ class FM(pl.LightningModule):
         )
 
     def training_step(self, batch, batch_idx):
+        batch = DatasetSample.from_tuple(batch)
         (
             states_loss,
             images_loss,
@@ -220,14 +225,17 @@ class FM(pl.LightningModule):
         return res
 
     def validation_step(self, batch, batch_idx):
+        batch = DatasetSample.from_tuple(batch)
         shared_losses = self.shared_step(batch)
 
-        predictions = self.model.unfold(batch["actions"], batch)
+        predictions = self.model.unfold(
+            batch.conditional_state_seq, batch.target_action_seq
+        )
         states_loss = F.mse_loss(
-            batch["target_states"], predictions["pred_states"]
+            batch.target_state_seq.states, predictions.state_seq.states
         )
         images_loss = F.mse_loss(
-            batch["target_images"], predictions["pred_images"]
+            batch.target_state_seq.images, predictions.state_seq.images
         )
         loss = images_loss + states_loss
         logs = {
@@ -271,10 +279,10 @@ class FM(pl.LightningModule):
         if hparams is None:
             hparams = FM.Config()
         if isinstance(hparams, dict):
-            self.hparams = hparams
+            self.hparams.update(hparams)
             self.config = FM.Config.parse_from_dict(hparams)
         else:
-            self.hparams = dataclasses.asdict(hparams)
+            self.hparams.update(dataclasses.asdict(hparams))
             self.config = hparams
 
     def configure_optimizers(self):

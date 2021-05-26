@@ -152,16 +152,12 @@ class CE:
             a_mu = best_actions.mean(dim=1, keepdim=True)
             a_std = best_actions.std(dim=1, unbiased=False, keepdim=True)
 
-            resample_actions = (
-                a_mu
-                + a_std
-                * torch.randn(
-                    self.batch_size,
-                    self.population_size - self.top_size,
-                    self.plan_length,
-                    self.a_size,
-                    device=self.device,
-                )
+            resample_actions = a_mu + a_std * torch.randn(
+                self.batch_size,
+                self.population_size - self.top_size,
+                self.plan_length,
+                self.a_size,
+                device=self.device,
             )
 
             actions.data = torch.cat([best_actions, resample_actions], dim=1)
@@ -612,6 +608,17 @@ class MPCKMPolicy(torch.nn.Module):
             )
             self._last_cost = cost.data
 
+            if metadata is not None:
+                if 'action_history' not in metadata:
+                    metadata['action_history'] = [actions.clone().detach()]
+                else:
+                    metadata['action_history'].append(actions.clone().detach())
+
+                if 'cost_history' not in metadata:
+                    metadata['cost_history'] = [cost.clone().detach()]
+                else:
+                    metadata['cost_history'].append(cost.clone().detach())
+
             if gd:
                 cost.sum().backward()
 
@@ -642,7 +649,7 @@ class MPCKMPolicy(torch.nn.Module):
         metadata: Optional[dict] = None,
     ):
         closure = self._build_closure(
-            conditional_state_seq, future_context_state_seq, actions, optimizer
+            conditional_state_seq, future_context_state_seq, actions, optimizer, metadata=metadata
         )
 
         optimizer.step(closure)
@@ -705,6 +712,7 @@ class MPCKMPolicy(torch.nn.Module):
         conditional_state_seq: StateSequence,
         best_actions: torch.Tensor,
         gt_future_state_seq: Optional[StateSequence],
+        metadata: Optional[dict] = None,
     ):
         future_context_state_seq = self._get_context(
             conditional_state_seq,
@@ -718,6 +726,7 @@ class MPCKMPolicy(torch.nn.Module):
             future_context_state_seq,
             gd=False,
             keep_dim=True,
+            metadata=metadata,
         )
         actions = CE(
             horizon=self.config.unfold_len,
@@ -729,7 +738,9 @@ class MPCKMPolicy(torch.nn.Module):
             lr=self.config.lr,
             plan_length=self.config.plan_size,
         ).plan(closure)
-        self.last_actions = actions.repeat(1, self.config.unfold_len // self.config.plan_size, 1).detach()
+        self.last_actions = actions.repeat(
+            1, self.config.unfold_len // self.config.plan_size, 1
+        ).detach()
         return actions[:, 0]
 
     def _init_actions(
@@ -824,14 +835,20 @@ class MPCKMPolicy(torch.nn.Module):
 
         if metadata is not None:
             metadata["action_history"] = []
+            metadata["cost_history"] = []
 
         if self.config.optimizer == "greedy":
             return self._greedy_optimize(
-                conditional_state_seq, best_actions.detach(), gt_future_state_seq
+                conditional_state_seq,
+                best_actions.detach(),
+                gt_future_state_seq,
             )
         elif self.config.optimizer == "CE":
             return self._ce_optimize(
-                conditional_state_seq, best_actions.detach(), gt_future_state_seq
+                conditional_state_seq,
+                best_actions.detach(),
+                gt_future_state_seq,
+                metadata=metadata,
             )
 
         optimizer = self._init_optimizer(actions)
@@ -854,9 +871,6 @@ class MPCKMPolicy(torch.nn.Module):
                 actions,
                 metadata=metadata,
             )
-
-            if metadata is not None:
-                metadata["action_history"].append(actions.data[:, 0])
 
         # Calculate the cost again and choose the best one.
         with torch.no_grad():

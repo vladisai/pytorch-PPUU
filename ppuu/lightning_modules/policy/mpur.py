@@ -86,6 +86,10 @@ class MPURModule(pl.LightningModule):
 
     def __init__(self, hparams=None):
         super().__init__()
+
+        # Needed to control gradient step.
+        self.automatic_optimization=False,
+
         self.set_hparams(hparams)
 
         self.forward_model = self.ForwardModelType(
@@ -128,10 +132,10 @@ class MPURModule(pl.LightningModule):
         if hparams is None:
             hparams = self.Config()
         if isinstance(hparams, dict):
-            self.hparams = hparams
+            self.hparams.update(hparams)
             self.config = self.Config.parse_from_dict(hparams)
         else:
-            self.hparams = dataclasses.asdict(hparams)
+            self.hparams.update(dataclasses.asdict(hparams))
             self.config = hparams
 
     def forward(self, batch):

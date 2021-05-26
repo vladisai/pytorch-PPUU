@@ -251,7 +251,7 @@ class FwdCNN_VAE(torch.nn.Module):
         sampling: Any = None,
         z_dropout: float = 0.0,
         z_seq: Optional[torch.Tensor] = None,
-    ):
+    ):  # -> FwdCNN_VAE.ForwardResult
         """Main function used for forward prop. It applies the forward model
         step by step, autoregressively, while inferring or sampling the latent
         variable, depending on sampling parameter. Z latent is dropped out, and

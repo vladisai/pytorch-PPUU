@@ -71,7 +71,6 @@ def main(config):
         logger=logger,
         resume_from_checkpoint=config.training.resume_from_checkpoint,
         weights_save_path=logger.log_dir,
-        automatic_optimization=False,
     )
 
     model = module(config)

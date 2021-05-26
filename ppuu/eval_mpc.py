@@ -70,7 +70,11 @@ def main(config):
 
     if config.dataset_one_episode:
         # a workaround to limit the dataset to just one episode
-        test_dataset.splits[config.dataset_partition] = [test_dataset.splits[config.dataset_partition][config.dataset_one_episode]]
+        test_dataset.splits[config.dataset_partition] = [
+            test_dataset.splits[config.dataset_partition][
+                config.dataset_one_episode
+            ]
+        ]
         test_dataset.size = 1
 
     if config.forward_model_path is not None:
