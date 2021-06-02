@@ -18,12 +18,15 @@ EPOCHS = 21
 def run_trial(config, run):
     config.training.n_epochs = -1
     config.training.batch_size = -1
-    config.training.n_steps = 2e5
-    config.training.epoch_size = 500
+    # config.training.n_steps = 2e5
+    config.training.n_steps = 2e3
+    # config.training.epoch_size = 500
+    config.training.epoch_size = 3
     config.training.validation_size = 10
     config.training.validation_eval = False
     config.training.experiment_name = f"grid_search_{time.time()}"
-    config.cost.uncertainty_n_batches = 100
+    # config.cost.uncertainty_n_batches = 100
+    config.cost.uncertainty_n_batches = 10
     config.training.dataset = "/home/us441/nvidia-collab/vlad/traffic-data-5/state-action-cost/data_i80_v0/"
     config.model.forward_model_path = (
         "/home/us441/nvidia-collab/vlad/results/fm/km_no_action/"
@@ -54,7 +57,6 @@ def run_trial(config, run):
         trainer = pl.Trainer(
             gpus=config.training.gpus,
             num_nodes=config.training.num_nodes,
-            gradient_clip_val=5.0,
             max_epochs=config.training.n_epochs,
             check_val_every_n_epoch=period,
             num_sanity_val_steps=0,
@@ -68,7 +70,6 @@ def run_trial(config, run):
             logger=logger,
             weights_save_path=logger.log_dir,
             track_grad_norm=False,
-            automatic_optimization=False,
         )
         model = Module(config)
 
@@ -85,7 +86,7 @@ def run_trial(config, run):
         trainer.fit(model, datamodule)
 
         eval_dataset = EvaluationDataset.from_data_store(
-            datamodule.data_store, split="val", size_cap=200
+            datamodule.data_store, split="val", size_cap=1  # ,200
         )
         model = model.eval()
         evaluator = PolicyEvaluator(
@@ -118,6 +119,8 @@ if __name__ == "__main__":
         "lambda_o",
         "lambda_a",
         "lambda_j",
+        "lambda_d",
+        "lambda_r",
         "u_reg",
         "mask_coeff",
         "learning_rate",
@@ -131,7 +134,7 @@ if __name__ == "__main__":
 
     c_dict["masks_power_x"] = c_dict["powers"]
     c_dict["masks_power_y"] = c_dict["powers"]
-    c_dict["skip_contours"] = True
+    c_dict["skip_contours"] = False
     c_dict["rotate"] = True
 
     del c_dict["powers"]

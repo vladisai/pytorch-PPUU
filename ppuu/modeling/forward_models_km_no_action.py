@@ -4,7 +4,7 @@ import torch
 
 from ppuu.data.entities import StateSequence
 from ppuu.modeling.forward_models import FwdCNN_VAE
-from ppuu.modeling.km import predict_states
+from ppuu.modeling.km import predict_states, StatePredictor
 
 
 class FwdCNNKMNoAction_VAE(FwdCNN_VAE):
@@ -97,3 +97,35 @@ class FwdCNNKMNoAction_VAE(FwdCNN_VAE):
         return FwdCNN_VAE.ForwardSingleStepResult(
             pred_image, pred_state, z_val, kld_loss
         )
+
+    @classmethod
+    def load_from_file(cls, file_path):
+        model = torch.load(file_path)
+        state_dict = model["state_dict"]
+        if list(state_dict.keys())[0].startswith("model."):
+            for key in list(state_dict.keys()):
+                state_dict[key.replace("model.", "")] = state_dict.pop(key)
+        # normalizer is missing for now
+        state_predictor = StatePredictor(
+            diff=model["hyper_parameters"]["training"]["diffs"],
+            normalizer=None,
+        )
+        res = cls(
+            layers=model["hyper_parameters"]["model"]["layers"],
+            nfeature=model["hyper_parameters"]["model"]["nfeature"],
+            dropout=model["hyper_parameters"]["model"]["dropout"],
+            h_height=model["hyper_parameters"]["model"]["h_height"],
+            h_width=model["hyper_parameters"]["model"]["h_width"],
+            height=model["hyper_parameters"]["model"]["height"],
+            width=model["hyper_parameters"]["model"]["width"],
+            n_actions=model["hyper_parameters"]["model"]["n_actions"],
+            hidden_size=model["hyper_parameters"]["model"]["hidden_size"],
+            ncond=model["hyper_parameters"]["model"]["ncond"],
+            nz=model["hyper_parameters"]["model"]["nz"],
+            enable_kld=True,
+            enable_latent=True,
+            state_predictor=state_predictor,
+        )
+        res.encoder.n_channels = 3
+        res.load_state_dict(state_dict)
+        return res

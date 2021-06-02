@@ -3,6 +3,7 @@ from torch import nn
 
 from ppuu.modeling.common_models import Encoder
 from ppuu.modeling.mixout import MixLinear
+from ppuu.data.entities import StateSequence
 
 
 class MixoutDeterministicPolicy(nn.Module):
@@ -104,12 +105,13 @@ class DeterministicPolicy(nn.Module):
 
     def forward(
         self,
-        state_images,
-        states,
+        conditional_state_seq: StateSequence,
         normalize_inputs=False,
         normalize_outputs=False,
-        car_size=None,
     ):
+        state_images = conditional_state_seq.images
+        states = conditional_state_seq.states
+
         if state_images.dim() == 4:  # if processing single vehicle
             state_images = state_images.cuda().unsqueeze(0)
             states = states.cuda().unsqueeze(0)

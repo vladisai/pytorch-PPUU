@@ -14,13 +14,14 @@ from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu.data import Augmenter, EvaluationDataset
 from ppuu.data.dataloader import Normalizer
 from ppuu.eval import PolicyEvaluator
-from ppuu.lightning_modules.fm import FM
 from ppuu.modeling import policy_models
+from ppuu.modeling.forward_models import FwdCNN_VAE
+from ppuu.modeling.forward_models_km_no_action import FwdCNNKMNoAction_VAE
 from ppuu.modeling.mixout import MixoutWrapper
-from ppuu.wrappers import ForwardModel
+from ppuu.data.entities import DatasetSample
 
 
-def inject(cost_type=PolicyCost, fm_type=ForwardModel):
+def inject(cost_type=PolicyCost, fm_type=FwdCNN_VAE):
     """This injector allows to customize lightning modules with custom cost
     class and forward model class (or more, if extended).  It injects these
     types and creates a config dataclass that contains configs for all the
@@ -59,7 +60,7 @@ def inject(cost_type=PolicyCost, fm_type=ForwardModel):
     return wrapper
 
 
-@inject(cost_type=PolicyCost, fm_type=ForwardModel)
+@inject(cost_type=PolicyCost, fm_type=FwdCNN_VAE)
 class MPURModule(pl.LightningModule):
     @dataclass
     class ModelConfig(configs.ModelConfig):
@@ -88,12 +89,12 @@ class MPURModule(pl.LightningModule):
         super().__init__()
 
         # Needed to control gradient step.
-        self.automatic_optimization=False,
+        self.automatic_optimization = False
 
         self.set_hparams(hparams)
 
-        self.forward_model = self.ForwardModelType(
-            self.config.model.forward_model_path, self.config.training.diffs
+        self.forward_model = self.ForwardModelType.load_from_file(
+            self.config.model.forward_model_path
         )
 
         # exclude fm from the graph
@@ -141,38 +142,64 @@ class MPURModule(pl.LightningModule):
     def forward(self, batch):
         self.forward_model.eval()
         predictions = self.forward_model.unfold(
+            batch.conditional_state_seq,
             self.policy_model,
-            batch,
-            augmenter=self.augmenter,
             npred=self.config.model.n_pred,
         )
         return predictions
 
+    def calculate_cost(
+        self, batch: DatasetSample, predictions: FwdCNN_VAE.Unfolding
+    ) -> PolicyCost.Cost:
+        return self.policy_cost.calculate_cost(
+            batch.conditional_state_seq,
+            predictions.actions,
+            predictions.state_seq,
+        )
+
+    def build_log_dict(
+        self, predictions: FwdCNN_VAE.Unfolding, cost: PolicyCost.Cost
+    ) -> dict:
+        """Builds a dictionary of values to be logged from
+        predictions and costs."""
+        return {
+            "proximity": cost.state.total_proximity.mean(),
+            "lane": cost.state.total_lane.mean(),
+            "offroad": cost.state.total_offroad.mean(),
+            "jerk": cost.jerk.mean(),
+            "action": cost.action.mean(),
+            "total": cost.total.mean(),
+            "action_norm": predictions.actions.norm(2, 2).pow(2).mean(),
+        }
+
     def training_step(self, batch, batch_idx):
+        batch = DatasetSample.from_tuple(batch)
         opt = self.optimizers()
         predictions = self(batch)
-        loss = self.policy_cost.calculate_cost(batch, predictions)
-        loss["action_norm"] = (
-            predictions["pred_actions"].norm(2, 2).pow(2).mean()
-        )
-        res = loss["policy_loss"].mean()
-        for k in loss:
-            v = loss[k]
-            if torch.is_tensor(v):
-                v = v.mean()
-            if v is not None:
-                self.log(
-                    "train/" + k,
-                    v,
-                    on_step=True,
-                    logger=True,
-                    prog_bar=True,
-                )
+
+        loss = self.calculate_cost(batch, predictions)
+        res = loss.total.mean()
+
+        logged_losses = self.build_log_dict(predictions, loss)
+
+        for k, v in logged_losses.items():
+            self.log(
+                "train/" + k,
+                v,
+                on_step=True,
+                logger=True,
+                prog_bar=True,
+            )
 
         # We retain the gradient of actions to later log it to wandb.
-        predictions["pred_actions"].retain_grad()
-        self.manual_backward(res, optimizer=opt.optimizer)
-        self.log_action_grads(predictions["pred_actions"].grad)
+        predictions.actions.retain_grad()
+        self.manual_backward(res)
+        self.log_action_grads(predictions.actions.grad)
+        if self.config.training.grad_clip_val is not None:
+            torch.nn.utils.clip_grad_value_(
+                self.policy_model.parameters(),
+                clip_value=self.config.training.grad_clip_val,
+            )
         opt.step()
 
         return res
@@ -234,21 +261,22 @@ class MPURModule(pl.LightningModule):
             }
         )
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: dict, batch_idx: int):
+        batch = DatasetSample.from_tuple(batch)
         predictions = self(batch)
-        loss = self.policy_cost.calculate_cost(batch, predictions)
-        res = loss["policy_loss"].mean()
-        for k in loss:
-            v = loss[k]
-            if torch.is_tensor(v):
-                v = v.mean()
-            if v is not None:
-                self.log(
-                    "val/" + k,
-                    v,
-                    on_epoch=True,
-                    logger=True,
-                )
+        loss = self.calculate_cost(batch, predictions)
+
+        res = loss.total.mean()
+
+        logged_losses = self.build_log_dict(predictions, loss)
+
+        for k, v in logged_losses.items():
+            self.log(
+                "val/" + k,
+                v,
+                on_epoch=True,
+                logger=True,
+            )
         return res
 
     @property
@@ -364,63 +392,19 @@ class MPURModule(pl.LightningModule):
     #     return super()._load_model_state(checkpoint, *args, **kwargs)
 
 
-@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModel)
+@inject(cost_type=PolicyCostContinuous, fm_type=FwdCNN_VAE)
 class MPURContinuousModule(MPURModule):
     pass
 
 
-class ForwardModelV2(torch.nn.Module):
-    def __init__(self, file_path):
-        super().__init__()
-        module = FM.load_from_checkpoint(file_path)
-        module.model.enable_latent = True
-        self.module = module
-
-    def __getattr__(self, name):
-        """Delegate everything to forward_model"""
-        return getattr(self._modules["module"].model, name)
-
-
-class ForwardModelV3(torch.nn.Module):
-    """FM with no action and diff"""
-
-    def __init__(self, file_path, diffs):
-        super().__init__()
-        m_config = FM.Config()
-        m_config.model.fm_type = "km_no_action"
-        m_config.model.checkpoint = file_path
-        m_config.training.enable_latent = True
-        m_config.training.diffs = diffs
-        module = FM(m_config)
-        self.module = module
-
-    def __getattr__(self, name):
-        """Delegate everything to forward_model"""
-        return getattr(self._modules["module"].model, name)
-
-
-@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV2)
-class MPURContinuousV2Module(MPURContinuousModule):
-    @dataclass
-    class ModelConfig(MPURContinuousModule.ModelConfig):
-        model_type: str = "continuous_v2"
-
-
-@inject(cost_type=PolicyCost, fm_type=ForwardModelV2)
-class MPURVanillaV2Module(MPURModule):
-    @dataclass
-    class ModelConfig(MPURModule.ModelConfig):
-        model_type: str = "vanilla_v2"
-
-
-@inject(cost_type=PolicyCost, fm_type=ForwardModelV3)
+@inject(cost_type=PolicyCost, fm_type=FwdCNNKMNoAction_VAE)
 class MPURVanillaV3Module(MPURModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
         model_type: str = "vanilla_v3"
 
 
-@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV3)
+@inject(cost_type=PolicyCostContinuous, fm_type=FwdCNNKMNoAction_VAE)
 class MPURContinuousV3Module(MPURModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):

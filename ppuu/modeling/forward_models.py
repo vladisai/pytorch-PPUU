@@ -40,7 +40,7 @@ class FwdBase:
         raise NotImplementedError()
 
 
-class FwdCNN_VAE(torch.nn.Module):
+class FwdCNN_VAE(torch.nn.Module, FwdBase):
     class Unfolding(NamedTuple):
         state_seq: StateSequence
         actions: torch.Tensor
@@ -307,7 +307,7 @@ class FwdCNN_VAE(torch.nn.Module):
         self,
         input_state_seq: StateSequence,
         actions_or_policy: Union[torch.nn.Module, torch.Tensor],
-        npred: int = None,
+        npred: Optional[int] = None,
         Z: Optional[torch.Tensor] = None,
     ) -> StateSequence:
         """This is almost the same as in FwdCNN, with the exception of handling
@@ -345,7 +345,7 @@ class FwdCNN_VAE(torch.nn.Module):
                 actions = actions_or_policy(input_state_seq)
 
             pred_image, pred_state, _, _ = self.forward_single_step(
-                input_state_seq, actions, Z[:, t]
+                input_state_seq.without_ego(), actions, Z[:, t]
             )
             input_state_seq = input_state_seq.shift_add(pred_image, pred_state)
 

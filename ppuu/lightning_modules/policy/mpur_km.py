@@ -4,10 +4,12 @@ from dataclasses import dataclass
 import torch
 
 from ppuu.costs.policy_costs_km import PolicyCostKMTaper
-from ppuu.data.dataloader import overlay_ego_car
-from ppuu.lightning_modules.policy.mpur import ForwardModelV3, MPURModule, inject
+from ppuu.lightning_modules.policy.mpur import MPURModule, inject
 from ppuu.modeling.policy.mpc import MPCKMPolicy
 from ppuu.wrappers import ForwardModelKM
+from ppuu.modeling.forward_models_km_no_action import FwdCNNKMNoAction_VAE
+from ppuu.modeling.forward_models import FwdCNN_VAE
+from ppuu.data.entities import DatasetSample
 
 
 @inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelKM)
@@ -23,7 +25,7 @@ class MPURKMTaperModule(MPURModule):
         return predictions
 
 
-@inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelV3)
+@inject(cost_type=PolicyCostKMTaper, fm_type=FwdCNNKMNoAction_VAE)
 class MPURKMTaperV3Module(MPURModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
@@ -33,8 +35,34 @@ class MPURKMTaperV3Module(MPURModule):
             "fm_km_no_action_diff_64_even_lower_lr/seed=42/checkpoints/last.ckpt"
         )
 
+    def build_log_dict(
+        self, predictions: FwdCNN_VAE.Unfolding, cost: PolicyCostKMTaper.Cost
+    ) -> dict:
+        """Builds a dictionary of values to be logged from
+        predictions and costs."""
+        # we first use superclass' method, then add km cost specific stuff.
+        result = super().build_log_dict(predictions, cost)
+        result.update(
+            {
+                "reference_distance": cost.reference_distance.mean(),
+                "speed": cost.speed.mean(),
+                "destination": cost.destination.mean(),
+            }
+        )
+        return result
 
-@inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelV3)
+    def calculate_cost(
+        self, batch: DatasetSample, predictions: FwdCNN_VAE.Unfolding
+    ) -> PolicyCostKMTaper.Cost:
+        return self.policy_cost.calculate_cost(
+            batch.conditional_state_seq,
+            predictions.state_seq.states,
+            predictions.actions,
+            predictions.state_seq,
+        )
+
+
+@inject(cost_type=PolicyCostKMTaper, fm_type=FwdCNNKMNoAction_VAE)
 class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
     @dataclass
     class ModelConfig(MPURKMTaperV3Module.ModelConfig):
@@ -42,11 +70,11 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
         mpc: MPCKMPolicy.Config = MPCKMPolicy.Config()
         mpc_cost: PolicyCostKMTaper.Config = PolicyCostKMTaper.Config()
 
-    def on_train_start(self):
-        super().on_train_start()
+    def _setup_mpc(self):
         self.mpc_cost = PolicyCostKMTaper(
-            self.config.model.mpc_cost, None, self.normalizer
+            self.config.model.mpc_cost, self.forward_model, self.normalizer
         )
+        self.mpc_cost.config.u_reg = 0
         self.mpc = MPCKMPolicy(
             self.forward_model,
             self.mpc_cost,
@@ -54,52 +82,58 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
             self.config.model.mpc,
         )
 
+    def on_train_start(self):
+        super().on_train_start()
+        self._setup_mpc()
+
     def training_step(self, batch, batch_idx):
+        batch = DatasetSample.from_tuple(batch)
         opt = self.optimizers()
         predictions = self(batch)
-        input_images = overlay_ego_car(
-            batch["input_images"], batch["ego_cars"]
+        print(
+            f"fm predictions with policy are {predictions.state_seq.images.shape=}"
+            f"{predictions.state_seq.states.shape=}"
         )
-        metadata = {}
-        mpc_actions = self.mpc.batched(  # noqa
-            input_images,
-            batch["input_states"],
-            car_size=batch["car_sizes"],
-            init=predictions["pred_actions"],
-            pred_images=predictions["pred_images"],
-            pred_states=predictions["pred_states"],
-            metadata=metadata,
-        )
-        print(metadata["costs"])
 
-        loss = self.policy_cost.calculate_cost(batch, predictions)
-        loss["action_norm"] = (
-            predictions["pred_actions"].norm(2, 2).pow(2).mean()
+        with torch.no_grad():
+            self.mpc.reset()
+            mpc_actions = self.mpc(
+                batch.conditional_state_seq,
+                gt_future=predictions.state_seq,
+                full_plan=True,
+            )
+            loss = self.calculate_cost(batch, predictions)
+            logged_losses = self.build_log_dict(predictions, loss)
+
+        for k, v in logged_losses.items():
+            self.log(
+                "train/" + k,
+                v,
+                on_step=True,
+                logger=True,
+                prog_bar=True,
+            )
+
+        assert predictions.actions.shape == mpc_actions.shape, (
+            f"expected policy actions and mpc actions to be of the same shape,"
+            f"got {predictions.actions.shape=} and {mpc_actions.shape=}"
         )
-        res = loss["policy_loss"].mean()
-        for k in loss:
-            v = loss[k]
-            if torch.is_tensor(v):
-                v = v.mean()
-            if v is not None:
-                self.log(
-                    "train/" + k,
-                    v,
-                    on_step=True,
-                    logger=True,
-                    prog_bar=True,
-                )
+        action_diff = predictions.actions - mpc_actions
+        action_diff = self.policy_cost.apply_gamma(action_diff)
+
+        # Sum across time and actions dimensions, mean over batch.
+        action_diff = action_diff.sum(dim=-1).sum(dim=-1).mean()
 
         # We retain the gradient of actions to later log it to wandb.
-        predictions["pred_actions"].retain_grad()
-        self.manual_backward(res, optimizer=opt.optimizer)
-        self.log_action_grads(predictions["pred_actions"].grad)
+        predictions.actions.retain_grad()
+        self.manual_backward(action_diff, optimizer=opt.optimizer)
+        self.log_action_grads(predictions.actions.grad)
         opt.step()
 
-        return res
+        return action_diff
 
 
-@inject(cost_type=PolicyCostKMTaper, fm_type=ForwardModelV3)
+@inject(cost_type=PolicyCostKMTaper, fm_type=FwdCNNKMNoAction_VAE)
 class GTMPURKMTaperV3Module(MPURModule):
     def forward(self, batch):
         self.forward_model.eval()

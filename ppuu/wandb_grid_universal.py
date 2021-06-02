@@ -2,11 +2,11 @@ import dataclasses
 import os
 import time
 
+import yaml
 import numpy as np
 import pytorch_lightning as pl
 import torch.multiprocessing
 import wandb
-from omegaconf import OmegaConf
 
 from ppuu.data import NGSIMDataModule
 from ppuu.data.dataloader import EvaluationDataset
@@ -14,18 +14,25 @@ from ppuu.eval import PolicyEvaluator
 from ppuu.lightning_modules.policy import MPURKMTaperV3Module as Module
 from ppuu.train_utils import CustomLoggerWB
 
+from ppuu import configs
+
 EPOCHS = 21
 
 
 def run_trial(config, run):
-    config.training.n_epochs = -1
-    config.training.batch_size = -1
-    config.training.n_steps = 2e5
-    config.training.epoch_size = 500
-    config.training.validation_size = 10
-    config.training.validation_eval = False
+    if config.training.output_dir is None:
+        config.training.output_dir = (
+            "/home/us441/nvidia-collab/vlad/results/policy/grid_km_new"
+        )
     config.training.experiment_name = f"grid_search_{time.time()}"
-    config.cost.uncertainty_n_batches = 100
+    # config.training.n_epochs = -1
+    # config.training.batch_size = -1
+    # # config.training.n_steps = 2e5
+    # config.training.n_steps = 2e3
+    # config.training.epoch_size = 500
+    # config.training.validation_size = 10
+    # config.training.validation_eval = False
+    # config.cost.uncertainty_n_batches = 100
 
     config.training.auto_batch_size()
 
@@ -51,7 +58,6 @@ def run_trial(config, run):
         trainer = pl.Trainer(
             gpus=config.training.gpus,
             num_nodes=config.training.num_nodes,
-            gradient_clip_val=5.0,
             max_epochs=config.training.n_epochs,
             check_val_every_n_epoch=period,
             num_sanity_val_steps=0,
@@ -65,7 +71,6 @@ def run_trial(config, run):
             logger=logger,
             weights_save_path=logger.log_dir,
             track_grad_norm=False,
-            automatic_optimization=False,
         )
         model = Module(config)
 
@@ -110,14 +115,16 @@ if __name__ == "__main__":
 
     # translate some params from log scale to normal scale
     log_params = [
-        "lambda_p",
-        "lambda_l",
-        "lambda_o",
-        "lambda_a",
-        "lambda_j",
-        "lambda_s",
-        "u_reg",
-        "mask_coeff",
+        "cost.lambda_p",
+        "cost.lambda_l",
+        "cost.lambda_o",
+        "cost.lambda_a",
+        "cost.lambda_j",
+        "cost.lambda_s",
+        "cost.lambda_d",
+        "cost.lambda_r",
+        "cost.u_reg",
+        "cost.mask_coeff",
         "learning_rate",
     ]
     for k in c_dict:
@@ -127,21 +134,28 @@ if __name__ == "__main__":
             else:
                 c_dict[k] = 10.0 ** c_dict[k]
 
-    c_dict["skip_contours"] = True
-    c_dict["rotate"] = True
+    c_dict["cost.skip_contours"] = True
 
-    if "powers" in c_dict:
-        c_dict["masks_power_x"] = c_dict["powers"]
-        c_dict["masks_power_y"] = c_dict["powers"]
-        del c_dict["powers"]
+    if "cost.powers" in c_dict:
+        c_dict["cost.masks_power_x"] = c_dict["cost.powers"]
+        c_dict["cost.masks_power_y"] = c_dict["cost.powers"]
+        del c_dict["cost.powers"]
+
+    print(c_dict)
+
+    config = configs.combine_cli_dict(Module.Config, c_dict)
 
     config_base = Module.Config.parse_from_command_line()
-    config_base = OmegaConf.create(dataclasses.asdict(config_base))
-    config_new = OmegaConf.create({"cost": c_dict})
-    config_together = OmegaConf.merge(config_base, config_new)
-    config = Module.Config.parse_from_dict(
-        OmegaConf.to_container(config_together)
-    )
+
+    print("parsed config is", yaml.dump(dataclasses.asdict(config)))
+
+    # config_base = OmegaConf.create(dataclasses.asdict(config_base))
+    # config_new = OmegaConf.create({"cost": c_dict})
+    # print(config_base, config_new)
+    # config_together = OmegaConf.merge(config_base, config_new)
+    # config = Module.Config.parse_from_dict(
+    #     OmegaConf.to_container(config_together)
+    # )
 
     success_rate = run_trial(config, run)
 

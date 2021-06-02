@@ -76,6 +76,7 @@ class TrainingConfig(ConfigBase):
     slurm: bool = False
     slurm_constraint: str = "turing"
     run_eval: bool = False
+    grad_clip_val: Optional[float] = 0.5
     debug: bool = False
     fast_dev_run: bool = False
     freeze_encoder: bool = False

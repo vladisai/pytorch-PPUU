@@ -32,7 +32,9 @@ class StateSequence(NamedTuple):
         ego_car = ego_car.unsqueeze(-3)  # add channel back
         ego_car = ego_car.unsqueeze(-4).expand(ego_car_new_shape)  # add  npred
 
-        images_with_ego = torch.cat((self.images.clone(), ego_car), dim=-3)
+        images_with_ego = torch.cat(
+            (self.images.clone(), ego_car), dim=-3
+        ).contiguous()
 
         return StateSequence(
             images_with_ego, self.states, self.car_size, self.ego_car_image
@@ -40,7 +42,7 @@ class StateSequence(NamedTuple):
 
     def without_ego(self) -> StateSequence:
         return StateSequence(
-            self.images[..., :3, :, :],
+            self.images[..., :3, :, :].contiguous(),
             self.states,
             self.car_size,
             self.ego_car_image,
@@ -57,7 +59,9 @@ class StateSequence(NamedTuple):
             image = torch.cat(
                 (
                     image.clone(),
-                    self.ego_car_image[..., 2, :, :].unsqueeze(-3),
+                    self.ego_car_image[..., 2, :, :]
+                    .unsqueeze(-3)
+                    .unsqueeze(-3),
                 ),
                 dim=-3,
             )

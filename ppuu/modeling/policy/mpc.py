@@ -609,15 +609,15 @@ class MPCKMPolicy(torch.nn.Module):
             self._last_cost = cost.data
 
             if metadata is not None:
-                if 'action_history' not in metadata:
-                    metadata['action_history'] = [actions.clone().detach()]
+                if "action_history" not in metadata:
+                    metadata["action_history"] = [actions.clone().detach()]
                 else:
-                    metadata['action_history'].append(actions.clone().detach())
+                    metadata["action_history"].append(actions.clone().detach())
 
-                if 'cost_history' not in metadata:
-                    metadata['cost_history'] = [cost.clone().detach()]
+                if "cost_history" not in metadata:
+                    metadata["cost_history"] = [cost.clone().detach()]
                 else:
-                    metadata['cost_history'].append(cost.clone().detach())
+                    metadata["cost_history"].append(cost.clone().detach())
 
             if gd:
                 cost.sum().backward()
@@ -649,7 +649,11 @@ class MPCKMPolicy(torch.nn.Module):
         metadata: Optional[dict] = None,
     ):
         closure = self._build_closure(
-            conditional_state_seq, future_context_state_seq, actions, optimizer, metadata=metadata
+            conditional_state_seq,
+            future_context_state_seq,
+            actions,
+            optimizer,
+            metadata=metadata,
         )
 
         optimizer.step(closure)
@@ -814,9 +818,10 @@ class MPCKMPolicy(torch.nn.Module):
     def plan(
         self,
         conditional_state_seq: StateSequence,
-        gt_future_state_seq: Optional[StateSequence],
+        gt_future_state_seq: Optional[StateSequence] = None,
         metadata: Optional[dict] = None,
-    ):
+        full_plan: bool = False,
+    ) -> torch.Tensor:
         """Plans given conditional state sequence, and optionally gt_future_state_seq.
         Everything is normalized in input and output.
         """
@@ -893,7 +898,10 @@ class MPCKMPolicy(torch.nn.Module):
         self.last_actions = self._repeat_actions_for_horizon(
             best_actions, dim=1
         )
-        actions = best_actions[:, 0]
+        if full_plan:
+            actions = best_actions
+        else:
+            actions = best_actions[:, 0]
         self.optimizer_stats = optimizer.state_dict()
 
         return actions
@@ -903,8 +911,11 @@ class MPCKMPolicy(torch.nn.Module):
         conditional_state_seq: StateSequence,
         normalize_inputs: bool = False,
         normalize_outputs: bool = False,
-        gt_future: Callable[[], StateSequence] = None,
+        gt_future: Optional[
+            Union[Callable[[], StateSequence], StateSequence]
+        ] = None,
         metadata: dict = None,
+        full_plan: bool = False,
     ):
         """
         This function is used as a policy in the evaluator.
@@ -912,7 +923,11 @@ class MPCKMPolicy(torch.nn.Module):
         that when called returns ground truth future.
         """
 
-        if self.last_actions is not None and not self.should_replan():
+        if (
+            not full_plan
+            and self.last_actions is not None
+            and not self.should_replan()
+        ):
             actions = self.last_actions[
                 :, self.ctr % self.config.planning_freq
             ]
@@ -921,7 +936,10 @@ class MPCKMPolicy(torch.nn.Module):
             if gt_future is not None:
                 # gt future is a lambda. this is to save time when we don't
                 # plan every step.
-                gt_future_seq = gt_future()
+                if callable(gt_future):
+                    gt_future_seq = gt_future()
+                else:
+                    gt_future_seq = gt_future
                 if gt_future_seq is not None:
                     gt_future_seq = gt_future_seq.map(lambda x: x.unsqueeze(1))
                 else:
@@ -937,7 +955,12 @@ class MPCKMPolicy(torch.nn.Module):
                     gt_future_seq = self.normalizer.normalize_state_seq(
                         gt_future_seq
                     )
-            actions = self.plan(conditional_state_seq, gt_future_seq, metadata)
+            actions = self.plan(
+                conditional_state_seq,
+                gt_future_seq,
+                metadata=metadata,
+                full_plan=full_plan,
+            )
 
         self.ctr += 1
         if normalize_outputs:

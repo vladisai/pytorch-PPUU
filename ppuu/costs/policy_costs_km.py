@@ -519,6 +519,8 @@ class PolicyCostKMTaper(PolicyCostContinuous):
             context_state_seq,
             unnormalize=True,
         )
+        # we add 1e-9 in order to avoid the situation where the car is
+        # completely outside the image.
         mask_sums = proximity_mask.sum(dim=(-1, -2)) + 1e-9
         mask_sums_lo = proximity_mask_lo.sum(dim=(-1, -2)) + 1e-9
 

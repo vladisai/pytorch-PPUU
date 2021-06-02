@@ -587,7 +587,7 @@ class PolicyCost(PolicyCostBase):
         conditional_state_seq: StateSequence,
         actions: torch.Tensor,
         predicted_state_seq: StateSequence,
-    ):
+    ):  # -> PolicyCost.Cost
         u_loss = self.calculate_uncertainty_cost(
             conditional_state_seq, actions
         )

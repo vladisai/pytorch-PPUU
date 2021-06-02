@@ -7,11 +7,10 @@ import torch.optim as optim
 
 from ppuu.costs.policy_costs_continuous import PolicyCostContinuous
 from ppuu.lightning_modules.policy.mpur import (
-    ForwardModelV2,
-    ForwardModelV3,
     MPURModule,
     inject,
 )
+from ppuu.modeling.forward_models_km_no_action import FwdCNNKMNoAction_VAE
 
 
 @inject(cost_type=PolicyCostContinuous)
@@ -192,27 +191,8 @@ class MPURDreamingLBFGSModule(MPURDreamingModule):
         )
 
 
-@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV2)
-class MPURDreamingV2Module(MPURDreamingModule):
-    @dataclass
-    class TrainingConfig(MPURDreamingModule.TrainingConfig):
-        def auto_batch_size(self):
-            if self.batch_size == -1:
-                gpu_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-                self.batch_size = int((gpu_gb / 5) * 6)
-                print("auto batch size is set to", self.batch_size)
-            self.auto_n_epochs()
-
-    @dataclass
-    class ModelConfig(MPURModule.ModelConfig):
-        forward_model_path: str = (
-            "/home/us441/nvidia-collab/vlad/results/fm/fm_km_5_states_resume_lower_lr/"
-            "seed=42/checkpoints/epoch=23_success_rate=0.ckpt"
-        )
-
-
-@inject(cost_type=PolicyCostContinuous, fm_type=ForwardModelV3)
-class MPURDreamingV3Module(MPURDreamingV2Module):
+@inject(cost_type=PolicyCostContinuous, fm_type=FwdCNNKMNoAction_VAE)
+class MPURDreamingV3Module(MPURDreamingModule):
     @dataclass
     class ModelConfig(MPURModule.ModelConfig):
         forward_model_path: str = (
