@@ -965,8 +965,7 @@ class MPCKMPolicy(torch.nn.Module):
         self.ctr += 1
         if normalize_outputs:
             actions = self.normalizer.unnormalize_actions(actions.data)
-        print("final actions for", self.ctr, "are", actions)
-
+        # print("final actions for", self.ctr, "are", actions)
         return actions.detach()
 
     @torch.no_grad()

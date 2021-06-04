@@ -73,6 +73,7 @@ def main(config):
     )
 
     model = module(config)
+    logger.log_hyperparams(model.hparams)
     trainer.fit(model, datamodule=datamodule)
     return model
 

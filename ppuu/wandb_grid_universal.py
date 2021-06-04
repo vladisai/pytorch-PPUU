@@ -2,19 +2,18 @@ import dataclasses
 import os
 import time
 
-import yaml
 import numpy as np
 import pytorch_lightning as pl
 import torch.multiprocessing
 import wandb
+import yaml
 
+from ppuu import configs
 from ppuu.data import NGSIMDataModule
 from ppuu.data.dataloader import EvaluationDataset
 from ppuu.eval import PolicyEvaluator
 from ppuu.lightning_modules.policy import MPURKMTaperV3Module as Module
 from ppuu.train_utils import CustomLoggerWB
-
-from ppuu import configs
 
 EPOCHS = 21
 
@@ -125,7 +124,7 @@ if __name__ == "__main__":
         "cost.lambda_r",
         "cost.u_reg",
         "cost.mask_coeff",
-        "learning_rate",
+        "training.learning_rate",
     ]
     for k in c_dict:
         if k in log_params:

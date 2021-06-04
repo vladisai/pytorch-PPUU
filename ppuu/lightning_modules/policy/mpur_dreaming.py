@@ -6,10 +6,7 @@ import torch
 import torch.optim as optim
 
 from ppuu.costs.policy_costs_continuous import PolicyCostContinuous
-from ppuu.lightning_modules.policy.mpur import (
-    MPURModule,
-    inject,
-)
+from ppuu.lightning_modules.policy.mpur import MPURModule, inject
 from ppuu.modeling.forward_models_km_no_action import FwdCNNKMNoAction_VAE
 
 

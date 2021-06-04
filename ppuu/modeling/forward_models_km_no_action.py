@@ -4,7 +4,7 @@ import torch
 
 from ppuu.data.entities import StateSequence
 from ppuu.modeling.forward_models import FwdCNN_VAE
-from ppuu.modeling.km import predict_states, StatePredictor
+from ppuu.modeling.km import StatePredictor, predict_states
 
 
 class FwdCNNKMNoAction_VAE(FwdCNN_VAE):

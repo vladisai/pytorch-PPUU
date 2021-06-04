@@ -13,12 +13,12 @@ from ppuu import configs
 from ppuu.costs import PolicyCost, PolicyCostContinuous
 from ppuu.data import Augmenter, EvaluationDataset
 from ppuu.data.dataloader import Normalizer
+from ppuu.data.entities import DatasetSample
 from ppuu.eval import PolicyEvaluator
 from ppuu.modeling import policy_models
 from ppuu.modeling.forward_models import FwdCNN_VAE
 from ppuu.modeling.forward_models_km_no_action import FwdCNNKMNoAction_VAE
 from ppuu.modeling.mixout import MixoutWrapper
-from ppuu.data.entities import DatasetSample
 
 
 def inject(cost_type=PolicyCost, fm_type=FwdCNN_VAE):
@@ -195,14 +195,17 @@ class MPURModule(pl.LightningModule):
         predictions.actions.retain_grad()
         self.manual_backward(res)
         self.log_action_grads(predictions.actions.grad)
+        self.clip_gradients()
+        opt.step()
+
+        return res
+
+    def clip_gradients(self):
         if self.config.training.grad_clip_val is not None:
             torch.nn.utils.clip_grad_value_(
                 self.policy_model.parameters(),
                 clip_value=self.config.training.grad_clip_val,
             )
-        opt.step()
-
-        return res
 
     def log_action_grads(self, grad):
         # Mean across all timesteps

@@ -1,9 +1,9 @@
 """Policy models"""
 from torch import nn
 
+from ppuu.data.entities import StateSequence
 from ppuu.modeling.common_models import Encoder
 from ppuu.modeling.mixout import MixLinear
-from ppuu.data.entities import StateSequence
 
 
 class MixoutDeterministicPolicy(nn.Module):
