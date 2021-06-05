@@ -1,7 +1,7 @@
 """Train a policy / controller"""
-from dataclasses import dataclass
-from typing import Optional, List
 import random
+from dataclasses import dataclass
+from typing import List, Optional
 
 import torch
 
@@ -118,6 +118,7 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
 
     def training_step(self, batch, batch_idx):
         batch = DatasetSample.from_tuple(batch)
+
         opt = self.optimizers()
         predictions = self(batch)
         print(

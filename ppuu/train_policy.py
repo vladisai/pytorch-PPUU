@@ -52,6 +52,7 @@ def main(config):
         n_checkpoints = max(n_checkpoints, int(config.training.n_steps / 1e5))
 
     period = max(1, config.training.n_epochs // n_checkpoints)
+    print(f'training {period=}')
 
     trainer = pl.Trainer(
         gpus=config.training.gpus,
@@ -70,6 +71,7 @@ def main(config):
         logger=logger,
         resume_from_checkpoint=config.training.resume_from_checkpoint,
         weights_save_path=logger.log_dir,
+        # terminate_on_nan=True,
     )
 
     model = module(config)

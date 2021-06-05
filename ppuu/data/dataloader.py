@@ -190,7 +190,7 @@ class Dataset(torch.utils.data.Dataset):
         self.n_pred = n_pred
         self.size = size
         self.random = random.Random()
-        # self.random.seed(12345)
+        self.random.seed(12345)
         self.normalize = normalize
         self.shift = shift
         self.random_actions = random_actions

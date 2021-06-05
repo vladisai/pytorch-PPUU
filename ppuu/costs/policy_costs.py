@@ -361,12 +361,24 @@ class PolicyCost(PolicyCostBase):
             + self.config.lambda_l * costs.lane
             + self.config.lambda_o * costs.offroad
         )
+
+
         pred_costs = pred_costs.view(
             self.config.uncertainty_n_models,
             bsize,
             self.config.uncertainty_n_pred,
             -1,
         )
+        # print(f"{pred_costs.sum()=}")
+        # print(f"{costs.proximity.shape=}")
+        # print(f"{costs.lane.shape=}")
+        # print(f"{costs.offroad.shape=}")
+        # print(f"{costs.proximity.sum()=}")
+        # print(f"{costs.lane.sum()=}")
+        # print(f"{costs.offroad.sum()=}")
+        # print(f"{self.config.lambda_p=}")
+        # print(f"{self.config.lambda_l=}")
+        # print(f"{self.config.lambda_o=}")
 
         predicted_state_seq = predictions.state_seq.map(
             lambda x: x.view(
@@ -459,6 +471,9 @@ class PolicyCost(PolicyCostBase):
             )
             try:
                 batch = next(data_iter)
+                # print(
+                #     f"Inside uncertainty estimation {batch.conditional_state_seq.images.sum()=}"
+                # )
             except StopIteration:
                 data_iter = iter(dataloader)
                 batch = next(data_iter)
@@ -491,10 +506,19 @@ class PolicyCost(PolicyCostBase):
         self.u_states_std = u_states.std(0)
         self.u_costs_std = u_costs.std(0)
 
+        # print(f"{self.u_images_mean=}")
+        # print(f"{self.u_states_mean=}")
+        # print(f"{self.u_costs_mean=}")
+
+        # print(f"{self.u_images_std=}")
+        # print(f"{self.u_states_std=}")
+        # print(f"{self.u_costs_std=}")
+
     def compute_state_costs(
         self, state_seq: StateSequence
     ) -> Any:  # PolicyCost.StateCosts:  # noqa
         """Costs associated with masks are state costs"""
+        # print("inside vanilla state costs")
         artifact_reduced_state_seq = StateSequence(
             state_seq.images ** self.config.artifact_power, *state_seq[1:]
         )

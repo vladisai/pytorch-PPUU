@@ -127,7 +127,7 @@ def flip_x(xx, yy):
     return torch.flip(xx, [-2]), torch.flip(yy, [-2])
 
 
-class PolicyCostKMTaper(PolicyCostContinuous):
+class PolicyCostKMTaper(PolicyCost):
     """Cost with tapered end and using the kinematic model.
     The main difference is now we propagate through the kinematic model,
     and we can shift the car from the center of the image.

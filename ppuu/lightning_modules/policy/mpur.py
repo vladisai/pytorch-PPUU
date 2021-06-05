@@ -87,6 +87,7 @@ class MPURModule(pl.LightningModule):
 
     def __init__(self, hparams=None):
         super().__init__()
+        torch.set_printoptions(precision=10)
 
         # Needed to control gradient step.
         self.automatic_optimization = False
@@ -127,6 +128,7 @@ class MPURModule(pl.LightningModule):
             self.config.training.noise_augmentation_std,
             self.config.training.noise_augmentation_p,
         )
+
         self.nan_ctr = 0
 
     def set_hparams(self, hparams=None):
@@ -168,12 +170,15 @@ class MPURModule(pl.LightningModule):
             "offroad": cost.state.total_offroad.mean(),
             "jerk": cost.jerk.mean(),
             "action": cost.action.mean(),
+            "uncertainty": cost.uncertainty.mean(),
             "total": cost.total.mean(),
             "action_norm": predictions.actions.norm(2, 2).pow(2).mean(),
         }
 
     def training_step(self, batch, batch_idx):
         batch = DatasetSample.from_tuple(batch)
+        # print(f"{batch.conditional_state_seq.images.sum()=}")
+        # print(f"{sum([x.sum() for x in self.policy_model.parameters()])=}")
         opt = self.optimizers()
         predictions = self(batch)
 
@@ -194,8 +199,19 @@ class MPURModule(pl.LightningModule):
         # We retain the gradient of actions to later log it to wandb.
         predictions.actions.retain_grad()
         self.manual_backward(res)
-        self.log_action_grads(predictions.actions.grad)
         self.clip_gradients()
+        self.log_action_grads(predictions.actions.grad)
+        # print(f"{predictions.actions[0]=}")
+        # print(f"{predictions.state_seq.images.sum()=}")
+        # print(f"{res=}")
+        # # print(f"{loss=}")
+        # print(f"{predictions.actions.grad=}")
+        # print(
+        #     f"{sum([x.grad.abs().sum() for x in self.policy_model.parameters()])=}"
+        # )
+        # print("parameters")
+        # for x in self.policy_model.parameters():
+        #     print("shape", x.shape, "grad", x.grad.sum())
         opt.step()
 
         return res
@@ -316,7 +332,6 @@ class MPURModule(pl.LightningModule):
                         optimizer, T_0=int(self.config.training.n_epochs / 5)
                     )
                 )
-
             return [optimizer], [scheduler]
         else:
             return optimizer
