@@ -52,7 +52,7 @@ def main(config):
         n_checkpoints = max(n_checkpoints, int(config.training.n_steps / 1e5))
 
     period = max(1, config.training.n_epochs // n_checkpoints)
-    print(f'training {period=}')
+    print(f"training {period=} {logger.log_dir=}")
 
     trainer = pl.Trainer(
         gpus=config.training.gpus,
@@ -62,12 +62,15 @@ def main(config):
         num_sanity_val_steps=0,
         fast_dev_run=config.training.fast_dev_run,
         distributed_backend=config.training.distributed_backend,
-        callbacks=[LearningRateMonitor(logging_interval="epoch")],
-        checkpoint_callback=pl.callbacks.ModelCheckpoint(
-            dirpath=os.path.join(logger.log_dir, "checkpoints"),
-            filename="{epoch}_{sample_step}",
-            save_top_k=-1,
-        ),
+        callbacks=[
+            LearningRateMonitor(logging_interval="epoch"),
+            pl.callbacks.ModelCheckpoint(
+                dirpath=os.path.join(logger.log_dir, "checkpoints"),
+                filename="{epoch}_{sample_step}",
+                period=period,
+                save_last=True,
+            ),
+        ],
         logger=logger,
         resume_from_checkpoint=config.training.resume_from_checkpoint,
         weights_save_path=logger.log_dir,

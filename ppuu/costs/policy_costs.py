@@ -362,7 +362,6 @@ class PolicyCost(PolicyCostBase):
             + self.config.lambda_o * costs.offroad
         )
 
-
         pred_costs = pred_costs.view(
             self.config.uncertainty_n_models,
             bsize,
