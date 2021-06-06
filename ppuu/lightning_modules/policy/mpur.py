@@ -198,8 +198,7 @@ class MPURModule(pl.LightningModule):
                 prog_bar=True,
             )
 
-        # if logged_losses["action_norm"] > 1:
-        if True:
+        if logged_losses["action_norm"] > 1e6:
             # wtf is happening, let's dump to disk
             self.trainer.save_checkpoint(
                 os.path.join(self.logger.log_dir, "bad_state_dict.t")
