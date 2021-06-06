@@ -1,9 +1,9 @@
 """Train a policy / controller"""
 import dataclasses
 import hashlib
-from dataclasses import dataclass
-import sys
 import os
+import sys
+from dataclasses import dataclass
 
 import pytorch_lightning as pl
 import torch
@@ -198,9 +198,10 @@ class MPURModule(pl.LightningModule):
                 prog_bar=True,
             )
 
-        if logged_losses["action_norm"] > 1:
+        # if logged_losses["action_norm"] > 1:
+        if True:
             # wtf is happening, let's dump to disk
-            self.save_checkpoint(
+            self.trainer.save_checkpoint(
                 os.path.join(self.logger.log_dir, "bad_state_dict.t")
             )
             torch.save(batch, os.path.join(self.logger.log_dir, "bad_batch.t"))
