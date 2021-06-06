@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 import torch
 
-
 from ppuu.costs.policy_costs import PolicyCost
 from ppuu.data.entities import StateSequence
 
