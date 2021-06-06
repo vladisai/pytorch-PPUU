@@ -4,7 +4,7 @@ sum the values instead"""
 from dataclasses import dataclass
 
 import torch
-import torch.nn.functional as F
+
 
 from ppuu.costs.policy_costs import PolicyCost
 from ppuu.data.entities import StateSequence
@@ -235,49 +235,6 @@ class PolicyCostContinuous(PolicyCost):
         # result["contours"] = green_contours
 
         # return result
-
-    def compute_contours(self, images: torch.Tensor) -> torch.Tensor:
-        """Computes contours of the green channel.
-        The idea is to get only edges of the cars so that later
-        when we do summing the size of the cars doesn't affect our behavior.
-        Input and output are both of shape bsize, npred, height, width
-        """
-        device = images.device
-        horizontal_filter = torch.tensor(
-            [[[-1.0], [1.0]]],
-            device=device,
-        )
-        horizontal_filter = horizontal_filter.expand(1, 1, 2, 1)
-        vertical_filter = torch.tensor([[1.0, -1.0]], device=device).view(
-            1, 1, 2
-        )
-        vertical_filter = vertical_filter.expand(1, 1, 1, 2)
-
-        original_images_shape = images.shape
-        # new shape is -1, 1, height, width
-        images = images.view(-1, *images.shape[-2:]).unsqueeze(-3)
-
-        horizontal = F.conv2d(
-            images, horizontal_filter, stride=1, padding=(1, 0)
-        )
-        horizontal = horizontal[:, :, :-1, :]
-
-        vertical = F.conv2d(images, vertical_filter, stride=1, padding=(0, 1))
-        vertical = vertical[:, :, :, :-1]
-
-        _, _, height, width = horizontal.shape
-
-        horizontal_mask = torch.ones((1, 1, height, width), device=device)
-        horizontal_mask[:, :, : (height // 2), :] = -1
-        horizontal_masked = F.relu(horizontal_mask * horizontal)
-
-        vertical_mask = torch.ones((1, 1, height, width), device=device)
-        vertical_mask[:, :, :, (width // 2) :] = -1
-        vertical_masked = F.relu(vertical_mask * vertical)
-
-        result = vertical_masked[:][:] + horizontal_masked[:][:]
-        result = result.view(*original_images_shape)
-        return result
 
     def _multiply_masks(
         self, images: torch.Tensor, proximity_mask: torch.Tensor

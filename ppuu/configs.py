@@ -4,13 +4,13 @@ import math
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable, NewType, Optional, Tuple, Union
+from typing import Any, Iterable, Optional, Tuple, Union, cast
 
 import torch
 from omegaconf import MISSING, OmegaConf
 
-DataClass = NewType("DataClass", Any)
-DataClassType = NewType("DataClassType", Any)
+DataClass = Any
+DataClassType = Any
 
 
 @dataclass
@@ -151,15 +151,16 @@ class DataclassArgParser(argparse.ArgumentParser):
         """
         super().__init__(**kwargs)
         if dataclasses.is_dataclass(dataclass_types):
+            dataclass_types = cast(DataClassType, dataclass_types)
             dataclass_types = [dataclass_types]
-        self.dataclass_types = dataclass_types
+        self.dataclass_types = cast(Iterable[DataClassType], dataclass_types)
         for dtype in self.dataclass_types:
             self._add_dataclass_arguments(dtype)
 
     def _add_dataclass_arguments(self, dtype: DataClassType):
         for f in dataclasses.fields(dtype):
             field_name = f"--{f.name}"
-            kwargs = f.metadata.copy()
+            kwargs = dict(f.metadata).copy()
             typestring = str(f.type)
             for x in (int, float, str):
                 if typestring == f"typing.Union[{x.__name__}, NoneType]":
@@ -219,7 +220,7 @@ class DataclassArgParser(argparse.ArgumentParser):
             outputs.append(namespace)
         if len(unknown) > 0:
             outputs.append(unknown)
-        return outputs
+        return tuple(outputs)
 
     @staticmethod
     def _populate_dataclass(

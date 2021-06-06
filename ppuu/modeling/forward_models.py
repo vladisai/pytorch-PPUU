@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from typing import Any, Callable, NamedTuple, Optional, Tuple, Union
+from typing import Any, Callable, NamedTuple, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -13,16 +13,15 @@ from ppuu.modeling.common_models import Decoder, Encoder, UNetwork
 class FwdBase:
     """Base class for all forward models"""
 
-    Unfolding = Any
-
     def forward_single_step(
         self,
         input_state_seq: StateSequence,
         action: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        z: Union[torch.Tensor, Callable[[torch.Tensor], Any]],
+    ) -> Any:
         """Unfold serves to predict a sequence of next steps using
         the forward model.
-        Return a tuple of image and state.
+        Return a struct containing image and state.
         """
         raise NotImplementedError()
 
@@ -31,7 +30,8 @@ class FwdBase:
         input_state_seq: StateSequence,
         actions_or_policy: Union[torch.nn.Module, torch.Tensor],
         npred: int = None,
-    ) -> Unfolding:
+        Z: Optional[torch.Tensor] = None,
+    ) -> Any:
         """Unfold serves to predict a sequence of next steps using
         the forward model.
         If actions tensor is passed, we unroll for the length of the tensor.
@@ -164,7 +164,7 @@ class FwdCNN_VAE(torch.nn.Module, FwdBase):
         input_state_seq: StateSequence,
         action: torch.Tensor,
         z: Union[torch.Tensor, Callable[[torch.Tensor], SampleZResult]],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> FwdCNN_VAE.ForwardSingleStepResult:
         """Z can either be a tensor, or a function that can be called
         to obtain the value and kld_loss.
         """
@@ -220,9 +220,7 @@ class FwdCNN_VAE(torch.nn.Module, FwdBase):
             h_y = self.y_encoder(target_image.unsqueeze(1).contiguous())
             bsize = target_image.shape[0]
             if random.random() < z_dropout:
-                z = self.sample_z(bsize, method=None, h_x=h_x).data.to(
-                    target_image.device
-                )
+                z = self.sample_z(bsize).data.to(target_image.device)
             else:
                 mu_logvar = self.z_network((h_x + h_y).view(bsize, -1)).view(
                     bsize, 2, self.nz
