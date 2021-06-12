@@ -521,8 +521,8 @@ class PolicyCostKMTaper(PolicyCost):
         )
         # we add 1e-9 in order to avoid the situation where the car is
         # completely outside the image.
-        mask_sums = proximity_mask.sum(dim=(-1, -2)) + 1e-9
-        mask_sums_lo = proximity_mask_lo.sum(dim=(-1, -2)) + 1e-9
+        mask_sums = proximity_mask.sum(dim=(-1, -2)) + 1e-6
+        mask_sums_lo = proximity_mask_lo.sum(dim=(-1, -2)) + 1e-6
 
         # We impose a cost for being too far from the reference. Being too far to the side is punished more.
         proximity_cost = self.compute_proximity_cost_km(

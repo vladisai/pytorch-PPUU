@@ -1,7 +1,10 @@
 """Train a policy / controller"""
 import random
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
+import time
+import os
+from pathlib import Path
 
 import torch
 
@@ -116,15 +119,10 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
         super().on_train_start()
         self._setup_mpc()
 
-    def training_step(self, batch, batch_idx):
-        batch = DatasetSample.from_tuple(batch)
-
-        opt = self.optimizers()
-        predictions = self(batch)
-        print(
-            f"fm predictions with policy are {predictions.state_seq.images.shape=}"
-            f"{predictions.state_seq.states.shape=}"
-        )
+    def shared_step(
+        self, batch: DatasetSample, predictions: FwdCNN_VAE.Unfolding
+    ) -> Tuple[torch.Tensor, dict]:
+        # Returns total loss and a dict to be logged.
 
         with torch.no_grad():
             self.mpc.reset()
@@ -136,15 +134,6 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
             loss = self.calculate_cost(batch, predictions)
             logged_losses = self.build_log_dict(predictions, loss)
 
-        for k, v in logged_losses.items():
-            self.log(
-                "train/" + k,
-                v,
-                on_step=True,
-                logger=True,
-                prog_bar=True,
-            )
-
         assert predictions.actions.shape == mpc_actions.shape, (
             f"expected policy actions and mpc actions to be of the same shape,"
             f"got {predictions.actions.shape=} and {mpc_actions.shape=}"
@@ -154,15 +143,51 @@ class MPURKMTaperV3Module_TargetProp(MPURKMTaperV3Module):
 
         # Sum across time and actions dimensions, mean over batch.
         action_diff = action_diff.sum(dim=-1).sum(dim=-1).mean()
+        logged_losses["cloning_l2_loss"] = action_diff
+
+        return action_diff, logged_losses
+
+    def training_step(self, batch, batch_idx):
+        batch = DatasetSample.from_tuple(batch)
+
+        opt = self.optimizers()
+        predictions = self(batch)
+
+        loss, logs = self.shared_step(batch, predictions)
+
+        for k, v in logs.items():
+            self.log(
+                "train/" + k,
+                v,
+                on_step=True,
+                logger=True,
+                prog_bar=True,
+            )
 
         # We retain the gradient of actions to later log it to wandb.
         predictions.actions.retain_grad()
-        self.manual_backward(action_diff, optimizer=opt.optimizer)
+        self.manual_backward(loss, optimizer=opt.optimizer)
         self.log_action_grads(predictions.actions.grad)
         self.clip_gradients()
         opt.step()
 
-        return action_diff
+        return loss
+
+    def validation_step(self, batch: dict, batch_idx: int):
+        batch = DatasetSample.from_tuple(batch)
+        predictions = self(batch)
+        loss = self.calculate_cost(batch, predictions)
+        loss, logs = self.shared_step(batch, predictions)
+
+        for k, v in logs.items():
+            self.log(
+                "val/" + k,
+                v,
+                on_epoch=True,
+                logger=True,
+            )
+
+        return loss
 
 
 @inject(cost_type=PolicyCostKMTaper, fm_type=FwdCNNKMNoAction_VAE)
@@ -196,15 +221,17 @@ class MPURKMTaperV3Module_TargetPropOneByOne(MPURKMTaperV3Module_TargetProp):
                 self.config.training.mpc_per_sample,
             )
 
-    def training_step(self, batch, batch_idx):
-        batch = DatasetSample.from_tuple(batch)
-        opt = self.optimizers()
-        predictions = self(batch)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
+    def get_mpc_actions(
+        self,
+        batch: DatasetSample,
+        predictions: FwdCNN_VAE.Unfolding,
+        indices_to_annotate: List[int],
+    ):
         # We first sample what steps we want to run mpc on.
-        indices_to_annotate = self.get_indices_to_annotate()
         mpc_actions = []
-        loss = 0
 
         with torch.no_grad():
             conditional_state_seq = batch.conditional_state_seq
@@ -223,11 +250,68 @@ class MPURKMTaperV3Module_TargetPropOneByOne(MPURKMTaperV3Module_TargetProp):
                     predictions.state_seq.states[:, i],
                 )
 
-            # We do this just for logging, and we also do no_grad().
+        return mpc_actions
+
+    def dump_expert_annotation(
+        self,
+        batch: DatasetSample,
+        predictions: FwdCNN_VAE.Unfolding,
+        indices_to_annotate: List[int],
+        mpc_actions: torch.Tensor,
+    ):
+        # Save to the path specified in config for using later.
+        p = Path(f"{os.path.join(self.config.training.dump_path, str(time.time()))}.t")
+        p.parent.mkdir(exist_ok=True)
+
+        torch.save(
+            dict(
+                batch=batch,
+                predictions=predictions,
+                indices_to_annotate=indices_to_annotate,
+                mpc_actions=mpc_actions,
+            ),
+            p,
+        )
+
+    def shared_step(
+        self,
+        batch: DatasetSample,
+        predictions: FwdCNN_VAE.Unfolding,
+        save_result: bool = False,
+    ) -> Tuple[torch.Tensor, dict]:
+        # Returns total loss and a dict to be logged.
+        indices_to_annotate = self.get_indices_to_annotate()
+
+        mpc_actions = self.get_mpc_actions(
+            batch, predictions, indices_to_annotate
+        )
+
+        if save_result and self.config.training.dump_path is not None:
+            self.dump_expert_annotation(
+                batch, predictions, indices_to_annotate, mpc_actions
+            )
+
+        with torch.no_grad():
             loss = self.calculate_cost(batch, predictions)
             logged_losses = self.build_log_dict(predictions, loss)
 
-        for k, v in logged_losses.items():
+        total_action_diff = 0
+        for i, a in zip(indices_to_annotate, mpc_actions):
+            total_action_diff += (predictions.actions[:, i] - a) ** 2
+        # Sum across time and actions dimensions, mean over batch.
+        total_action_diff = total_action_diff.sum(dim=-1).mean()
+
+        logged_losses["cloning_l2_loss"] = total_action_diff
+        return total_action_diff, logged_losses
+
+    def training_step(self, batch, batch_idx):
+        batch = DatasetSample.from_tuple(batch)
+        opt = self.optimizers()
+        predictions = self(batch)
+
+        loss, logs = self.shared_step(batch, predictions, save_result=True)
+
+        for k, v in logs.items():
             self.log(
                 "train/" + k,
                 v,
@@ -236,17 +320,28 @@ class MPURKMTaperV3Module_TargetPropOneByOne(MPURKMTaperV3Module_TargetProp):
                 prog_bar=True,
             )
 
-        total_action_diff = 0
-        for i, a in zip(indices_to_annotate, mpc_actions):
-            total_action_diff += (predictions.actions[:, i] - a) ** 2
-        # Sum across time and actions dimensions, mean over batch.
-        total_action_diff = total_action_diff.sum(dim=-1).mean()
-
         # We retain the gradient of actions to later log it to wandb.
         predictions.actions.retain_grad()
-        self.manual_backward(total_action_diff, optimizer=opt.optimizer)
+        self.manual_backward(loss, optimizer=opt.optimizer)
         self.log_action_grads(predictions.actions.grad)
         self.clip_gradients()
         opt.step()
 
-        return total_action_diff
+        return loss
+
+    def validation_step(self, batch: dict, batch_idx: int):
+        batch = DatasetSample.from_tuple(batch)
+        predictions = self(batch)
+
+        loss, logs = self.shared_step(batch, predictions)
+
+        for k, v in logs.items():
+            self.log(
+                "val/" + k,
+                v,
+                on_step=True,
+                logger=True,
+                prog_bar=True,
+            )
+
+        return loss

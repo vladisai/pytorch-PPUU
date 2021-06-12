@@ -179,6 +179,8 @@ class MPURModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         batch = DatasetSample.from_tuple(batch)
+        p = '/home/us441/work/seed=1_2/bad_batch.t'
+        batch = torch.load(p)
         # print(f"{batch.conditional_state_seq.images.sum()=}")
         # print(f"{sum([x.sum() for x in self.policy_model.parameters()])=}")
         opt = self.optimizers()
@@ -211,17 +213,21 @@ class MPURModule(pl.LightningModule):
         self.manual_backward(res)
         self.clip_gradients()
         self.log_action_grads(predictions.actions.grad)
-        # print(f"{predictions.actions[0]=}")
-        # print(f"{predictions.state_seq.images.sum()=}")
-        # print(f"{res=}")
-        # # print(f"{loss=}")
-        # print(f"{predictions.actions.grad=}")
-        # print(
-        #     f"{sum([x.grad.abs().sum() for x in self.policy_model.parameters()])=}"
-        # )
-        # print("parameters")
-        # for x in self.policy_model.parameters():
-        #     print("shape", x.shape, "grad", x.grad.sum())
+
+        print(f"{predictions.actions[0]=}")
+        print(f"{predictions.state_seq.images.sum()=}")
+        print(f"{res=}")
+        # print(f"{loss=}")
+        print(f"{predictions.actions.grad=}")
+        print(
+            f"{sum([x.grad.abs().sum() for x in self.policy_model.parameters()])=}"
+        )
+        print("parameters")
+        for x in self.policy_model.parameters():
+            print("shape", x.shape, "grad", x.grad.sum())
+
+        breakpoint()
+
         opt.step()
 
         return res
